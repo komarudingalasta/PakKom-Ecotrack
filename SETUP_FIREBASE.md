@@ -1,31 +1,8 @@
-# Setup Firebase Pak Kom Eco Track v2.5
+# Setup Firebase Pak Kom Eco Track v2.6.1
 
-1. Aktifkan Authentication > Email/Password.
-2. Pastikan akun Admin dan dokumen `users/{UID_ADMIN}` sudah tersedia.
-3. Publish `firestore.rules` dari paket ini.
-4. Upload seluruh file v2.5 ke GitHub Pages.
-5. Login ADMIN.
-6. Buka **Kelola Data**.
-7. Import siswa menggunakan sheet `Siswa`.
-8. Import akun guru menggunakan sheet `Guru`.
-
-## Struktur profil guru
-
-```text
-users/{uid}
-  loginId: "G001"
-  name: "Rina Kartika"
-  role: "guru"
-  active: true
-  isHomeroom: true
-  homeroomClass: "7A"
-```
-
-Guru biasa:
-
-```text
-isHomeroom: false
-homeroomClass: ""
-```
-
-Tidak ada akun Firebase Authentication untuk siswa.
+1. Authentication: aktifkan Email/Password.
+2. Firestore: gunakan firestore.rules pada paket ini.
+3. Admin: Authentication email `komarudingalasta@gmail.com`; profil Firestore `users/{UID}` berisi `loginId: ADMIN`, `role: admin`, `active: true`.
+4. Kelas 7A–9I dibuat otomatis saat Admin login.
+5. Siswa diimpor dari Excel tanpa akun/password.
+6. Guru/Wali Kelas dapat diimpor dari Excel; satu kelas hanya boleh memiliki satu wali kelas aktif.

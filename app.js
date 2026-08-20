@@ -16,7 +16,7 @@ const loginEmail = id => {
   return `${normalized.toLowerCase().replace(/[^a-z0-9._-]/g,'')}@pakkom-ecotrack.app`;
 };
 let app, auth, db;
-let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], recordsToday:[], students:[] };
+let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[] };
 
 function toast(msg, ms=4200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.classList.remove('show'),ms); }
 function authErrorMessage(e){
@@ -77,7 +77,8 @@ async function refreshCore(){
     getDocs(query(collection(db,'classes'),orderBy('name'))).catch(()=>null),
     getDocs(query(collection(db,'records'),where('date','==',todayKey()))).catch(()=>null)
   ]);
-  state.classes = classSnap && !classSnap.empty ? classSnap.docs.map(d=>d.id) : classesDefault;
+  state.classDocs = classSnap && !classSnap.empty ? classSnap.docs.map(d=>({id:d.id,...d.data()})) : classesDefault.map(id=>({id,name:id,active:true}));
+  state.classes = state.classDocs.filter(c=>c.active!==false).map(c=>c.id);
   state.recordsToday = recordSnap ? recordSnap.docs.map(d=>({id:d.id,...d.data()})) : [];
 }
 function classRecord(c){ return state.recordsToday.find(r=>r.classId===c); }
@@ -85,7 +86,8 @@ function classRecord(c){ return state.recordsToday.find(r=>r.classId===c); }
 function renderShell(){
   if(!state.profile){ $('#loginView').classList.remove('hidden'); $('#appView').classList.add('hidden'); return; }
   $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden');
-  $('#userChip').innerHTML=`<b>${esc(state.profile.name)}</b><br>${state.profile.role==='admin'?'Admin':'Guru'}`;
+  const chipRole=state.profile.role==='admin'?'Admin':(state.profile.isHomeroom?`Wali Kelas${state.profile.homeroomClass?' • '+esc(state.profile.homeroomClass):''}`:'Guru');
+  $('#userChip').innerHTML=`<b>${esc(state.profile.name)}</b><br>${chipRole}`;
   $('#nav').innerHTML=navItems().map(([k,l])=>`<button class="nav-btn ${state.page===k?'active':''}" data-page="${k}">${l}</button>`).join('');
   document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;state.selectedClass=null;renderShell();document.querySelector('.sidebar').classList.remove('open')});
   renderPage();
@@ -123,9 +125,14 @@ async function loadClassForm(c){
   content.innerHTML='<div class="card"><div class="empty">Memuat data siswa...</div></div>';
   try{
     const snap=await getDocs(query(collection(db,'students'),where('classId','==',c)));
-    const students=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    const students=snap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.active!==false).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     const existing=classRecord(c);
-    window.formItems=existing ? JSON.parse(JSON.stringify(existing.items||[])) : students.map(s=>({studentId:s.id,nis:s.nis||s.id,name:s.name,presence:'hadir',food:true,tumbler:true}));
+    const oldMap=new Map((existing?.items||[]).map(i=>[String(i.studentId||i.nis),i]));
+    window.formItems=students.map(st=>{
+      const old=oldMap.get(String(st.id))||oldMap.get(String(st.nis||st.id));
+      return old?{...old,studentId:st.id,nis:st.nis||st.id,name:st.name}:{studentId:st.id,nis:st.nis||st.id,name:st.name,presence:'hadir',food:true,tumbler:true};
+    });
+    window.rosterChanged=!!existing && ((existing.items||[]).length!==window.formItems.length || window.formItems.some((i,idx)=>!existing.items?.[idx] || existing.items[idx].studentId!==i.studentId || existing.items[idx].name!==i.name));
     window.originalRecord=existing||null; window.formLocked=!!(existing && existing.createdByUid!==state.user.uid && state.profile.role!=='admin');
     renderClassForm(c);
   }catch(e){ console.error(e); content.innerHTML='<div class="card"><div class="empty">Gagal memuat siswa. Periksa Firestore Rules dan koneksi.</div></div>'; }
@@ -133,7 +140,7 @@ async function loadClassForm(c){
 function renderClassForm(c){
   const existing=window.originalRecord;
   content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${c}</h3><small>${existing?`Sudah didata oleh ${esc(existing.createdByName||'Guru')} • ${esc(existing.timeLabel||'-')}`:'Belum pernah disimpan hari ini'}</small></div><button class="btn ghost" id="backClasses">← Pilih kelas lain</button></div>
-  ${window.formLocked?'<div class="notice">Data dibuat guru lain. Saat ini hanya ditampilkan. Gunakan “Koreksi Data” jika memang perlu mengubahnya.</div>':''}
+  ${window.formLocked?'<div class="notice">Data dibuat guru lain. Saat ini hanya ditampilkan. Gunakan “Koreksi Data” jika memang perlu mengubahnya.</div>':''}${window.rosterChanged?'<div class="notice">Daftar siswa aktif kelas ini berubah sejak pendataan terakhir. Form sudah disesuaikan dengan master siswa terbaru tanpa menghapus status siswa yang masih terdaftar.</div>':''}
   <div class="card"><div class="toolbar"><button class="btn secondary bulk" data-bulk="presence">Semua Hadir</button><button class="btn secondary bulk" data-bulk="food">Semua Bawa Wadah</button><button class="btn secondary bulk" data-bulk="tumbler">Semua Bawa Tumbler</button>${window.formLocked?'<button id="unlockBtn" class="btn ghost">Koreksi Data</button>':''}</div>
   <div class="table-wrap"><table><thead><tr><th>No</th><th>NIS</th><th>Nama Siswa</th><th>Kehadiran</th><th>Wadah</th><th>Tumbler</th></tr></thead><tbody id="studentRows"></tbody></table></div>
   <div style="display:flex;justify-content:flex-end;margin-top:16px"><button id="saveBtn" class="btn primary" ${window.formLocked?'disabled':''}>Simpan Data ${c}</button></div></div>`;
@@ -185,17 +192,19 @@ function account(){ pageMeta('Akun','Informasi pengguna'); const type=state.prof
 
 async function master(){
   if(state.profile.role!=='admin'){state.page='home';return renderShell()}
-  pageMeta('Kelola Data','Khusus Administrator • v2.6');
+  pageMeta('Kelola Data','Khusus Administrator • v2.6.1');
   content.innerHTML='<div class="card"><div class="empty">Memuat data master...</div></div>';
   const [stuSnap,userSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users'))]);
   state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));
   window.masterUsers=userSnap.docs.map(d=>({uid:d.id,...d.data()}));
+  const activeStudents=state.students.filter(s=>s.active!==false);
   const teachers=window.masterUsers.filter(u=>u.role==='guru');
-  const homerooms=teachers.filter(u=>u.isHomeroom===true);
+  const activeTeachers=teachers.filter(u=>u.active!==false);
+  const homerooms=activeTeachers.filter(u=>u.isHomeroom===true);
   content.innerHTML=`
   <div class="grid stats admin-stats">
-    <div class="stat"><span>Total siswa</span><strong>${state.students.length}</strong></div>
-    <div class="stat"><span>Guru</span><strong>${teachers.length-homerooms.length}</strong></div>
+    <div class="stat"><span>Siswa aktif</span><strong>${activeStudents.length}</strong></div>
+    <div class="stat"><span>Guru aktif</span><strong>${activeTeachers.length-homerooms.length}</strong></div>
     <div class="stat"><span>Wali kelas</span><strong>${homerooms.length}</strong></div>
     <div class="stat"><span>Kelas aktif</span><strong>${state.classes.length}</strong></div>
   </div>
@@ -208,9 +217,9 @@ async function master(){
   <div class="card" style="margin-top:16px">
     <div class="section-head"><div><h3>Akun Guru & Wali Kelas</h3><small>Wali kelas tetap berperan sebagai guru, dengan informasi kelas binaan.</small></div><div class="row-actions"><button id="importTeachers" class="btn ghost">Import Akun Guru</button><button id="addTeacher" class="btn primary">+ Guru</button></div></div>
     <div class="notice">Format guru: <b>ID Guru | Nama | Password Awal | Jenis | Kelas Wali | Status</b>. Jenis diisi <b>Guru</b> atau <b>Wali Kelas</b>. Jika Password Awal kosong, digunakan <b>123456</b>.</div>
-    <div id="teacherTable"></div>
+    <div class="master-tools"><input id="teacherSearch" class="input-inline" placeholder="Cari ID atau nama guru"><select id="teacherTypeFilter" class="input-inline"><option value="">Semua jenis</option><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select><select id="teacherStatusFilter" class="input-inline"><option value="">Semua status</option><option value="aktif">Aktif</option><option value="nonaktif">Nonaktif</option></select></div><div id="teacherTable"></div>
   </div>
-  <div class="card" style="margin-top:16px"><div class="section-head"><h3>Daftar Kelas</h3><button id="seedClasses" class="btn ghost">Pastikan Kelas 7A–9I</button></div><div class="grid class-grid">${state.classes.map(c=>`<div class="class-btn done"><b>${c}</b><small>Aktif</small></div>`).join('')}</div></div>`;
+  <div class="card" style="margin-top:16px"><div class="section-head"><div><h3>Riwayat Koreksi Hari Ini</h3><small>Menampilkan perubahan pada pendataan hari ini.</small></div></div><div id="auditTable"></div></div><div class="card" style="margin-top:16px"><div class="section-head"><h3>Daftar Kelas</h3><button id="seedClasses" class="btn ghost">Pastikan Kelas 7A–9I</button></div><div class="grid class-grid">${state.classes.map(c=>`<div class="class-btn done"><b>${c}</b><small>Aktif</small></div>`).join('')}</div></div>`;
   $('#importStudents').onclick=()=>$('#studentImport').click();
   $('#importTeachers').onclick=()=>$('#teacherImport').click();
   $('#addTeacher').onclick=addTeacherPrompt;
@@ -218,8 +227,10 @@ async function master(){
   $('#addStudentLocal').onclick=addStudentLocal;
   $('#studentSearch').oninput=renderStudentMasterTable;
   $('#studentClassFilter').onchange=renderStudentMasterTable;
+  $('#teacherSearch').oninput=renderTeacherMasterTable; $('#teacherTypeFilter').onchange=renderTeacherMasterTable; $('#teacherStatusFilter').onchange=renderTeacherMasterTable;
   renderStudentMasterTable();
   renderTeacherMasterTable();
+  renderAuditTable();
 }
 
 function renderStudentMasterTable(){
@@ -233,22 +244,24 @@ function renderStudentMasterTable(){
 
 function renderTeacherMasterTable(){
   const target=$('#teacherTable'); if(!target)return;
-  const rows=(window.masterUsers||[]).filter(u=>u.role==='guru').sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const q=String($('#teacherSearch')?.value||'').trim().toLowerCase(), type=$('#teacherTypeFilter')?.value||'', status=$('#teacherStatusFilter')?.value||'';
+  const rows=(window.masterUsers||[]).filter(u=>u.role==='guru').filter(u=>(!q||String(u.loginId||'').toLowerCase().includes(q)||String(u.name||'').toLowerCase().includes(q))&&(!type||(type==='wali'?u.isHomeroom===true:u.isHomeroom!==true))&&(!status||(status==='aktif'?u.active!==false:u.active===false))).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   target.innerHTML=`<div class="table-wrap"><table class="student-master"><thead><tr><th>ID Guru</th><th>Nama</th><th>Jenis</th><th>Kelas Wali</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.isHomeroom?'ok':'neutral'}">${u.isHomeroom?'Wali Kelas':'Guru'}</span></td><td>${u.isHomeroom?esc(u.homeroomClass||'-'):'-'}</td><td><span class="badge ${u.active===false?'warn':'ok'}">${u.active===false?'Nonaktif':'Aktif'}</span></td><td><button class="btn-mini edit" data-edit-teacher="${esc(u.uid)}">Edit</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Belum ada akun guru.</div></td></tr>'}</tbody></table></div>`;
   document.querySelectorAll('[data-edit-teacher]').forEach(b=>b.onclick=()=>editTeacherProfile(b.dataset.editTeacher));
 }
 
 async function editTeacherProfile(uid){
   const u=(window.masterUsers||[]).find(x=>x.uid===uid); if(!u)return;
-  const name=prompt('Nama Guru:',u.name||''); if(name===null||!name.trim())return;
-  const isHomeroom=confirm(`Klik OK jika ${name.trim()} adalah WALI KELAS. Klik Batal jika GURU biasa.`);
-  let homeroomClass='';
-  if(isHomeroom){homeroomClass=(prompt('Kelas wali:',u.homeroomClass||'')||'').trim().toUpperCase();if(!homeroomClass)return toast('Kelas wali wajib diisi');}
-  const active=confirm('Klik OK jika akun AKTIF. Klik Batal jika NONAKTIF.');
-  try{
-    await setDoc(doc(db,'users',uid),{name:name.trim(),role:'guru',isHomeroom,homeroomClass:isHomeroom?homeroomClass:'',active,updatedAt:new Date().toISOString()},{merge:true});
-    toast('Data guru diperbarui'); await master();
-  }catch(e){console.error(e);toast('Gagal mengedit guru');}
+  openEditModal('Edit Guru',`
+    <label>Nama<input id="mName" value="${esc(u.name||'')}"></label>
+    <label>Jenis<select id="mType"><option value="guru" ${u.isHomeroom?'':'selected'}>Guru</option><option value="wali" ${u.isHomeroom?'selected':''}>Wali Kelas</option></select></label>
+    <label>Kelas Wali<select id="mClass"><option value="">-</option>${state.classes.map(c=>`<option value="${c}" ${u.homeroomClass===c?'selected':''}>${c}</option>`).join('')}</select></label>
+    <label>Status<select id="mActive"><option value="true" ${u.active!==false?'selected':''}>Aktif</option><option value="false" ${u.active===false?'selected':''}>Nonaktif</option></select></label>`,async()=>{
+      const name=$('#mName').value.trim(), isHomeroom=$('#mType').value==='wali', homeroomClass=$('#mClass').value, active=$('#mActive').value==='true';
+      if(!name)return toast('Nama guru wajib diisi'); if(isHomeroom&&!homeroomClass)return toast('Kelas wali wajib dipilih');
+      if(isHomeroom){const clash=(window.masterUsers||[]).find(x=>x.uid!==uid&&x.role==='guru'&&x.active!==false&&x.isHomeroom===true&&x.homeroomClass===homeroomClass);if(clash)return toast(`${homeroomClass} sudah memiliki wali kelas: ${clash.name}`);}
+      await setDoc(doc(db,'users',uid),{name,role:'guru',isHomeroom,homeroomClass:isHomeroom?homeroomClass:'',active,updatedAt:new Date().toISOString()},{merge:true}); closeEditModal(); toast('Data guru diperbarui'); await master();
+    });
 }
 
 async function ensureClassesFromStudents(){
@@ -261,17 +274,12 @@ async function ensureClassesFromStudents(){
 }
 
 async function editStudent(id){
-  const s=state.students.find(x=>x.id===id); if(!s)return;
-  const name=prompt('Nama siswa:',s.name||''); if(name===null)return;
-  const classId=prompt('Kelas:',s.classId||''); if(classId===null)return;
-  const normalizedClass=classId.trim().toUpperCase(); if(!name.trim()||!normalizedClass)return toast('Nama dan kelas wajib diisi');
-  const active=confirm('Klik OK jika siswa AKTIF. Klik Batal jika ingin NONAKTIFKAN.');
-  try{
-    await setDoc(doc(db,'students',id),{name:name.trim(),classId:normalizedClass,active,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name},{merge:true});
-    await ensureClassesFromStudents(); toast('Data siswa diperbarui'); await master();
-  }catch(e){console.error(e);toast('Gagal mengedit siswa');}
+  const st=state.students.find(x=>x.id===id); if(!st)return;
+  openEditModal('Edit Siswa',`<label>NIS<input value="${esc(st.nis||st.id)}" disabled></label><label>Nama<input id="mName" value="${esc(st.name||'')}"></label><label>Kelas<select id="mClass">${state.classes.map(c=>`<option value="${c}" ${st.classId===c?'selected':''}>${c}</option>`).join('')}</select></label><label>Status<select id="mActive"><option value="true" ${st.active!==false?'selected':''}>Aktif</option><option value="false" ${st.active===false?'selected':''}>Nonaktif</option></select></label>`,async()=>{
+    const name=$('#mName').value.trim(), classId=$('#mClass').value, active=$('#mActive').value==='true'; if(!name||!classId)return toast('Nama dan kelas wajib diisi');
+    await setDoc(doc(db,'students',id),{name,classId,active,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name},{merge:true}); closeEditModal(); toast('Data siswa diperbarui'); await master();
+  });
 }
-
 
 async function addStudentLocal(){
   const nis=prompt('NIS siswa:'); if(!nis)return;
@@ -287,19 +295,20 @@ $('#studentImport').addEventListener('change',async e=>{
     const buf=await f.arrayBuffer(); const wb=XLSX.read(buf);
     const sheet=wb.Sheets['Siswa']||wb.Sheets[wb.SheetNames[0]];
     const rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
+    let skipped=0;
     const normalized=rows.map(r=>({
       nis:String(r.NIS||r.nis||r['Nomor Induk']||'').trim(),
       name:String(r.Nama||r.nama||r['Nama Siswa']||'').trim(),
       classId:String(r.Kelas||r.kelas||r.KELAS||'').trim().toUpperCase(),
       active:!['nonaktif','tidak aktif','0','false'].includes(String(r.Status||r.status||'Aktif').trim().toLowerCase())
-    })).filter(r=>r.nis&&r.name&&r.classId);
+    })).filter(r=>{const ok=r.nis&&r.name&&r.classId;if(!ok)skipped++;return ok;});
     if(!normalized.length)throw new Error('Kolom tidak cocok');
     for(let start=0; start<normalized.length; start+=400){
       const batch=writeBatch(db);
       normalized.slice(start,start+400).forEach(st=>batch.set(doc(db,'students',st.nis),{...st,updatedAt:new Date().toISOString()},{merge:true}));
       await batch.commit();
     }
-    await ensureClassesFromStudents(); toast(`${normalized.length} siswa berhasil diimport`); e.target.value=''; await master();
+    await ensureClassesFromStudents(); toast(`Import siswa selesai: ${normalized.length} diproses${skipped?`, ${skipped} dilewati karena data tidak lengkap`:''}`,7000); e.target.value=''; await master();
   }catch(err){console.error(err);toast('Import gagal. Gunakan kolom NIS, Nama, Kelas, Status.');}
 });
 
@@ -325,6 +334,7 @@ $('#teacherImport').addEventListener('change',async e=>{
     let created=0,updated=0,failed=0;
     for(const t of normalized){
       if(t.isHomeroom&&!t.homeroomClass){failed++;continue;}
+      if(t.isHomeroom){const clash=(window.masterUsers||[]).find(x=>x.role==='guru'&&x.active!==false&&x.isHomeroom===true&&x.homeroomClass===t.homeroomClass&&String(x.loginId||'').toUpperCase()!==t.loginId);if(clash){console.warn('Kelas wali duplikat',t.loginId,t.homeroomClass);failed++;continue;}}
       const existing=existingById.get(t.loginId);
       if(existing){
         await setDoc(doc(db,'users',existing.uid),{name:t.name,role:'guru',active:t.active,isHomeroom:t.isHomeroom,homeroomClass:t.isHomeroom?t.homeroomClass:'',updatedAt:new Date().toISOString()},{merge:true});
@@ -344,6 +354,11 @@ $('#teacherImport').addEventListener('change',async e=>{
     e.target.value=''; await master();
   }catch(err){console.error(err);toast(err.message||'Import akun guru gagal.');}
 });
+
+function openEditModal(title,body,onSave){ const modal=$('#editModal'); $('#editModalTitle').textContent=title; $('#editModalBody').innerHTML=body; modal.classList.remove('hidden'); $('#editModalSave').onclick=()=>Promise.resolve(onSave()).catch(e=>{console.error(e);toast('Gagal menyimpan perubahan')}); }
+function closeEditModal(){ $('#editModal').classList.add('hidden'); $('#editModalBody').innerHTML=''; }
+$('#editModalCancel').onclick=closeEditModal; $('#editModalClose').onclick=closeEditModal;
+function renderAuditTable(){ const target=$('#auditTable'); if(!target)return; const rows=state.recordsToday.flatMap(r=>(r.audit||[]).map(a=>({classId:r.classId,...a}))).sort((a,b)=>String(b.editedAt||'').localeCompare(String(a.editedAt||''))); target.innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Dikoreksi oleh</th><th>Waktu</th></tr></thead><tbody>${rows.map(a=>`<tr><td><b>${esc(a.classId)}</b></td><td>${esc(a.editedByName||'-')}</td><td>${a.editedAt?new Date(a.editedAt).toLocaleString('id-ID'):'-'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Belum ada koreksi hari ini.</div>'; }
 
 async function ensureDefaultClasses(){
   try{
@@ -374,7 +389,7 @@ async function addTeacherPrompt(){
   const name=prompt('Nama Guru:'); if(!name)return;
   const isHomeroom=confirm('Apakah guru ini WALI KELAS? Klik OK untuk Wali Kelas, Batal untuk Guru.');
   let homeroomClass='';
-  if(isHomeroom){homeroomClass=(prompt('Kelas wali (contoh 7A):')||'').trim().toUpperCase();if(!homeroomClass)return toast('Kelas wali wajib diisi');}
+  if(isHomeroom){homeroomClass=(prompt('Kelas wali (contoh 7A):')||'').trim().toUpperCase();if(!homeroomClass)return toast('Kelas wali wajib diisi'); const clash=(window.masterUsers||[]).find(x=>x.role==='guru'&&x.active!==false&&x.isHomeroom===true&&x.homeroomClass===homeroomClass);if(clash)return toast(`${homeroomClass} sudah memiliki wali kelas: ${clash.name}`);}
   const password=prompt('Password awal (minimal 6 karakter):','123456'); if(!password||password.length<6)return toast('Password minimal 6 karakter');
   let secondary=null;
   try{
