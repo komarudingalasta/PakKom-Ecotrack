@@ -30,6 +30,7 @@ if(!configured){
       const snap=await getDoc(doc(db,'users',user.uid));
       if(!snap.exists() || snap.data().active===false){ await signOut(auth); toast('Akun tidak aktif atau belum terdaftar'); return; }
       state.user=user; state.profile={uid:user.uid,...snap.data()};
+      if(state.profile.role==='admin') await ensureDefaultClasses();
       await refreshCore(); renderShell();
     }catch(e){ console.error(e); toast('Gagal membaca profil akun'); }
   });
@@ -142,7 +143,7 @@ async function master(){
   state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})); const users=userSnap.docs.map(d=>({uid:d.id,...d.data()}));
   content.innerHTML=`<div class="grid two-col"><div class="card"><div class="section-head"><div><h3>Master Siswa</h3><small>${state.students.length} siswa</small></div><button id="importStudents" class="btn primary">Import Excel</button></div><p>Kolom yang dikenali: <b>NIS</b>, <b>Nama</b>, <b>Kelas</b>.</p><div class="notice">Import akan menambah/memperbarui siswa berdasarkan NIS.</div></div>
   <div class="card"><div class="section-head"><div><h3>Akun Guru</h3><small>${users.filter(u=>u.role==='guru').length} guru</small></div><button id="addTeacher" class="btn primary">+ Guru</button></div>${users.filter(u=>u.role==='guru').slice(0,8).map(u=>`<p><b>${esc(u.name)}</b><br><small>${esc(u.loginId||'')} • ${u.active===false?'Nonaktif':'Aktif'}</small></p>`).join('')||'<div class="empty">Belum ada guru.</div>'}</div></div>
-  <div class="card" style="margin-top:16px"><div class="section-head"><h3>Daftar Kelas</h3><button id="seedClasses" class="btn ghost">Pastikan 7A–9I Tersedia</button></div><div class="grid class-grid">${state.classes.map(c=>`<div class="class-btn done"><b>${c}</b><small>Aktif</small></div>`).join('')}</div></div>`;
+  <div class="card" style="margin-top:16px"><div class="section-head"><h3>Daftar Kelas</h3><button id="seedClasses" class="btn ghost">Sinkronkan Kelas 7A–9I</button></div><div class="grid class-grid">${state.classes.map(c=>`<div class="class-btn done"><b>${c}</b><small>Aktif</small></div>`).join('')}</div></div>`;
   $('#importStudents').onclick=()=>$('#studentImport').click(); $('#addTeacher').onclick=addTeacherPrompt; $('#seedClasses').onclick=seedClasses;
 }
 $('#studentImport').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;try{const buf=await f.arrayBuffer();const wb=XLSX.read(buf);const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});const normalized=rows.map(r=>({nis:String(r.NIS||r.nis||r['Nomor Induk']||'').trim(),name:String(r.Nama||r.nama||r['Nama Siswa']||'').trim(),classId:String(r.Kelas||r.kelas||r['KELAS']||'').trim().toUpperCase()})).filter(r=>r.nis&&r.name&&r.classId);if(!normalized.length)throw new Error('Kolom tidak cocok');const chunkSize=450;
@@ -153,7 +154,30 @@ $('#studentImport').addEventListener('change',async e=>{const f=e.target.files?.
     }
     toast(`${normalized.length} siswa berhasil diimport`);e.target.value='';master();}catch(err){console.error(err);toast('Import gagal. Pastikan kolom NIS, Nama, Kelas tersedia.')}});
 
-async function seedClasses(){try{const batch=writeBatch(db);classesDefault.forEach(c=>batch.set(doc(db,'classes',c),{name:c,active:true},{merge:true}));await batch.commit();await refreshCore();toast('Daftar kelas 7A–9I siap');master();}catch(e){console.error(e);toast('Gagal membuat kelas')}}
+async function ensureDefaultClasses(){
+  try{
+    const snap=await getDocs(collection(db,'classes'));
+    const existing=new Set(snap.docs.map(d=>d.id));
+    const missing=classesDefault.filter(c=>!existing.has(c));
+    if(!missing.length)return 0;
+    const batch=writeBatch(db);
+    missing.forEach(c=>batch.set(doc(db,'classes',c),{name:c,grade:Number(c[0]),active:true,createdAt:new Date().toISOString()},{merge:true}));
+    await batch.commit();
+    return missing.length;
+  }catch(e){
+    console.error('Gagal membuat kelas otomatis',e);
+    return 0;
+  }
+}
+
+async function seedClasses(){
+  try{
+    const count=await ensureDefaultClasses();
+    await refreshCore();
+    toast(count?`${count} kelas berhasil dibuat otomatis`:'Semua kelas 7A–9I sudah tersedia');
+    master();
+  }catch(e){console.error(e);toast('Gagal menyinkronkan kelas')}
+}
 async function addTeacherPrompt(){
   const loginId=prompt('ID Guru (contoh G001):'); if(!loginId)return;
   const name=prompt('Nama Guru:'); if(!name)return;

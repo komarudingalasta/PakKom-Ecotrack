@@ -36,3 +36,7 @@ Jangan mengunggah project dengan Firestore dalam mode terbuka. Gunakan `firestor
 ## Firebase project terhubung
 
 Versi v2.2 sudah berisi konfigurasi project Firebase `pakkom-ecotrack`. Sebelum digunakan, aktifkan Email/Password pada Firebase Authentication, buat Cloud Firestore, lalu publish `firestore.rules` yang disertakan.
+
+
+## Kelas otomatis
+Pada login Admin pertama, aplikasi otomatis memastikan dokumen kelas 7A–7I, 8A–8I, dan 9A–9I tersedia di collection `classes`. Kelas yang sudah ada tidak dibuat ulang atau diduplikasi. Setiap kelas otomatis memiliki `name`, `grade`, `active`, dan `createdAt`. Tombol **Sinkronkan Kelas 7A–9I** di menu Kelola Data hanya menjadi opsi cadangan.
