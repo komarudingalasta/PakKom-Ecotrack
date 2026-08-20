@@ -1,26 +1,40 @@
-# Pak Kom Eco Track v2.4
+# Pak Kom Eco Track v2.5
 
-Fokus versi 2.4:
-- Sinkron master siswa dari Firebase PakKom Exambro.
-- Edit nama, kelas, dan status aktif siswa langsung di Eco Track.
-- Edit lokal tidak langsung ditimpa saat sinkronisasi berikutnya.
-- Tombol **Ikuti Exambro** untuk mengembalikan siswa ke data sumber terakhir.
-- Tambah siswa lokal dan Import Excel tetap tersedia.
-- Kelas baru dari data siswa otomatis dibuat pada collection `classes`.
+Web pendataan wadah makan dan tumbler siswa berbasis Firebase.
 
-## Cara sinkronisasi
-1. Login sebagai ADMIN Eco Track.
-2. Buka **Kelola Data**.
-3. Tekan **Sinkron Exambro**.
-4. Eco Track masuk secara anonim ke project Firebase PakKom Exambro dan membaca collection `students`.
-5. NIS digunakan sebagai kunci sinkronisasi.
+## Perubahan v2.5
 
-PakKom Exambro saat ini menggunakan project `pakkom-exambro-643f6` dan collection `students` dengan field utama `nis`, `name`, `classId`, `active`, dan `approved`.
+- Sinkronisasi PakKom Exambro dihapus.
+- Master siswa menggunakan Import Excel atau edit langsung oleh Admin.
+- Siswa tidak memiliki akun dan tidak membutuhkan password.
+- Format import siswa: `NIS | Nama | Kelas | Status`.
+- Import akun guru ditambahkan.
+- Guru dibedakan menjadi **Guru** dan **Wali Kelas** pada informasi akun.
+- Wali Kelas tetap memiliki role `guru`, ditambah `isHomeroom: true` dan `homeroomClass`.
+- Format import guru: `ID Guru | Nama | Password Awal | Jenis | Kelas Wali | Status`.
+- Password awal guru boleh kosong; sistem menggunakan `123456`.
+- Admin dapat mengedit nama, jenis Guru/Wali Kelas, kelas wali, dan status akun.
+- Tombol download format import tersedia pada halaman Kelola Data.
 
-## Catatan Firebase Exambro
-Anonymous Authentication perlu aktif karena Firestore Rules Exambro mensyaratkan `request.auth != null` untuk membaca `students`.
+## Format Siswa
 
-## Perilaku edit + sinkron
-- Belum pernah diedit di Eco Track: nama/kelas mengikuti Exambro pada setiap sinkron.
-- Pernah diedit di Eco Track: nama/kelas lokal dipertahankan; data sumber terbaru tetap disimpan sebagai `sourceName` dan `sourceClassId`.
-- Tekan **Ikuti Exambro** untuk membuang override lokal dan kembali ke data Exambro terakhir.
+| NIS | Nama | Kelas | Status |
+|---|---|---|---|
+| 24001 | Ahmad Fauzan | 7A | Aktif |
+
+`NIS`, `Nama`, dan `Kelas` wajib. `Status` boleh kosong dan dianggap Aktif.
+
+## Format Guru
+
+| ID Guru | Nama | Password Awal | Jenis | Kelas Wali | Status |
+|---|---|---|---|---|---|
+| G001 | Rina Kartika | 123456 | Wali Kelas | 7A | Aktif |
+| G002 | Dedi Pratama | 123456 | Guru | | Aktif |
+
+- `Jenis`: `Guru` atau `Wali Kelas`.
+- `Kelas Wali` wajib jika Jenis = `Wali Kelas`.
+- ID Guru dipakai untuk login.
+
+## File format
+
+`format-import-pak-kom-eco-track.xlsx` sudah disertakan dalam folder dan dapat diunduh dari halaman Admin.
