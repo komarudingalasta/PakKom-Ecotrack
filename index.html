@@ -17,8 +17,8 @@
       <form id="loginForm" class="form-card">
         <label>ID Guru / Admin<input id="loginId" autocomplete="username" placeholder="contoh: G001" required /></label>
         <label>Password<input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••" required /></label>
-        <button class="btn primary" type="submit">Masuk</button>
-        <p class="demo-note">Demo: Guru <b>G001 / 123456</b> · Admin <b>ADMIN / admin123</b></p>
+        <button id="loginBtn" class="btn primary full" type="submit">Masuk</button>
+        <p id="loginHint" class="demo-note">Akun dikelola oleh administrator Pak Kom Eco Track.</p>
       </form>
     </div>
   </section>
@@ -39,6 +39,9 @@
     </main>
   </div>
 
-<script src="app.js"></script>
+  <input id="studentImport" type="file" accept=".xlsx,.xls,.csv" hidden />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="firebase-config.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
