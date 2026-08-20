@@ -145,7 +145,13 @@ async function master(){
   <div class="card" style="margin-top:16px"><div class="section-head"><h3>Daftar Kelas</h3><button id="seedClasses" class="btn ghost">Pastikan 7A–9I Tersedia</button></div><div class="grid class-grid">${state.classes.map(c=>`<div class="class-btn done"><b>${c}</b><small>Aktif</small></div>`).join('')}</div></div>`;
   $('#importStudents').onclick=()=>$('#studentImport').click(); $('#addTeacher').onclick=addTeacherPrompt; $('#seedClasses').onclick=seedClasses;
 }
-$('#studentImport').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;try{const buf=await f.arrayBuffer();const wb=XLSX.read(buf);const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});const normalized=rows.map(r=>({nis:String(r.NIS||r.nis||r['Nomor Induk']||'').trim(),name:String(r.Nama||r.nama||r['Nama Siswa']||'').trim(),classId:String(r.Kelas||r.kelas||r['KELAS']||'').trim().toUpperCase()})).filter(r=>r.nis&&r.name&&r.classId);if(!normalized.length)throw new Error('Kolom tidak cocok');const batch=writeBatch(db);normalized.forEach(s=>batch.set(doc(db,'students',s.nis),{...s,active:true,updatedAt:new Date().toISOString()},{merge:true}));await batch.commit();toast(`${normalized.length} siswa berhasil diimport`);e.target.value='';master();}catch(err){console.error(err);toast('Import gagal. Pastikan kolom NIS, Nama, Kelas tersedia.')}});
+$('#studentImport').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;try{const buf=await f.arrayBuffer();const wb=XLSX.read(buf);const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});const normalized=rows.map(r=>({nis:String(r.NIS||r.nis||r['Nomor Induk']||'').trim(),name:String(r.Nama||r.nama||r['Nama Siswa']||'').trim(),classId:String(r.Kelas||r.kelas||r['KELAS']||'').trim().toUpperCase()})).filter(r=>r.nis&&r.name&&r.classId);if(!normalized.length)throw new Error('Kolom tidak cocok');const chunkSize=450;
+    for(let start=0; start<normalized.length; start+=chunkSize){
+      const batch=writeBatch(db);
+      normalized.slice(start,start+chunkSize).forEach(s=>batch.set(doc(db,'students',s.nis),{...s,active:true,updatedAt:new Date().toISOString()},{merge:true}));
+      await batch.commit();
+    }
+    toast(`${normalized.length} siswa berhasil diimport`);e.target.value='';master();}catch(err){console.error(err);toast('Import gagal. Pastikan kolom NIS, Nama, Kelas tersedia.')}});
 
 async function seedClasses(){try{const batch=writeBatch(db);classesDefault.forEach(c=>batch.set(doc(db,'classes',c),{name:c,active:true},{merge:true}));await batch.commit();await refreshCore();toast('Daftar kelas 7A–9I siap');master();}catch(e){console.error(e);toast('Gagal membuat kelas')}}
 async function addTeacherPrompt(){

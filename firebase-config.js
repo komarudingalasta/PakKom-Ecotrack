@@ -1,10 +1,10 @@
-// Isi dengan konfigurasi Web App dari Firebase Console > Project settings > Your apps.
-// Jangan mengubah nama variabel window.PAKKOM_FIREBASE_CONFIG.
+// Firebase Web App configuration untuk Pak Kom Eco Track.
+// Keamanan data ditentukan oleh Firebase Authentication + Firestore Security Rules.
 window.PAKKOM_FIREBASE_CONFIG = {
-  apiKey: "GANTI_DENGAN_API_KEY",
-  authDomain: "GANTI.firebaseapp.com",
-  projectId: "GANTI_PROJECT_ID",
-  storageBucket: "GANTI.firebasestorage.app",
-  messagingSenderId: "GANTI_MESSAGING_SENDER_ID",
-  appId: "GANTI_APP_ID"
+  apiKey: "AIzaSyC6Vt_C-UM3BnvgBMnoitu5CBRHd3b_ikk",
+  authDomain: "pakkom-ecotrack.firebaseapp.com",
+  projectId: "pakkom-ecotrack",
+  storageBucket: "pakkom-ecotrack.firebasestorage.app",
+  messagingSenderId: "609321292317",
+  appId: "1:609321292317:web:3bf4e7d0c8ea6e861d2cf4"
 };
