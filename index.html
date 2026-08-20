@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0f766e" />
+  <title>Pak Kom Eco Track</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toast" class="toast"></div>
+  <section id="loginView" class="login-shell">
+    <div class="brand-card">
+      <div class="logo">🌿</div>
+      <h1>Pak Kom Eco Track</h1>
+      <p>Pendataan wadah makan dan tumbler siswa.</p>
+      <form id="loginForm" class="form-card">
+        <label>ID Guru / Admin<input id="loginId" autocomplete="username" placeholder="contoh: G001" required /></label>
+        <label>Password<input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••" required /></label>
+        <button class="btn primary" type="submit">Masuk</button>
+        <p class="demo-note">Demo: Guru <b>G001 / 123456</b> · Admin <b>ADMIN / admin123</b></p>
+      </form>
+    </div>
+  </section>
+
+  <div id="appView" class="app hidden">
+    <aside class="sidebar">
+      <div class="side-brand"><span>🌿</span><div><strong>Pak Kom</strong><small>Eco Track</small></div></div>
+      <nav id="nav"></nav>
+      <button id="logoutBtn" class="btn ghost full">Keluar</button>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <button id="menuBtn" class="menu-btn">☰</button>
+        <div><h2 id="pageTitle">Beranda</h2><p id="pageSubtitle"></p></div>
+        <div id="userChip" class="user-chip"></div>
+      </header>
+      <section id="content" class="content"></section>
+    </main>
+  </div>
+
+<script src="app.js"></script>
+</body>
+</html>
