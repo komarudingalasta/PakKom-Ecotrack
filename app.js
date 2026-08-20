@@ -9,7 +9,12 @@ const content = $('#content');
 const classesDefault = ['7A','7B','7C','7D','7E','7F','7G','7H','7I','8A','8B','8C','8D','8E','8F','8G','8H','8I','9A','9B','9C','9D','9E','9F','9G','9H','9I'];
 const todayKey = () => new Date().toLocaleDateString('en-CA');
 const dateID = () => new Intl.DateTimeFormat('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date());
-const loginEmail = id => `${String(id).trim().toLowerCase().replace(/[^a-z0-9._-]/g,'')}@pakkom-ecotrack.app`;
+const ADMIN_LOGIN_EMAIL = 'komarudingalasta@gmail.com';
+const loginEmail = id => {
+  const normalized = String(id).trim().toUpperCase();
+  if (normalized === 'ADMIN') return ADMIN_LOGIN_EMAIL;
+  return `${normalized.toLowerCase().replace(/[^a-z0-9._-]/g,'')}@pakkom-ecotrack.app`;
+};
 let app, auth, db;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], recordsToday:[], students:[] };
 

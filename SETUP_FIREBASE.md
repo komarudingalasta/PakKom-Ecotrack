@@ -50,7 +50,7 @@ Admin pertama dibuat manual karena belum ada admin lain yang boleh membuat profi
 ### 1. Authentication
 Firebase Console > Authentication > Users > Add user.
 
-- Email: `admin@pakkom-ecotrack.app`
+- Email: `komarudingalasta@gmail.com`
 - Password: tentukan password admin minimal 6 karakter.
 
 Setelah dibuat, salin **User UID**.
