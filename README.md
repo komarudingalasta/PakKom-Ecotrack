@@ -1,48 +1,26 @@
-# Pak Kom Eco Track v2.2 — Firebase Ready
+# Pak Kom Eco Track v2.4
 
-Web pendataan wadah makan dan tumbler siswa untuk penggunaan bersama oleh Guru dan Admin.
+Fokus versi 2.4:
+- Sinkron master siswa dari Firebase PakKom Exambro.
+- Edit nama, kelas, dan status aktif siswa langsung di Eco Track.
+- Edit lokal tidak langsung ditimpa saat sinkronisasi berikutnya.
+- Tombol **Ikuti Exambro** untuk mengembalikan siswa ke data sumber terakhir.
+- Tambah siswa lokal dan Import Excel tetap tersedia.
+- Kelas baru dari data siswa otomatis dibuat pada collection `classes`.
 
-## Fitur utama
-- Login Guru/Admin dengan ID sederhana
-- Firebase Authentication + Cloud Firestore
-- Role Guru dan Admin dari Firestore
-- Pendataan kelas 7A–9I
-- Hadir / Izin / Sakit / Alpa
-- Wadah makan dan tumbler
-- Input massal untuk mempercepat pendataan
-- Status kelas sudah/belum didata
-- Koreksi dengan audit pengguna dan waktu
-- Rekap harian
-- Admin import Excel siswa, termasuk data >500 siswa
-- Admin membuat akun Guru
-- Firestore Security Rules
-- Responsif HP, tablet, dan PC
+## Cara sinkronisasi
+1. Login sebagai ADMIN Eco Track.
+2. Buka **Kelola Data**.
+3. Tekan **Sinkron Exambro**.
+4. Eco Track masuk secara anonim ke project Firebase PakKom Exambro dan membaca collection `students`.
+5. NIS digunakan sebagai kunci sinkronisasi.
 
-## Mulai pemasangan
-Ikuti panduan lengkap pada `SETUP_FIREBASE.md`.
+PakKom Exambro saat ini menggunakan project `pakkom-exambro-643f6` dan collection `students` dengan field utama `nis`, `name`, `classId`, `active`, dan `approved`.
 
-## Struktur file
-- `index.html` — tampilan utama
-- `styles.css` — desain responsif
-- `app.js` — logika aplikasi + Firebase
-- `firebase-config.js` — tempat konfigurasi project Firebase Anda
-- `firestore.rules` — Security Rules
-- `SETUP_FIREBASE.md` — panduan dari nol sampai login Admin
+## Catatan Firebase Exambro
+Anonymous Authentication perlu aktif karena Firestore Rules Exambro mensyaratkan `request.auth != null` untuk membaca `students`.
 
-## Catatan
-Jangan mengunggah project dengan Firestore dalam mode terbuka. Gunakan `firestore.rules` yang disertakan sebelum web dipakai oleh guru.
-
-
-## Firebase project terhubung
-
-Versi v2.2 sudah berisi konfigurasi project Firebase `pakkom-ecotrack`. Sebelum digunakan, aktifkan Email/Password pada Firebase Authentication, buat Cloud Firestore, lalu publish `firestore.rules` yang disertakan.
-
-
-## Kelas otomatis
-Pada login Admin pertama, aplikasi otomatis memastikan dokumen kelas 7A–7I, 8A–8I, dan 9A–9I tersedia di collection `classes`. Kelas yang sudah ada tidak dibuat ulang atau diduplikasi. Setiap kelas otomatis memiliki `name`, `grade`, `active`, dan `createdAt`. Tombol **Sinkronkan Kelas 7A–9I** di menu Kelola Data hanya menjadi opsi cadangan.
-
-
-## Perbaikan v2.3.2
-- Login `ADMIN` dipetakan eksplisit ke `komarudingalasta@gmail.com`.
-- Pesan error Firebase ditampilkan lebih spesifik untuk membedakan masalah password, provider Authentication, Firestore Rules, dan profil `users/{UID}`.
-- UID Admin yang diharapkan: `QdCkxPDqpiSboQ3CBYjZUaxtkX12`.
+## Perilaku edit + sinkron
+- Belum pernah diedit di Eco Track: nama/kelas mengikuti Exambro pada setiap sinkron.
+- Pernah diedit di Eco Track: nama/kelas lokal dipertahankan; data sumber terbaru tetap disimpan sebagai `sourceName` dan `sourceClassId`.
+- Tekan **Ikuti Exambro** untuk membuang override lokal dan kembali ke data Exambro terakhir.

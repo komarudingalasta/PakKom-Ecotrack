@@ -1,8 +1,9 @@
 import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
+import { getAuth, signInWithEmailAndPassword, signInAnonymously, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, writeBatch, serverTimestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 const cfg = window.PAKKOM_FIREBASE_CONFIG || {};
+const exambroCfg = window.PAKKOM_EXAMBRO_FIREBASE_CONFIG || {};
 const configured = cfg.apiKey && !String(cfg.apiKey).includes('GANTI_') && cfg.projectId && !String(cfg.projectId).includes('GANTI_');
 const $ = s => document.querySelector(s);
 const content = $('#content');
@@ -162,22 +163,128 @@ function account(){ pageMeta('Akun','Informasi pengguna'); content.innerHTML=`<d
 
 async function master(){
   if(state.profile.role!=='admin'){state.page='home';return renderShell()}
-  pageMeta('Kelola Data','Khusus Administrator');
+  pageMeta('Kelola Data','Khusus Administrator • v2.4');
   content.innerHTML='<div class="card"><div class="empty">Memuat data master...</div></div>';
   const [stuSnap,userSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users'))]);
-  state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})); const users=userSnap.docs.map(d=>({uid:d.id,...d.data()}));
-  content.innerHTML=`<div class="grid two-col"><div class="card"><div class="section-head"><div><h3>Master Siswa</h3><small>${state.students.length} siswa</small></div><button id="importStudents" class="btn primary">Import Excel</button></div><p>Kolom yang dikenali: <b>NIS</b>, <b>Nama</b>, <b>Kelas</b>.</p><div class="notice">Import akan menambah/memperbarui siswa berdasarkan NIS.</div></div>
-  <div class="card"><div class="section-head"><div><h3>Akun Guru</h3><small>${users.filter(u=>u.role==='guru').length} guru</small></div><button id="addTeacher" class="btn primary">+ Guru</button></div>${users.filter(u=>u.role==='guru').slice(0,8).map(u=>`<p><b>${esc(u.name)}</b><br><small>${esc(u.loginId||'')} • ${u.active===false?'Nonaktif':'Aktif'}</small></p>`).join('')||'<div class="empty">Belum ada guru.</div>'}</div></div>
-  <div class="card" style="margin-top:16px"><div class="section-head"><h3>Daftar Kelas</h3><button id="seedClasses" class="btn ghost">Sinkronkan Kelas 7A–9I</button></div><div class="grid class-grid">${state.classes.map(c=>`<div class="class-btn done"><b>${c}</b><small>Aktif</small></div>`).join('')}</div></div>`;
-  $('#importStudents').onclick=()=>$('#studentImport').click(); $('#addTeacher').onclick=addTeacherPrompt; $('#seedClasses').onclick=seedClasses;
+  state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));
+  const users=userSnap.docs.map(d=>({uid:d.id,...d.data()}));
+  const exambroCount=state.students.filter(s=>s.source==='exambro').length;
+  content.innerHTML=`
+  <div class="grid stats admin-stats">
+    <div class="stat"><span>Total siswa</span><strong>${state.students.length}</strong></div>
+    <div class="stat"><span>Dari Exambro</span><strong>${exambroCount}</strong></div>
+    <div class="stat"><span>Kelas aktif</span><strong>${state.classes.length}</strong></div>
+    <div class="stat"><span>Akun guru</span><strong>${users.filter(u=>u.role==='guru').length}</strong></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="section-head"><div><h3>Master Siswa</h3><small>Sinkron dari PakKom Exambro atau kelola langsung di Eco Track</small></div><div class="row-actions"><button id="syncExambro" class="btn primary">↻ Sinkron Exambro</button><button id="importStudents" class="btn ghost">Import Excel</button></div></div>
+    <div class="notice">Sinkronisasi memakai <b>NIS</b> sebagai kunci. Siswa baru ditambahkan, siswa lama diperbarui. Jika data pernah diedit manual di Eco Track, nama/kelas lokal dipertahankan sampai Anda memilih “Ikuti Exambro” lagi.</div>
+    <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button></div>
+    <div id="studentTable"></div>
+  </div>
+  <div class="grid two-col" style="margin-top:16px">
+    <div class="card"><div class="section-head"><div><h3>Akun Guru</h3><small>${users.filter(u=>u.role==='guru').length} guru</small></div><button id="addTeacher" class="btn primary">+ Guru</button></div>${users.filter(u=>u.role==='guru').slice(0,8).map(u=>`<p><b>${esc(u.name)}</b><br><small>${esc(u.loginId||'')} • ${u.active===false?'Nonaktif':'Aktif'}</small></p>`).join('')||'<div class="empty">Belum ada guru.</div>'}</div>
+    <div class="card"><div class="section-head"><h3>Daftar Kelas</h3><button id="seedClasses" class="btn ghost">Sinkronkan 7A–9I</button></div><div class="grid class-grid">${state.classes.map(c=>`<div class="class-btn done"><b>${c}</b><small>Aktif</small></div>`).join('')}</div></div>
+  </div>`;
+  $('#importStudents').onclick=()=>$('#studentImport').click();
+  $('#addTeacher').onclick=addTeacherPrompt;
+  $('#seedClasses').onclick=seedClasses;
+  $('#syncExambro').onclick=syncStudentsFromExambro;
+  $('#addStudentLocal').onclick=addStudentLocal;
+  $('#studentSearch').oninput=renderStudentMasterTable;
+  $('#studentClassFilter').onchange=renderStudentMasterTable;
+  renderStudentMasterTable();
 }
-$('#studentImport').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;try{const buf=await f.arrayBuffer();const wb=XLSX.read(buf);const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});const normalized=rows.map(r=>({nis:String(r.NIS||r.nis||r['Nomor Induk']||'').trim(),name:String(r.Nama||r.nama||r['Nama Siswa']||'').trim(),classId:String(r.Kelas||r.kelas||r['KELAS']||'').trim().toUpperCase()})).filter(r=>r.nis&&r.name&&r.classId);if(!normalized.length)throw new Error('Kolom tidak cocok');const chunkSize=450;
-    for(let start=0; start<normalized.length; start+=chunkSize){
+
+function renderStudentMasterTable(){
+  const target=$('#studentTable'); if(!target)return;
+  const q=String($('#studentSearch')?.value||'').trim().toLowerCase();
+  const cls=$('#studentClassFilter')?.value||'';
+  const rows=state.students.filter(s=>(!cls||s.classId===cls)&&(!q||String(s.nis||s.id).toLowerCase().includes(q)||String(s.name||'').toLowerCase().includes(q)));
+  target.innerHTML=`<div class="table-wrap"><table class="student-master"><thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th>Sumber</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(s=>`<tr><td><b>${esc(s.nis||s.id)}</b></td><td>${esc(s.name||'-')}${s.localEdited?'<br><small class="edited-note">Diedit di Eco Track</small>':''}</td><td>${esc(s.classId||'-')}</td><td><span class="badge ${s.source==='exambro'?'ok':'neutral'}">${s.source==='exambro'?'Exambro':'Eco Track'}</span></td><td><span class="badge ${s.active===false?'warn':'ok'}">${s.active===false?'Nonaktif':'Aktif'}</span></td><td><div class="row-actions"><button class="btn-mini edit" data-edit-student="${esc(s.id)}">Edit</button>${s.source==='exambro'&&s.localEdited?`<button class="btn-mini sync" data-follow-exambro="${esc(s.id)}">Ikuti Exambro</button>`:''}</div></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
+  document.querySelectorAll('[data-edit-student]').forEach(b=>b.onclick=()=>editStudent(b.dataset.editStudent));
+  document.querySelectorAll('[data-follow-exambro]').forEach(b=>b.onclick=()=>followExambro(b.dataset.followExambro));
+}
+
+async function syncStudentsFromExambro(){
+  const btn=$('#syncExambro'); if(!btn)return;
+  if(!exambroCfg.apiKey||!exambroCfg.projectId){toast('Konfigurasi PakKom Exambro belum tersedia');return;}
+  btn.disabled=true; btn.textContent='Menyinkronkan...';
+  let exApp=null;
+  try{
+    exApp=initializeApp(exambroCfg,`exambro-sync-${Date.now()}`);
+    const exAuth=getAuth(exApp); const exDb=getFirestore(exApp);
+    await signInAnonymously(exAuth);
+    const snap=await getDocs(collection(exDb,'students'));
+    const source=snap.docs.map(d=>({sourceId:d.id,...d.data()})).filter(x=>String(x.nis||'').trim()&&String(x.name||'').trim()&&String(x.classId||'').trim());
+    const localSnap=await getDocs(collection(db,'students'));
+    const localByNis=new Map(localSnap.docs.map(d=>[String(d.data().nis||d.id).trim(),{id:d.id,...d.data()}]));
+    let added=0,updated=0,keptLocal=0,skipped=0;
+    const now=new Date().toISOString();
+    for(let start=0;start<source.length;start+=400){
       const batch=writeBatch(db);
-      normalized.slice(start,start+chunkSize).forEach(s=>batch.set(doc(db,'students',s.nis),{...s,active:true,updatedAt:new Date().toISOString()},{merge:true}));
+      source.slice(start,start+400).forEach(x=>{
+        const nis=String(x.nis).trim(), sourceName=String(x.name).trim(), sourceClassId=String(x.classId).trim().toUpperCase();
+        if(!nis||!sourceName||!sourceClassId){skipped++;return;}
+        const old=localByNis.get(nis); const ref=doc(db,'students',old?.id||nis);
+        const base={nis,source:'exambro',exambroStudentId:x.sourceId,sourceName,sourceClassId,sourceActive:x.active!==false,sourceApproved:x.approved===true,lastSyncedAt:now};
+        if(!old){batch.set(ref,{...base,name:sourceName,classId:sourceClassId,active:x.active!==false,localEdited:false,createdAt:now,updatedAt:now},{merge:true});added++;}
+        else if(old.localEdited===true){batch.set(ref,{...base,updatedAt:now},{merge:true});keptLocal++;}
+        else{batch.set(ref,{...base,name:sourceName,classId:sourceClassId,active:x.active!==false,updatedAt:now},{merge:true});updated++;}
+      });
       await batch.commit();
     }
-    toast(`${normalized.length} siswa berhasil diimport`);e.target.value='';master();}catch(err){console.error(err);toast('Import gagal. Pastikan kolom NIS, Nama, Kelas tersedia.')}});
+    await ensureClassesFromStudents();
+    toast(`Sinkron selesai: ${added} baru, ${updated} diperbarui, ${keptLocal} edit lokal dipertahankan${skipped?`, ${skipped} dilewati`:''}`,7000);
+    await master();
+  }catch(e){
+    console.error('Exambro sync failed',e);
+    const msg=e?.code==='auth/operation-not-allowed'?'Anonymous Authentication pada Firebase Exambro belum aktif.':e?.code==='permission-denied'?'Firestore Rules Exambro menolak pembacaan siswa.':`Sinkronisasi Exambro gagal${e?.code?` (${e.code})`:''}.`;
+    toast(msg,7500);
+  }finally{
+    if(exApp) await deleteApp(exApp).catch(()=>{});
+    if($('#syncExambro')){$('#syncExambro').disabled=false;$('#syncExambro').textContent='↻ Sinkron Exambro';}
+  }
+}
+
+async function ensureClassesFromStudents(){
+  const snap=await getDocs(collection(db,'students'));
+  const ids=[...new Set(snap.docs.map(d=>String(d.data().classId||'').trim().toUpperCase()).filter(Boolean))];
+  const existing=await getDocs(collection(db,'classes')); const have=new Set(existing.docs.map(d=>d.id));
+  const missing=ids.filter(id=>!have.has(id)); if(!missing.length)return 0;
+  for(let start=0;start<missing.length;start+=400){const batch=writeBatch(db);missing.slice(start,start+400).forEach(c=>batch.set(doc(db,'classes',c),{name:c,grade:Number(String(c).match(/^\d+/)?.[0]||0),active:true,createdAt:new Date().toISOString()},{merge:true}));await batch.commit();}
+  await refreshCore(); return missing.length;
+}
+
+async function editStudent(id){
+  const s=state.students.find(x=>x.id===id); if(!s)return;
+  const name=prompt('Nama siswa:',s.name||''); if(name===null)return;
+  const classId=prompt('Kelas:',s.classId||''); if(classId===null)return;
+  const normalizedClass=classId.trim().toUpperCase(); if(!name.trim()||!normalizedClass)return toast('Nama dan kelas wajib diisi');
+  const active=confirm('Klik OK jika siswa AKTIF. Klik Batal jika ingin NONAKTIFKAN.');
+  try{
+    await setDoc(doc(db,'students',id),{name:name.trim(),classId:normalizedClass,active,localEdited:true,localEditedAt:new Date().toISOString(),localEditedByUid:state.user.uid,localEditedByName:state.profile.name,updatedAt:new Date().toISOString()},{merge:true});
+    await ensureClassesFromStudents(); toast('Data siswa diperbarui'); await master();
+  }catch(e){console.error(e);toast('Gagal mengedit siswa');}
+}
+
+async function followExambro(id){
+  const s=state.students.find(x=>x.id===id); if(!s||!s.sourceName||!s.sourceClassId)return;
+  if(!confirm(`Kembalikan ${s.name} mengikuti data terakhir dari Exambro?`))return;
+  try{await setDoc(doc(db,'students',id),{name:s.sourceName,classId:s.sourceClassId,active:s.sourceActive!==false,localEdited:false,localEditedAt:null,localEditedByUid:null,localEditedByName:null,updatedAt:new Date().toISOString()},{merge:true});toast('Siswa kembali mengikuti data Exambro');await master();}catch(e){console.error(e);toast('Gagal mengembalikan data');}
+}
+
+async function addStudentLocal(){
+  const nis=prompt('NIS siswa:'); if(!nis)return;
+  const name=prompt('Nama siswa:'); if(!name)return;
+  const classId=prompt('Kelas (contoh 7A):'); if(!classId)return;
+  const key=nis.trim(); if(state.students.some(s=>String(s.nis||s.id).trim()===key))return toast('NIS sudah ada');
+  try{await setDoc(doc(db,'students',key),{nis:key,name:name.trim(),classId:classId.trim().toUpperCase(),active:true,source:'ecotrack',localEdited:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()},{merge:false});await ensureClassesFromStudents();toast('Siswa berhasil ditambahkan');await master();}catch(e){console.error(e);toast('Gagal menambah siswa');}
+}
+
+$('#studentImport').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;try{const buf=await f.arrayBuffer();const wb=XLSX.read(buf);const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});const normalized=rows.map(r=>({nis:String(r.NIS||r.nis||r['Nomor Induk']||'').trim(),name:String(r.Nama||r.nama||r['Nama Siswa']||'').trim(),classId:String(r.Kelas||r.kelas||r['KELAS']||'').trim().toUpperCase()})).filter(r=>r.nis&&r.name&&r.classId);if(!normalized.length)throw new Error('Kolom tidak cocok');const chunkSize=400;
+    for(let start=0; start<normalized.length; start+=chunkSize){const batch=writeBatch(db);normalized.slice(start,start+chunkSize).forEach(s=>batch.set(doc(db,'students',s.nis),{...s,active:true,source:'ecotrack-import',localEdited:true,updatedAt:new Date().toISOString()},{merge:true}));await batch.commit();}
+    await ensureClassesFromStudents();toast(`${normalized.length} siswa berhasil diimport`);e.target.value='';master();}catch(err){console.error(err);toast('Import gagal. Pastikan kolom NIS, Nama, Kelas tersedia.')}});
 
 async function ensureDefaultClasses(){
   try{
