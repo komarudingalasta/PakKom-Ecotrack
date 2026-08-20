@@ -1,10 +1,9 @@
-# Pak Kom Eco Track v2.5
+# Pak Kom Eco Track v2.6
 
 Web pendataan wadah makan dan tumbler siswa berbasis Firebase.
 
 ## Perubahan v2.5
 
-- Sinkronisasi PakKom Exambro dihapus.
 - Master siswa menggunakan Import Excel atau edit langsung oleh Admin.
 - Siswa tidak memiliki akun dan tidak membutuhkan password.
 - Format import siswa: `NIS | Nama | Kelas | Status`.
@@ -38,3 +37,10 @@ Web pendataan wadah makan dan tumbler siswa berbasis Firebase.
 ## File format
 
 `format-import-pak-kom-eco-track.xlsx` sudah disertakan dalam folder dan dapat diunduh dari halaman Admin.
+
+## Baru di v2.6
+- Tidak ada integrasi atau akun Exambro.
+- Dashboard harian lebih informatif.
+- Kartu khusus Kelas Saya untuk wali kelas.
+- Rekap dapat difilter berdasarkan tanggal dan kelas.
+- Status kelas sudah/belum input tetap terlihat jelas.

@@ -98,8 +98,18 @@ function home(){
   const items=state.recordsToday.flatMap(r=>(r.items||[]).filter(i=>i.presence==='hadir'));
   const food=items.length?Math.round(items.filter(i=>i.food).length/items.length*100):0;
   const tumb=items.length?Math.round(items.filter(i=>i.tumbler).length/items.length*100):0;
+  const both=items.length?Math.round(items.filter(i=>i.food&&i.tumbler).length/items.length*100):0;
+  const waliClass=state.profile?.isHomeroom?state.profile.homeroomClass:'';
+  const waliRec=waliClass?classRecord(waliClass):null;
+  let waliHtml='';
+  if(waliClass){
+    const hadir=(waliRec?.items||[]).filter(i=>i.presence==='hadir');
+    const wp=hadir.length?Math.round(hadir.filter(i=>i.food&&i.tumbler).length/hadir.length*100):0;
+    waliHtml=`<div class="card homeroom-card"><div class="section-head"><div><span class="badge ok">Wali Kelas</span><h3 style="margin:8px 0 0">Kelas Saya • ${esc(waliClass)}</h3></div><button class="btn secondary" data-class="${esc(waliClass)}">${waliRec?'Lihat / Koreksi':'Input Sekarang'}</button></div><p>${waliRec?`Pendataan hari ini selesai • kepatuhan keduanya <b>${wp}%</b>`:'Kelas binaan Anda belum didata hari ini.'}</p></div>`;
+  }
   content.innerHTML=`<div class="grid stats"><div class="stat"><span>Kelas selesai</span><strong>${done.size}/${state.classes.length}</strong></div><div class="stat"><span>Belum didata</span><strong>${state.classes.length-done.size}</strong></div><div class="stat"><span>Membawa wadah</span><strong>${food}%</strong></div><div class="stat"><span>Membawa tumbler</span><strong>${tumb}%</strong></div></div>
-  <div class="grid two-col" style="margin-top:16px"><div class="card"><div class="section-head"><h3>Status Pendataan Hari Ini</h3><button class="btn primary" id="startInput">Mulai Pendataan</button></div><div class="grid class-grid">${state.classes.map(c=>{const r=classRecord(c);return `<button class="class-btn ${r?'done':'pending'}" data-class="${c}"><b>${c}</b><small>${r?'✓ '+esc(r.lastEditedByName||r.createdByName||'Guru'):'Belum didata'}</small></button>`}).join('')}</div></div><div class="card"><h3>Ringkasan</h3><p>Semua guru aktif dapat mendata kelas mana pun. Koreksi tetap mencatat pengguna dan waktu perubahan.</p><div class="notice">Hari ini masih ada <b>${state.classes.length-done.size}</b> kelas yang belum didata.</div></div></div>`;
+  ${waliHtml}
+  <div class="grid two-col" style="margin-top:16px"><div class="card"><div class="section-head"><h3>Status Pendataan Hari Ini</h3><button class="btn primary" id="startInput">Mulai Pendataan</button></div><div class="grid class-grid">${state.classes.map(c=>{const r=classRecord(c);return `<button class="class-btn ${r?'done':'pending'}" data-class="${c}"><b>${c}</b><small>${r?'✓ '+esc(r.lastEditedByName||r.createdByName||'Guru'):'Belum didata'}</small></button>`}).join('')}</div></div><div class="card"><h3>Ringkasan Sekolah</h3><p>Semua guru aktif dapat mendata kelas mana pun. Koreksi tetap mencatat pengguna dan waktu perubahan.</p><div class="notice">Kepatuhan membawa <b>wadah + tumbler ${both}%</b>. Hari ini masih ada <b>${state.classes.length-done.size}</b> kelas yang belum didata.</div></div></div>`;
   $('#startInput').onclick=()=>{state.page='input';renderShell()}; bindClassButtons();
 }
 function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;renderShell()}); }
@@ -154,15 +164,28 @@ async function saveClass(c){
 }
 
 function recap(){
-  pageMeta('Rekap','Ringkasan kepatuhan wadah dan tumbler');
-  const cards=state.classes.map(c=>{const r=classRecord(c);if(!r)return {c,food:0,tumb:0,both:0,status:'Belum'};const hadir=(r.items||[]).filter(i=>i.presence==='hadir');const pct=f=>hadir.length?Math.round(hadir.filter(f).length/hadir.length*100):0;return {c,food:pct(i=>i.food),tumb:pct(i=>i.tumbler),both:pct(i=>i.food&&i.tumbler),status:'Selesai'}});
-  content.innerHTML=`<div class="card"><div class="section-head"><h3>Rekap Hari Ini</h3><span class="badge neutral">${dateID()}</span></div><div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Wadah</th><th>Tumbler</th><th>Keduanya</th></tr></thead><tbody>${cards.map(x=>`<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'warn'}">${x.status}</span></td><td>${x.food}%</td><td>${x.tumb}%</td><td><div style="display:flex;align-items:center;gap:8px"><div class="progress" style="width:120px"><i style="width:${x.both}%"></i></div><b>${x.both}%</b></div></td></tr>`).join('')}</tbody></table></div></div>`;
+  pageMeta('Rekap','Filter tanggal dan kelas');
+  content.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap Pendataan</h3><small>Pilih tanggal untuk melihat histori pendataan.</small></div><div class="row-actions"><input id="recapDate" class="input-inline" type="date" value="${todayKey()}"><select id="recapClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div><div id="recapBody"><div class="empty">Memuat rekap...</div></div></div>`;
+  $('#recapDate').onchange=loadRecapDate; $('#recapClass').onchange=loadRecapDate; loadRecapDate();
 }
+async function loadRecapDate(){
+  const target=$('#recapBody'); if(!target)return;
+  const date=$('#recapDate').value||todayKey(), cls=$('#recapClass').value||'';
+  target.innerHTML='<div class="empty">Memuat...</div>';
+  try{
+    const snap=await getDocs(query(collection(db,'records'),where('date','==',date)));
+    const records=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const classes=cls?[cls]:state.classes;
+    const cards=classes.map(c=>{const r=records.find(x=>x.classId===c);if(!r)return {c,status:'Belum',hadir:0,food:0,tumb:0,both:0,by:'-'};const hadir=(r.items||[]).filter(i=>i.presence==='hadir');const pct=f=>hadir.length?Math.round(hadir.filter(f).length/hadir.length*100):0;return {c,status:'Selesai',hadir:hadir.length,food:pct(i=>i.food),tumb:pct(i=>i.tumbler),both:pct(i=>i.food&&i.tumbler),by:r.lastEditedByName||r.createdByName||'Guru'};});
+    target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th></tr></thead><tbody>${cards.map(x=>`<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'warn'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td></tr>`).join('')}</tbody></table></div>`;
+  }catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap tanggal tersebut.</div>';}
+}
+
 function account(){ pageMeta('Akun','Informasi pengguna'); const type=state.profile.role==='admin'?'Administrator':(state.profile.isHomeroom?'Wali Kelas':'Guru'); const wali=state.profile.isHomeroom&&state.profile.homeroomClass?`<p><b>Kelas Wali:</b> ${esc(state.profile.homeroomClass)}</p>`:''; content.innerHTML=`<div class="card" style="max-width:600px"><h3>${esc(state.profile.name)}</h3><p><b>ID:</b> ${esc(state.profile.loginId||'-')}</p><p><b>Peran:</b> ${type}</p>${wali}<p><b>Status:</b> ${state.profile.active!==false?'Aktif':'Nonaktif'}</p><div class="notice">Guru dan wali kelas memiliki akses pendataan yang sama. Penanda wali kelas digunakan sebagai informasi tanggung jawab kelas.</div></div>`; }
 
 async function master(){
   if(state.profile.role!=='admin'){state.page='home';return renderShell()}
-  pageMeta('Kelola Data','Khusus Administrator • v2.5');
+  pageMeta('Kelola Data','Khusus Administrator • v2.6');
   content.innerHTML='<div class="card"><div class="empty">Memuat data master...</div></div>';
   const [stuSnap,userSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users'))]);
   state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));
