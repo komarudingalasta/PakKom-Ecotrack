@@ -40,3 +40,9 @@ Versi v2.2 sudah berisi konfigurasi project Firebase `pakkom-ecotrack`. Sebelum 
 
 ## Kelas otomatis
 Pada login Admin pertama, aplikasi otomatis memastikan dokumen kelas 7A–7I, 8A–8I, dan 9A–9I tersedia di collection `classes`. Kelas yang sudah ada tidak dibuat ulang atau diduplikasi. Setiap kelas otomatis memiliki `name`, `grade`, `active`, dan `createdAt`. Tombol **Sinkronkan Kelas 7A–9I** di menu Kelola Data hanya menjadi opsi cadangan.
+
+
+## Perbaikan v2.3.2
+- Login `ADMIN` dipetakan eksplisit ke `komarudingalasta@gmail.com`.
+- Pesan error Firebase ditampilkan lebih spesifik untuk membedakan masalah password, provider Authentication, Firestore Rules, dan profil `users/{UID}`.
+- UID Admin yang diharapkan: `QdCkxPDqpiSboQ3CBYjZUaxtkX12`.

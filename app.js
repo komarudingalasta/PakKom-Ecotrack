@@ -18,7 +18,20 @@ const loginEmail = id => {
 let app, auth, db;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], recordsToday:[], students:[] };
 
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
+function toast(msg, ms=4200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.classList.remove('show'),ms); }
+function authErrorMessage(e){
+  const code=e?.code||'';
+  const map={
+    'auth/invalid-credential':'Email/ID atau password tidak cocok dengan Firebase Authentication.',
+    'auth/wrong-password':'Password tidak cocok.',
+    'auth/user-not-found':'Akun tidak ditemukan di Firebase Authentication.',
+    'auth/user-disabled':'Akun Firebase dinonaktifkan.',
+    'auth/operation-not-allowed':'Login Email/Password belum diaktifkan di Firebase Authentication.',
+    'auth/too-many-requests':'Terlalu banyak percobaan login. Tunggu sebentar lalu coba lagi.',
+    'auth/network-request-failed':'Koneksi ke Firebase gagal. Periksa internet lalu coba lagi.'
+  };
+  return map[code] || `Login gagal${code?` (${code})`:''}.`;
+}
 function esc(v=''){ return String(v).replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m])); }
 function pageMeta(title,sub=''){ $('#pageTitle').textContent=title; $('#pageSubtitle').textContent=sub; }
 function navItems(){ const base=[['home','🏠 Beranda'],['input','📝 Pendataan'],['recap','📊 Rekap'],['account','👤 Akun']]; if(state.profile?.role==='admin') base.splice(3,0,['master','⚙️ Kelola Data']); return base; }
@@ -33,11 +46,12 @@ if(!configured){
     if(!user){ state.user=null; state.profile=null; renderShell(); return; }
     try{
       const snap=await getDoc(doc(db,'users',user.uid));
-      if(!snap.exists() || snap.data().active===false){ await signOut(auth); toast('Akun tidak aktif atau belum terdaftar'); return; }
+      if(!snap.exists()){ await signOut(auth); toast(`Authentication berhasil, tetapi profil users/${user.uid} tidak ditemukan.`,6500); return; }
+      if(snap.data().active===false){ await signOut(auth); toast('Akun ditemukan tetapi status active = false.',6500); return; }
       state.user=user; state.profile={uid:user.uid,...snap.data()};
       if(state.profile.role==='admin') await ensureDefaultClasses();
       await refreshCore(); renderShell();
-    }catch(e){ console.error(e); toast('Gagal membaca profil akun'); }
+    }catch(e){ console.error(e); toast(`Authentication berhasil, tetapi Firestore gagal membaca profil: ${e.code||e.message||'unknown error'}`,7000); }
   });
 }
 
@@ -45,8 +59,14 @@ $('#loginForm').addEventListener('submit',async e=>{
   e.preventDefault(); if(!configured)return;
   const id=$('#loginId').value.trim(); const password=$('#loginPassword').value;
   $('#loginBtn').disabled=true; $('#loginBtn').textContent='Memeriksa...';
-  try{ await signInWithEmailAndPassword(auth,loginEmail(id),password); }
-  catch(e){ console.error(e); toast('ID Guru/Admin atau password salah'); }
+  try{
+    const email=loginEmail(id);
+    const cred=await signInWithEmailAndPassword(auth,email,password);
+    if(id.trim().toUpperCase()==='ADMIN' && cred.user.email?.toLowerCase()!==ADMIN_LOGIN_EMAIL.toLowerCase()){
+      await signOut(auth); throw new Error('Admin login terhubung ke email yang tidak sesuai.');
+    }
+  }
+  catch(e){ console.error(e); toast(authErrorMessage(e),6500); }
   finally{ $('#loginBtn').disabled=false; $('#loginBtn').textContent='Masuk'; }
 });
 $('#logoutBtn').onclick=()=>signOut(auth);
