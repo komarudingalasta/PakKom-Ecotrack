@@ -9,7 +9,28 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-      allow create, update, delete: if isAdmin();
+
+      // Pendaftaran mandiri guru hanya boleh membuat profil miliknya sendiri
+      // dalam status belum disetujui dan belum aktif.
+      allow create: if isAdmin() || (
+        signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'loginId','name','role','approved','active','rejected',
+          'requestedType','requestedHomeroomClass',
+          'isHomeroom','homeroomClass','createdAt'
+        ])
+        && request.resource.data.loginId is string
+        && request.resource.data.name is string
+        && request.resource.data.role == 'guru'
+        && request.resource.data.approved == false
+        && request.resource.data.active == false
+        && request.resource.data.rejected == false
+        && request.resource.data.requestedType in ['guru','wali']
+        && request.resource.data.isHomeroom == false
+        && request.resource.data.homeroomClass == ''
+      );
+      allow update, delete: if isAdmin();
     }
 
     match /classes/{classId} {

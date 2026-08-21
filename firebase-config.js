@@ -1,4 +1,4 @@
-// Firebase Web App configuration untuk Pak Kom Eco Track.
+// Firebase Web App configuration untuk PakKom Eco Track.
 // Keamanan data ditentukan oleh Firebase Authentication + Firestore Security Rules.
 window.PAKKOM_FIREBASE_CONFIG = {
   apiKey: "AIzaSyC6Vt_C-UM3BnvgBMnoitu5CBRHd3b_ikk",

@@ -55,3 +55,9 @@
   .clean-item{grid-template-columns:72px 1fr 72px;padding:12px;gap:8px}.clean-class b{font-size:19px}.clean-status b{font-size:12px}.clean-meta{font-size:11px}.clean-form{padding:14px}.aspect-row{padding:12px}.tri-choice{gap:4px}.tri-choice button{font-size:11px;padding:10px 5px}.clean-actions{position:sticky;bottom:74px;background:#fff;padding:10px 0;margin-bottom:-5px}.clean-actions .btn{flex:1}
   .recap-switch{grid-template-columns:1fr}.recap-module{padding:14px}.login-panel{padding:24px 18px}.login-brand{margin-bottom:22px}.login-brand h1{font-size:24px}.login-form{padding:20px;border-radius:18px}
 }
+
+/* v2.8 Data Management & Teacher Approval */
+.register-card{max-width:720px}.register-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.register-grid label{display:grid;gap:6px}.register-grid input,.register-grid select{width:100%}
+.approval-box{margin:14px 0;padding:14px;border:1px solid #fde68a;background:#fffbeb;border-radius:16px}.import-preview{max-height:420px;overflow:auto}.btn-mini.danger{background:#fff1f2;color:#be123c;border:1px solid #fecdd3}.class-manage{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:13px 14px;border:1px solid var(--border);border-radius:14px;background:#fff}.class-manage>div{display:grid;gap:2px}.class-manage small{color:var(--muted)}
+#openRegister{margin-top:2px}.modal-body .notice{margin-bottom:14px}
+@media(max-width:650px){.register-grid{grid-template-columns:1fr}.class-manage{padding:11px}.approval-box{padding:10px}}

@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#0f766e" />
-  <title>PakKom Eco Track v2.7.1</title>
-  <link rel="stylesheet" href="styles.css?v=2.7.1" />
+  <title>PakKom Eco Track v2.8</title>
+  <link rel="stylesheet" href="styles.css?v=2.8" />
 </head>
 <body>
   <div id="toast" class="toast"></div>
@@ -28,7 +28,8 @@
         <label>Password<div class="password-wrap"><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" required /><button id="togglePassword" type="button" aria-label="Tampilkan password">👁</button></div></label>
         <button id="loginBtn" class="btn primary full login-submit" type="submit">MASUK</button>
         <p id="loginError" class="login-error hidden"></p>
-        <p id="loginHint" class="demo-note">Gunakan akun yang diberikan administrator.</p>
+        <p id="loginHint" class="demo-note">Gunakan akun yang sudah disetujui administrator.</p>
+        <button id="openRegister" class="btn ghost full" type="button">Daftar Guru / Wali Kelas</button>
       </form>
       <div class="login-footer"><strong>PakKom Eco Track</strong><span>Pembiasaan lingkungan sekolah</span></div>
     </div>
@@ -51,11 +52,13 @@
     </main>
   </div>
 
+  <div id="registerModal" class="modal hidden"><div class="modal-card register-card"><div class="modal-head"><div><h3>Daftar Akun Guru</h3><small>Akun baru harus disetujui Admin sebelum dapat digunakan.</small></div><button id="registerClose" class="modal-x">×</button></div><div class="modal-body"><div class="register-grid"><label>ID Guru<input id="regLoginId" placeholder="Contoh: G001"></label><label>Nama Lengkap<input id="regName" placeholder="Nama guru"></label><label>Jenis<select id="regType"><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select></label><label id="regClassWrap" class="hidden">Kelas Wali<select id="regClass"></select></label><label>Password<input id="regPassword" type="password" placeholder="Minimal 6 karakter"></label><label>Ulangi Password<input id="regPassword2" type="password" placeholder="Ulangi password"></label></div><div class="notice">Pendaftaran tidak langsung memberikan akses. Admin akan memeriksa dan menyetujui akun terlebih dahulu.</div></div><div class="modal-actions"><button id="registerCancel" class="btn ghost">Batal</button><button id="registerSubmit" class="btn primary">Kirim Pendaftaran</button></div></div></div>
+
   <div id="editModal" class="modal hidden"><div class="modal-card"><div class="modal-head"><h3 id="editModalTitle">Edit Data</h3><button id="editModalClose" class="modal-x">×</button></div><div id="editModalBody" class="modal-body"></div><div class="modal-actions"><button id="editModalCancel" class="btn ghost">Batal</button><button id="editModalSave" class="btn primary">Simpan</button></div></div></div>
   <input id="studentImport" type="file" accept=".xlsx,.xls,.csv" hidden />
   <input id="teacherImport" type="file" accept=".xlsx,.xls,.csv" hidden />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="firebase-config.js"></script>
-  <script type="module" src="app.js?v=2.7.1"></script>
+  <script type="module" src="app.js?v=2.8"></script>
 </body>
 </html>

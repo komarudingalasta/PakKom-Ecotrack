@@ -1,8 +1,11 @@
-# Setup Firebase PakKom Eco Track v2.7
+# Setup Firebase — PakKom Eco Track v2.8
 
-1. Authentication: aktifkan Email/Password.
-2. Firestore: gunakan firestore.rules pada paket ini.
-3. Admin: Authentication email `komarudingalasta@gmail.com`; profil Firestore `users/{UID}` berisi `loginId: ADMIN`, `role: admin`, `active: true`.
-4. Kelas 7A–9I dibuat otomatis saat Admin login.
-5. Siswa diimpor dari Excel tanpa akun/password.
-6. Guru/Wali Kelas dapat diimpor dari Excel; satu kelas hanya boleh memiliki satu wali kelas aktif.
+1. Pastikan **Authentication → Email/Password** aktif.
+2. Gunakan project Firebase `pakkom-ecotrack` pada `firebase-config.js`.
+3. Buka **Firestore Database → Rules**, ganti dengan isi `firestore.rules` dari paket v2.8, lalu **Publish**.
+4. Admin tetap login dengan ID `ADMIN` sesuai akun Firebase Admin yang sudah dibuat.
+5. Guru dapat dibuat oleh Admin/import, atau mendaftar sendiri dari halaman login. Pendaftaran mandiri harus di-approve Admin di **Kelola → Akun Guru & Wali Kelas**.
+6. Import tidak langsung menyimpan data: pilih file, periksa preview, lalu tekan **Import Sekarang**.
+
+### Catatan hapus kelas
+Kelas tidak dapat dihapus jika masih mempunyai siswa aktif. Riwayat pendataan lama tidak dihapus ketika siswa/kelas dihapus dari master.
