@@ -101,18 +101,11 @@
             qs('#loginView').classList.add('hidden');
             qs('#appView').classList.remove('hidden');
 
-            // Baru sesudah login valid, muat aplikasi utama.
-            var script=document.createElement('script');
-            script.src='app-core.js?v=3.3';
-            script.onload=function(){
-              if(window.startPakKomApp){ window.startPakKomApp(window.PAKKOM_COMPAT_CORE); }
-            };
-            script.onerror=function(){
-              console.error('app.js gagal dimuat');
-              var content=qs('#content');
-              if(content) content.innerHTML='<div class="card"><h3>Login berhasil</h3><p>Aplikasi utama gagal dimuat. Silakan refresh atau hubungi Admin.</p></div>';
-            };
-            document.body.appendChild(script);
+            // Application Core sudah dimuat sejak halaman dibuka.
+            if(typeof window.startPakKomApp !== 'function'){
+              throw new Error('Application Core tidak tersedia. Pastikan app-core.js sudah terunggah.');
+            }
+            return window.startPakKomApp(window.PAKKOM_COMPAT_CORE);
           });
       })
       .catch(function(err){
