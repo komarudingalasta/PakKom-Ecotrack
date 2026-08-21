@@ -329,3 +329,4 @@ body{overflow-anchor:none}
 .jp-card.future,.jp-card.missed,.jp-card.closed{background:#f5f6f6;color:#6d7974}
 .jp-card.open{border-color:#7fc5a3;background:#f1fbf6}
 .jp-card.open strong{color:#24734e}.jp-card.missed strong{color:#8a5d5d}
+.analysis-period{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:14px 0}.analysis-period small{color:#718078}.compact-awards{margin-top:14px}.period-card .btn-mini{white-space:nowrap}

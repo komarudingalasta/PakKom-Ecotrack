@@ -755,92 +755,61 @@ function renderEcoAwardsLive(){
 }
 
 function periodLabel(p){return `${p.startDate||'-'} s.d. ${p.endDate||'-'}`}
+function analysisPeriodStatus(p){
+  const t=todayKey();
+  if(p.archived===true)return 'archived';
+  if(t<String(p.startDate||''))return 'scheduled';
+  if(t<=String(p.endDate||''))return 'running';
+  return 'finished';
+}
+function analysisStatusLabel(code){return ({scheduled:'Terjadwal',running:'Sedang Berjalan',finished:'Selesai',archived:'Arsip'})[code]||code}
 async function listAnalysisPeriods(){
   const snap=await getDocs(collection(db,'analysisPeriods'));
-  return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+  return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.startDate||'').localeCompare(String(a.startDate||'')));
 }
-function roleCanSeePeriod(p){
-  if(state.profile.role==='admin') return true;
-  if(state.profile.isHomeroom) return p.homeroomPublished===true && p.status==='published';
-  return p.teacherPublished===true && p.status==='published';
+function roleCanSeePeriod(p){return state.profile.role==='admin'||(state.profile.isHomeroom===true&&p.sharedToHomeroom===true&&!!p.snapshot)}
+async function finalizeEndedPeriods(periods){
+  if(state.profile.role!=='admin')return periods;
+  for(const p of periods){
+    if(analysisPeriodStatus(p)==='finished'&&!p.snapshot){
+      try{
+        const classes=await metricsForRange(p.startDate,p.endDate),snapshot={classes,awards:buildAwards(classes),calculatedAt:new Date().toISOString(),final:true};
+        await setDoc(doc(db,'analysisPeriods',p.id),{snapshot,finalizedAt:new Date().toISOString(),finalizedBy:'system-on-admin-open',updatedAt:new Date().toISOString()},{merge:true});
+        p.snapshot=snapshot;p.finalizedAt=new Date().toISOString();
+      }catch(e){console.error('Gagal finalisasi periode',p.id,e)}
+    }
+  }
+  return periods;
 }
 async function renderEcoAnalysis(){
   const panel=$('#recapPanel');
   if(state.profile.role==='admin') return renderEcoAnalysisLive();
-  panel.innerHTML=`<div class="card analysis-shell"><div class="section-head"><div><h3>Analisis Tersimpan</h3><small>Hanya periode yang telah dibuka oleh administrator yang dapat dilihat.</small></div></div><div id="analysisBody"><div class="empty">Memuat periode...</div></div></div>`;
+  panel.innerHTML=`<div class="card analysis-shell"><div class="section-head"><div><h3>Hasil Analisis</h3><small>Hasil periode dibagikan oleh administrator setelah periode selesai.</small></div></div><div id="analysisBody"><div class="empty">Memuat...</div></div></div>`;
   try{
     const periods=(await listAnalysisPeriods()).filter(roleCanSeePeriod);
-    const target=$('#analysisBody'); if(!periods.length){target.innerHTML='<div class="empty">Analisis belum dibuka oleh administrator.</div>';return;}
-    const own=state.profile.isHomeroom?state.profile.homeroomClass:null;
-    target.innerHTML=`<select id="publishedPeriod" class="input-inline">${periods.map(p=>`<option value="${p.id}">${esc(p.name)} • ${periodLabel(p)}</option>`).join('')}</select><div id="publishedSnapshot"></div>`;
-    const show=async()=>{
-      const id=$('#publishedPeriod').value, snap=await getDoc(doc(db,'analysisPeriods',id)), p=snap.data()||{};
-      let rows=Array.isArray(p.snapshot?.classes)?p.snapshot.classes:[];
-      if(own) rows=rows.filter(x=>x.cls===own);
-      $('#publishedSnapshot').innerHTML=`<div class="analysis-period">${esc(p.name)} • ${periodLabel(p)}</div>${rows.length?`<div class="analysis-list">${rows.map(m=>`<div class="analysis-row"><div class="analysis-class"><b>${esc(m.cls)}</b><small>Hasil tersimpan</small></div><div><span>Wadah Makan</span><b>${metricText(m.foodPct)}</b></div><div><span>Tumbler</span><b>${metricText(m.tumbPct)}</b></div><div><span>Kebersihan</span><b>${metricText(m.cleanPct)}</b></div><div><span>Eco</span><b>${m.eco??'-'}</b></div></div>`).join('')}</div>`:'<div class="empty">Tidak ada hasil untuk kelas ini pada periode tersebut.</div>'}<div class="analysis-note">Hasil ini adalah snapshot yang disimpan administrator dan tidak berubah mengikuti data harian setelah periode disimpan.</div>`;
-    };
-    $('#publishedPeriod').onchange=show; show();
-  }catch(e){console.error(e);$('#analysisBody').innerHTML='<div class="empty">Periode analisis belum dapat dimuat.</div>'}
+    if(!periods.length){$('#analysisBody').innerHTML='<div class="empty">Belum ada hasil analisis yang dibagikan kepada wali kelas.</div>';return;}
+    const own=state.profile.homeroomClass;
+    $('#analysisBody').innerHTML=`<select id="publishedPeriod" class="input-inline">${periods.map(p=>`<option value="${p.id}">${esc(p.name)} • ${periodLabel(p)}</option>`).join('')}</select><div id="publishedSnapshot"></div>`;
+    const show=async()=>{const id=$('#publishedPeriod').value,p=periods.find(x=>x.id===id)||{},rows=(p.snapshot?.classes||[]).filter(x=>x.cls===own),school=p.snapshot?.classes||[],avg=school.length?Math.round(school.reduce((n,x)=>n+(Number(x.eco)||0),0)/school.length):null,a=p.snapshot?.awards||{};$('#publishedSnapshot').innerHTML=`<div class="analysis-period"><b>${esc(p.name)}</b><small>${periodLabel(p)} • Hasil tersimpan</small></div>${rows.map(m=>`<div class="analysis-list"><div class="analysis-row"><div class="analysis-class"><b>${esc(m.cls)}</b><small>${avg!==null?(Number(m.eco)>=avg?'Di atas/setara rata-rata sekolah':'Di bawah rata-rata sekolah'):''}</small></div><div><span>Wadah Makan</span><b>${metricText(m.foodPct)}</b></div><div><span>Tumbler</span><b>${metricText(m.tumbPct)}</b></div><div><span>Kebersihan</span><b>${metricText(m.cleanPct)}</b></div><div><span>Eco</span><b>${m.eco??'-'}</b></div></div></div>`).join('')||'<div class="empty">Hasil kelas wali tidak tersedia pada periode ini.</div>'}<div class="award-grid compact-awards"><div class="award-card"><span>🏆 Kelas Eco Terbaik</span><strong>${esc(a.bestEco?.cls||'-')}</strong></div><div class="award-card"><span>✨ Kelas Terbersih</span><strong>${esc(a.bestClean?.cls||'-')}</strong></div></div><div class="analysis-note">Wali kelas hanya melihat hasil kelas walinya dan apresiasi umum. Nilai lengkap kelas lain tidak ditampilkan.</div>`};$('#publishedPeriod').onchange=show;show();
+  }catch(e){console.error(e);$('#analysisBody').innerHTML='<div class="empty">Hasil analisis belum dapat dimuat.</div>'}
 }
-async function renderEcoAwards(){
-  if(state.profile.role==='admin') return renderEcoAwardsLive();
-  const panel=$('#recapPanel');
-  panel.innerHTML=`<div class="card awards-shell"><div class="section-head"><div><h3>Apresiasi Tersimpan</h3><small>Apresiasi tampil setelah administrator mempublikasikan periode.</small></div></div><div id="awardsBody"><div class="empty">Memuat...</div></div></div>`;
-  try{
-    const periods=(await listAnalysisPeriods()).filter(roleCanSeePeriod);
-    if(!periods.length){$('#awardsBody').innerHTML='<div class="empty">Apresiasi belum dibuka oleh administrator.</div>';return;}
-    const p=periods[0], a=p.snapshot?.awards||{};
-    $('#awardsBody').innerHTML=`<div class="analysis-period">${esc(p.name)} • ${periodLabel(p)}</div><div class="award-grid">
-      <div class="award-card"><div class="award-icon">🏆</div><span>Kelas Eco Terbaik</span><strong>${esc(a.bestEco?.cls||'-')}</strong><small>${a.bestEco?.eco??'-'} poin</small></div>
-      <div class="award-card"><div class="award-icon">${ICON_WADAH_MAKAN}</div><span>Wadah Makan Terbaik</span><strong>${esc(a.bestFood?.cls||'-')}</strong><small>${a.bestFood?.foodPct??'-'}%</small></div>
-      <div class="award-card"><div class="award-icon">${ICON_TUMBLER}</div><span>Tumbler Terbaik</span><strong>${esc(a.bestTumb?.cls||'-')}</strong><small>${a.bestTumb?.tumbPct??'-'}%</small></div>
-      <div class="award-card"><div class="award-icon">✨</div><span>Kelas Terbersih</span><strong>${esc(a.bestClean?.cls||'-')}</strong><small>${a.bestClean?.cleanPct??'-'}%</small></div>
-    </div><div class="analysis-note">Apresiasi ini berasal dari hasil periode yang telah disimpan dan dipublikasikan administrator.</div>`;
-  }catch(e){console.error(e);$('#awardsBody').innerHTML='<div class="empty">Apresiasi belum dapat dimuat.</div>'}
-}
-async function metricsForRange(startDate,endDate){
-  const data=await fetchEcoPeriod({start:startDate,end:endDate});
-  return state.classes.map(c=>classPeriodMetrics(c,data));
-}
-function buildAwards(ms){
-  const eligible=ms.filter(m=>m.eligible);
-  const desc=(key,filter=()=>true)=>[...ms].filter(filter).sort((a,b)=>(b[key]??-1)-(a[key]??-1))[0]||null;
-  return {bestEco:[...eligible].sort((a,b)=>b.eco-a.eco)[0]||null,bestFood:desc('foodPct',m=>m.foodPct!==null),bestTumb:desc('tumbPct',m=>m.tumbPct!==null),bestClean:desc('cleanPct',m=>m.cleanPct!==null&&m.checks>=2)};
-}
+async function renderEcoAwards(){return renderEcoAnalysis()}
+async function metricsForRange(startDate,endDate){const data=await fetchEcoPeriod({start:startDate,end:endDate});return state.classes.map(c=>classPeriodMetrics(c,data))}
+function buildAwards(ms){const eligible=ms.filter(m=>m.eligible),desc=(key,filter=()=>true)=>[...ms].filter(filter).sort((a,b)=>(b[key]??-1)-(a[key]??-1))[0]||null;return{bestEco:[...eligible].sort((a,b)=>b.eco-a.eco)[0]||null,bestFood:desc('foodPct',m=>m.foodPct!==null),bestTumb:desc('tumbPct',m=>m.tumbPct!==null),bestClean:desc('cleanPct',m=>m.cleanPct!==null&&m.checks>=2)}}
 async function renderAnalysisPeriods(){
-  const target=$('#masterTabContent');
-  target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Periode Analisis</h3><small>Buat rentang waktu, simpan hasil sebagai snapshot, lalu tentukan kapan wali kelas dapat melihatnya.</small></div><button id="newPeriod" class="btn primary">+ Periode Baru</button></div><div id="periodList"><div class="empty">Memuat periode...</div></div></div>`;
-  $('#newPeriod').onclick=()=>editAnalysisPeriod();
-  const periods=await listAnalysisPeriods();
-  $('#periodList').innerHTML=periods.length?`<div class="period-list">${periods.map(p=>`<div class="period-card"><div><b>${esc(p.name||'Tanpa nama')}</b><small>${periodLabel(p)}</small></div><span class="badge ${p.status==='published'?'ok':p.status==='saved'?'info':'warn'}">${p.status==='published'?'Dipublikasikan':p.status==='saved'?'Disimpan':'Draft'}</span><div class="period-access"><small>Wali kelas: <b>${p.homeroomPublished?'Dibuka':'Ditutup'}</b></small></div><div class="row-actions"><button class="btn-mini edit" data-edit-period="${p.id}">Buka</button>${p.status!=='draft'?`<button class="btn-mini" data-toggle-period="${p.id}">${p.homeroomPublished?'Tutup Akses':'Buka Akses'}</button>`:''}</div></div>`).join('')}</div>`:'<div class="empty">Belum ada periode analisis tersimpan.</div>';
-  document.querySelectorAll('[data-edit-period]').forEach(b=>b.onclick=()=>editAnalysisPeriod(b.dataset.editPeriod));
-  document.querySelectorAll('[data-toggle-period]').forEach(b=>b.onclick=()=>togglePeriodAccess(b.dataset.togglePeriod));
+ const target=$('#masterTabContent');target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Periode Analisis</h3><small>Periode berjalan otomatis sesuai tanggal. Setelah selesai, hasil disimpan lalu Admin menentukan kapan dibagikan.</small></div><button id="newPeriod" class="btn primary">+ Jadwalkan Periode</button></div><div id="periodList"><div class="empty">Memuat...</div></div></div>`;$('#newPeriod').onclick=()=>editAnalysisPeriod();
+ let periods=await listAnalysisPeriods();periods=await finalizeEndedPeriods(periods);
+ $('#periodList').innerHTML=periods.length?`<div class="period-list">${periods.map(p=>{const st=analysisPeriodStatus(p),shared=p.sharedToHomeroom===true;return `<div class="period-card"><div><b>${esc(p.name||'Tanpa nama')}</b><small>${periodLabel(p)}</small></div><span class="badge ${st==='running'?'ok':st==='finished'?'info':st==='scheduled'?'warn':'neutral'}">${analysisStatusLabel(st)}</span><div class="period-access"><small>Hasil: <b>${p.snapshot?'Tersimpan':'Belum final'}</b><br>Wali kelas: <b>${shared?'Dibagikan':'Belum dibagikan'}</b></small></div><div class="row-actions"><button class="btn-mini edit" data-edit-period="${p.id}">Buka</button>${st==='finished'&&p.snapshot?`<button class="btn-mini ${shared?'danger':''}" data-share-period="${p.id}">${shared?'Tarik Akses':'📤 Bagikan Hasil'}</button>`:''}</div></div>`}).join('')}</div>`:'<div class="empty">Belum ada periode analisis.</div>';
+ document.querySelectorAll('[data-edit-period]').forEach(b=>b.onclick=()=>editAnalysisPeriod(b.dataset.editPeriod));document.querySelectorAll('[data-share-period]').forEach(b=>b.onclick=()=>togglePeriodShare(b.dataset.sharePeriod));
 }
 async function editAnalysisPeriod(id=null){
-  let p={name:'',startDate:todayKey(),endDate:todayKey(),status:'draft',homeroomPublished:false,teacherPublished:false};
-  if(id){const d=await getDoc(doc(db,'analysisPeriods',id));if(d.exists())p={id:d.id,...d.data()};}
-  const host=$('#masterTabContent');
-  host.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>${id?'Kelola':'Buat'} Periode Analisis</h3><small>Hasil yang sudah disimpan tidak berubah otomatis.</small></div><button id="backPeriods" class="btn ghost">← Kembali</button></div>
-    <div class="period-form"><label>Nama Periode<input id="periodName" value="${esc(p.name||'')}" placeholder="Contoh: Pekan Eco 1"></label><label>Tanggal Mulai<input id="periodStart" type="date" value="${p.startDate}"></label><label>Tanggal Selesai<input id="periodEnd" type="date" value="${p.endDate}"></label></div>
-    <div class="row-actions period-actions"><button id="previewPeriod" class="btn secondary">Hitung & Preview</button><button id="savePeriod" class="btn primary">Simpan Hasil Periode</button>${id&&p.status!=='draft'?`<button id="toggleAccessHere" class="btn ghost">${p.homeroomPublished?'Tutup Akses Wali Kelas':'Buka Akses Wali Kelas'}</button>`:''}</div>
-    <div id="periodPreview">${p.snapshot?renderPeriodSnapshotHtml(p.snapshot):'<div class="empty">Pilih rentang waktu lalu Hitung & Preview.</div>'}</div>`;
-  $('#backPeriods').onclick=renderAnalysisPeriods;
-  let preview=null;
-  $('#previewPeriod').onclick=async()=>{const st=$('#periodStart').value,en=$('#periodEnd').value;if(!st||!en||st>en)return toast('Rentang tanggal tidak valid');$('#periodPreview').innerHTML='<div class="empty">Menghitung...</div>';const classes=await metricsForRange(st,en);preview={classes,awards:buildAwards(classes),calculatedAt:new Date().toISOString()};$('#periodPreview').innerHTML=renderPeriodSnapshotHtml(preview);};
-  $('#savePeriod').onclick=async()=>{const name=$('#periodName').value.trim(),st=$('#periodStart').value,en=$('#periodEnd').value;if(!name||!st||!en||st>en)return toast('Lengkapi nama dan rentang periode');if(!preview){const classes=await metricsForRange(st,en);preview={classes,awards:buildAwards(classes),calculatedAt:new Date().toISOString()};}const ref=id?doc(db,'analysisPeriods',id):doc(collection(db,'analysisPeriods'));await setDoc(ref,{name,startDate:st,endDate:en,status:'saved',homeroomPublished:p.homeroomPublished===true,teacherPublished:p.teacherPublished===true,snapshot:preview,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name,...(!id?{createdAt:new Date().toISOString()}: {})},{merge:true});toast('Hasil periode tersimpan');renderAnalysisPeriods();};
-  if($('#toggleAccessHere'))$('#toggleAccessHere').onclick=()=>togglePeriodAccess(id);
+ let p={name:'',startDate:todayKey(),endDate:todayKey(),sharedToHomeroom:false};if(id){const d=await getDoc(doc(db,'analysisPeriods',id));if(d.exists())p={id:d.id,...d.data()}}
+ const st=id?analysisPeriodStatus(p):'scheduled',locked=id&&(st==='finished'||p.snapshot);
+ const host=$('#masterTabContent');host.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>${id?'Detail':'Jadwalkan'} Periode Analisis</h3><small>${id?`Status: ${analysisStatusLabel(st)}`:'Tentukan tanggal mulai dan selesai.'}</small></div><button id="backPeriods" class="btn ghost">← Kembali</button></div><div class="period-form"><label>Nama Periode<input id="periodName" value="${esc(p.name||'')}" ${locked?'disabled':''}></label><label>Tanggal Mulai<input id="periodStart" type="date" value="${p.startDate}" ${locked?'disabled':''}></label><label>Tanggal Selesai<input id="periodEnd" type="date" value="${p.endDate}" ${locked?'disabled':''}></label></div><div class="row-actions period-actions">${!locked?'<button id="saveSchedule" class="btn primary">Simpan Jadwal</button>':''}${id&&st==='finished'&&p.snapshot?`<button id="shareHere" class="btn ${p.sharedToHomeroom?'danger':'primary'}">${p.sharedToHomeroom?'Tarik Akses Wali Kelas':'📤 Bagikan Hasil ke Wali Kelas'}</button>`:''}</div><div id="periodPreview">${p.snapshot?renderPeriodSnapshotHtml(p.snapshot):`<div class="empty">${st==='running'?'Periode sedang berjalan. Hasil final dibuat setelah tanggal akhir.':st==='scheduled'?'Periode belum dimulai.':'Hasil final belum tersedia.'}</div>`}</div>`;
+ $('#backPeriods').onclick=renderAnalysisPeriods;if($('#saveSchedule'))$('#saveSchedule').onclick=async()=>{const name=$('#periodName').value.trim(),startDate=$('#periodStart').value,endDate=$('#periodEnd').value;if(!name||!startDate||!endDate||startDate>endDate)return toast('Lengkapi jadwal periode dengan benar');const ref=id?doc(db,'analysisPeriods',id):doc(collection(db,'analysisPeriods'));await setDoc(ref,{name,startDate,endDate,sharedToHomeroom:p.sharedToHomeroom===true,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name,...(!id?{createdAt:new Date().toISOString()}: {})},{merge:true});toast('Jadwal periode tersimpan');renderAnalysisPeriods()};if($('#shareHere'))$('#shareHere').onclick=()=>togglePeriodShare(id);
 }
-function renderPeriodSnapshotHtml(snapshot){
-  const rows=snapshot?.classes||[],a=snapshot?.awards||{};
-  return `<div class="snapshot-head"><b>Preview / Snapshot</b><small>${rows.length} kelas • dihitung ${snapshot?.calculatedAt?new Date(snapshot.calculatedAt).toLocaleString('id-ID'):'-'}</small></div><div class="analysis-kpis"><div class="analysis-kpi"><span>🏆 Eco Terbaik</span><strong>${esc(a.bestEco?.cls||'-')}</strong><small>${a.bestEco?.eco??'-'} poin</small></div><div class="analysis-kpi"><span>Wadah Makan</span><strong>${esc(a.bestFood?.cls||'-')}</strong><small>${a.bestFood?.foodPct??'-'}%</small></div><div class="analysis-kpi"><span>Tumbler</span><strong>${esc(a.bestTumb?.cls||'-')}</strong><small>${a.bestTumb?.tumbPct??'-'}%</small></div></div><div class="analysis-list">${rows.map(m=>`<div class="analysis-row"><div class="analysis-class"><b>${esc(m.cls)}</b><small>${m.records} hari • ${m.checks} pemeriksaan</small></div><div><span>Wadah</span><b>${metricText(m.foodPct)}</b></div><div><span>Tumbler</span><b>${metricText(m.tumbPct)}</b></div><div><span>Kebersihan</span><b>${metricText(m.cleanPct)}</b></div><div><span>Eco</span><b>${m.eco??'-'}</b></div></div>`).join('')}</div>`;
-}
-async function togglePeriodAccess(id){
-  const ref=doc(db,'analysisPeriods',id),snap=await getDoc(ref);if(!snap.exists())return;
-  const p=snap.data(),open=!(p.homeroomPublished===true);
-  await setDoc(ref,{homeroomPublished:open,status:open?'published':'saved',publishedAt:open?new Date().toISOString():null,updatedAt:new Date().toISOString()},{merge:true});
-  toast(open?'Analisis dibuka untuk wali kelas':'Akses wali kelas ditutup');
-  renderAnalysisPeriods();
-}
+function renderPeriodSnapshotHtml(snapshot){const rows=snapshot?.classes||[],a=snapshot?.awards||{};return `<div class="snapshot-head"><b>Hasil Akhir Tersimpan</b><small>${snapshot?.calculatedAt?new Date(snapshot.calculatedAt).toLocaleString('id-ID'):'-'}</small></div><div class="analysis-kpis"><div class="analysis-kpi"><span>🏆 Eco Terbaik</span><strong>${esc(a.bestEco?.cls||'-')}</strong><small>${a.bestEco?.eco??'-'} poin</small></div><div class="analysis-kpi"><span>Wadah Makan</span><strong>${esc(a.bestFood?.cls||'-')}</strong></div><div class="analysis-kpi"><span>Tumbler</span><strong>${esc(a.bestTumb?.cls||'-')}</strong></div></div><div class="analysis-list">${rows.map(m=>`<div class="analysis-row"><div class="analysis-class"><b>${esc(m.cls)}</b></div><div><span>Wadah</span><b>${metricText(m.foodPct)}</b></div><div><span>Tumbler</span><b>${metricText(m.tumbPct)}</b></div><div><span>Kebersihan</span><b>${metricText(m.cleanPct)}</b></div><div><span>Eco</span><b>${m.eco??'-'}</b></div></div>`).join('')}</div>`}
+async function togglePeriodShare(id){const ref=doc(db,'analysisPeriods',id),snap=await getDoc(ref);if(!snap.exists())return;const p=snap.data();if(analysisPeriodStatus(p)!=='finished'||!p.snapshot)return toast('Hasil hanya dapat dibagikan setelah periode selesai');const open=!(p.sharedToHomeroom===true);await setDoc(ref,{sharedToHomeroom:open,sharedAt:open?new Date().toISOString():null,sharedByUid:state.user.uid,sharedByName:state.profile.name,updatedAt:new Date().toISOString()},{merge:true});toast(open?'Hasil dibagikan ke wali kelas':'Akses hasil wali kelas ditarik');renderAnalysisPeriods()}
 
 function account(){
   pageMeta('Akun','Informasi pengguna');
@@ -914,7 +883,7 @@ function renderMasterTab(){
     target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Kelas</h3><small>Menghapus kelas juga menghapus seluruh siswa di kelas tersebut dari master.</small></div><button id="seedClasses" class="btn ghost">Buat Kelas Standar 7A–9I</button></div>
     <div class="notice warn-note"><b>Catatan:</b> Hapus kelas akan menghapus semua siswa pada kelas itu dan melepas penugasan wali kelas. Riwayat pendataan lama tetap disimpan.</div>
     <div class="grid class-grid admin-class-grid">${state.classes.map(c=>{const n=state.students.filter(s=>s.classId===c).length;return `<div class="class-manage"><div><b>${c}</b><small>${n} siswa</small></div><button class="btn-mini danger" data-delete-class="${c}">Hapus</button></div>`}).join('')||'<div class="empty">Belum ada kelas.</div>'}</div></div>
-    <div class="card master-section"><div class="section-head"><div><h3>Upload Pendataan Wadah Makan & Tumbler Makan & Tumbler</h3><small>Khusus Admin • upload → preview → import.</small></div><div class="row-actions"><a class="btn ghost" href="format-upload-pendataan-wadah.xlsx" download>Format Pendataan</a><button id="importAttendance" class="btn primary">Upload Pendataan</button></div></div>
+    <div class="card master-section"><div class="section-head"><div><h3>Upload Pendataan Wadah Makan & Tumbler</h3><small>Khusus Admin • upload → preview → import.</small></div><div class="row-actions"><a class="btn ghost" href="format-upload-pendataan-wadah.xlsx" download>Format Pendataan</a><button id="importAttendance" class="btn primary">Upload Pendataan</button></div></div>
     <div class="notice">Format: <b>Tanggal | Kelas | NIS | Nama | Kehadiran | Wadah | Tumbler</b>. Nama bersifat informasi; NIS harus sudah ada di master siswa.</div></div>`;
     $('#seedClasses').onclick=seedClasses; $('#importAttendance').onclick=()=>$('#attendanceImport').click();
     document.querySelectorAll('[data-delete-class]').forEach(b=>b.onclick=()=>deleteClassMaster(b.dataset.deleteClass)); return;
@@ -1202,7 +1171,7 @@ $('#attendanceImport').addEventListener('change',async e=>{
     const normalized=rows.map(r=>{const date=normalizeImportDate(r.Tanggal||r.tanggal||r.Date),classId=String(r.Kelas||r.kelas||'').trim().toUpperCase(),nis=String(r.NIS||r.nis||'').trim(),st=studentMap.get(nis),presence=presenceImport(r.Kehadiran||r.kehadiran);return {date,classId,nis,name:st?.name||String(r.Nama||r.nama||'').trim(),studentId:st?.id||'',presence,food:presence==='hadir'&&boolImport(r.Wadah||r.wadah),tumbler:presence==='hadir'&&boolImport(r.Tumbler||r.tumbler),valid:!!(date&&classId&&nis&&st&&st.classId===classId)};}).filter(r=>{if(!r.valid){skipped++;return false}return true;});
     if(!normalized.length)throw new Error('Tidak ada baris pendataan valid. Pastikan Tanggal, Kelas dan NIS sesuai master siswa.');
     window.pendingAttendanceImport=normalized;
-    openImportPreview('Preview Upload Pendataan Wadah Makan & Tumbler Makan & Tumbler',normalized.map(x=>[x.date,x.classId,x.nis,x.name,x.presence,x.food?'Ya':'Tidak',x.tumbler?'Ya':'Tidak']),['Tanggal','Kelas','NIS','Nama','Kehadiran','Wadah Makan','Tumbler'],skipped,()=>commitAttendanceImport(e));
+    openImportPreview('Preview Upload Pendataan Wadah Makan & Tumbler',normalized.map(x=>[x.date,x.classId,x.nis,x.name,x.presence,x.food?'Ya':'Tidak',x.tumbler?'Ya':'Tidak']),['Tanggal','Kelas','NIS','Nama','Kehadiran','Wadah Makan','Tumbler'],skipped,()=>commitAttendanceImport(e));
   }catch(err){console.error(err);toast(err.message||'Upload pendataan gagal.');e.target.value='';}
 });
 async function commitAttendanceImport(e){

@@ -1,14 +1,15 @@
-PakKom Eco Track – JP Time Lock
+# PakKom Eco Track — Scheduled Analysis & Sharing
 
-Kebersihan:
-- Senin–Kamis: JP1 07.10; setiap JP 40 menit; istirahat 20 menit setelah JP4; istirahat 40 menit setelah JP7.
-- Jumat: JP1 07.50; setiap JP 40 menit; istirahat 20 menit setelah JP3.
-- JP sebelum waktunya: Belum Dibuka.
-- JP sedang berlangsung: Bisa Diperiksa.
-- JP terlewat: terkunci.
-- Kelas + JP yang sudah diperiksa tidak dapat dinilai guru lain.
-- Penilai dapat edit 1x hanya selama JP masih berlangsung.
-- Admin tetap dapat melakukan koreksi.
-- Dashboard duplicate heading Wadah Makan & Tumbler diperbaiki.
+Periode Analisis:
+- Admin menjadwalkan nama, tanggal mulai, tanggal selesai.
+- Status otomatis: Terjadwal → Sedang Berjalan → Selesai.
+- Saat periode sudah lewat, snapshot hasil final dibuat pada sinkronisasi Admin berikutnya dan disimpan permanen di Firestore.
+- Hasil tidak otomatis terlihat Wali Kelas.
+- Admin menekan `Bagikan Hasil ke Wali Kelas` setelah review.
+- Admin dapat `Tarik Akses` tanpa menghapus snapshot.
+- Wali Kelas hanya melihat hasil kelas walinya + apresiasi umum, bukan nilai lengkap kelas lain.
+- Riwayat/koreksi tetap hanya berada di menu Kelola Data yang hanya dapat dibuka Admin.
 
-Catatan: penguncian waktu utama dilakukan pada aplikasi. Firestore Rules tetap melindungi kepemilikan/edit dan collision memakai document ID tanggal_kelas_JP.
+Catatan teknis: GitHub Pages tidak memiliki proses server yang berjalan 24 jam. Karena itu finalisasi otomatis dilakukan pada sinkronisasi pertama setelah periode berakhir (saat Admin membuka modul), lalu snapshot tersimpan permanen.
+
+Firestore Rules tetap menggunakan koleksi `analysisPeriods`; gunakan rules yang disertakan.
