@@ -160,11 +160,14 @@ function authErrorMessage(e){
   };
   return map[code] || `Login gagal${code?` (${code})`:''}.`;
 }
+const ICON_WADAH_MAKAN=`<svg class="eco-icon eco-icon-food" viewBox="0 0 48 48" aria-hidden="true"><path fill="#A7E3D0" d="M8 19h32l-2.2 19H10.2L8 19Z"/><path fill="#DDF6ED" d="M10 15.5c0-3 2.4-5.5 5.5-5.5h17c3 0 5.5 2.4 5.5 5.5V19H10v-3.5Z"/><path fill="none" stroke="#176B5B" stroke-width="2.6" stroke-linejoin="round" d="M8 19h32l-2.2 19H10.2L8 19Zm2-3.5c0-3 2.4-5.5 5.5-5.5h17c3 0 5.5 2.4 5.5 5.5V19H10v-3.5Z"/><rect x="20" y="17" width="8" height="7" rx="2" fill="#5BC5A7" stroke="#176B5B" stroke-width="2.2"/></svg>`;
+const ICON_TUMBLER=`<svg class="eco-icon eco-icon-bottle" viewBox="0 0 48 48" aria-hidden="true"><path fill="#B9E7F5" d="M17 15h14c2.2 3 3 5.4 3 8v17c0 2.2-1.8 4-4 4H18c-2.2 0-4-1.8-4-4V23c0-2.6.8-5 3-8Z"/><path fill="#58B8D6" d="M18 8h12v8H18z"/><path fill="none" stroke="#175B72" stroke-width="2.6" stroke-linejoin="round" d="M18 8h12v7H18zM17 15h14c2.2 3 3 5.4 3 8v17c0 2.2-1.8 4-4 4H18c-2.2 0-4-1.8-4-4V23c0-2.6.8-5 3-8Z"/><path fill="none" stroke="#175B72" stroke-width="2.4" stroke-linecap="round" d="M31 12h3c2 0 3.5 1.5 3.5 3.5S36 19 34 19h-1"/></svg>`;
+
 function esc(v=''){ return String(v).replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m])); }
 function pageMeta(title,sub=''){ $('#pageTitle').textContent=title; $('#pageSubtitle').textContent=sub; }
 function navItems(){
-  if(state.profile?.role==='admin') return [['home','🏠 Beranda'],['input','🥤 Wadah'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['master','⚙️ Kelola']];
-  return [['home','🏠 Beranda'],['input','🥤 Wadah'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['account','👤 Akun']];
+  if(state.profile?.role==='admin') return [['home','🏠 Beranda'],['input','${ICON_TUMBLER} Wadah'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['master','⚙️ Kelola']];
+  return [['home','🏠 Beranda'],['input','${ICON_TUMBLER} Wadah'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['account','👤 Akun']];
 }
 
 function showAuthLoading(show=true){
@@ -391,19 +394,19 @@ function home(){
   content.innerHTML=`<div class="welcome"><span>Selamat datang,</span><h2>${esc(state.profile.name)} 👋</h2></div>
   ${!op.active?`<div class="holiday-banner"><div>🏖️</div><div><b>Hari Tidak Aktif</b><span>${esc(op.label)} • Pendataan harian dan pemeriksaan kebersihan dinonaktifkan.</span></div></div>`:''}
   <div class="module-grid ${!op.active?'modules-off':''}">
-    <div class="module-card module-wadah"><div class="module-icon">🥤</div><div><span class="eyebrow">PENDATAAN HARI INI</span><h3>Wadah & Tumbler</h3><strong>${done.size} dari ${state.classes.length} kelas</strong><div class="progress"><i style="width:${state.classes.length?Math.round(done.size/state.classes.length*100):0}%"></i></div><p>Wadah ${food}% • Tumbler ${tumb}%</p></div><button class="btn primary module-go" data-go="input" ${!op.active?'disabled':''}>${op.active?'Mulai Pendataan →':'Hari Libur'}</button></div>
+    <div class="module-card module-wadah"><div class="module-icon">${ICON_TUMBLER}</div><div><span class="eyebrow">PENDATAAN HARI INI</span><h3>Wadah Makan & Tumbler</h3><strong>${done.size} dari ${state.classes.length} kelas</strong><div class="progress"><i style="width:${state.classes.length?Math.round(done.size/state.classes.length*100):0}%"></i></div><p>Wadah ${food}% • Tumbler ${tumb}%</p></div><button class="btn primary module-go" data-go="input" ${!op.active?'disabled':''}>${op.active?'Mulai Pendataan →':'Hari Libur'}</button></div>
     <div class="module-card module-clean"><div class="module-icon">🧹</div><div><span class="eyebrow">PEMERIKSAAN HARI INI</span><h3>Kebersihan Kelas</h3><strong>${state.cleanlinessToday.length} pemeriksaan</strong><p>${lastClean?`Terakhir: ${esc(lastClean.classId)} • JP ${esc(lastClean.jp)} • ${esc(lastClean.timeLabel||'')}`:'Belum ada pemeriksaan hari ini'}</p></div><button class="btn clean-btn module-go" data-go="clean" ${!op.active?'disabled':''}>${op.active?'+ Cek Kebersihan':'Hari Libur'}</button></div>
   </div>
-  ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>🥤 ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div></div>`:''}
-  ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah & Tumbler</h3><small>Hanya pendataan wadah & tumbler yang dihitung sekali per kelas per hari.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
+  ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>${ICON_TUMBLER} ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div></div>`:''}
+  ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah Makan & Tumbler Makan & Tumbler</h3><small>Hanya pendataan wadah & tumbler yang dihitung sekali per kelas per hari.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
   document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;window.scrollTo(0,0);renderShell()});
   document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';window.scrollTo(0,0);renderShell()});
 }
 function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;window.scrollTo(0,0);renderShell()}); }
 
 function inputPage(){
-  pageMeta('Wadah & Tumbler','Pilih kelas lalu tandai kondisi siswa');
-  const op=operationalInfo(); if(!op.active){ content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p><small>Pendataan Wadah & Tumbler tidak tersedia hari ini.</small></div>`; return; }
+  pageMeta('Wadah Makan & Tumbler','Pilih kelas lalu tandai kondisi siswa');
+  const op=operationalInfo(); if(!op.active){ content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p><small>Pendataan Wadah Makan & Tumbler Makan & Tumbler tidak tersedia hari ini.</small></div>`; return; }
   if(!state.selectedClass){ content.innerHTML=`<div class="card"><h3>Pilih Kelas</h3><div class="grid class-grid">${state.classes.map(c=>{const r=classRecord(c);return `<button class="class-btn ${r?'done':'pending'}" data-class="${c}"><b>${c}</b><small>${r?'Sudah didata':'Belum didata'}</small></button>`}).join('')}</div></div>`; bindClassButtons(); return; }
   loadClassForm(state.selectedClass);
 }
@@ -455,7 +458,7 @@ function renderStudentRows(){
       </div>
       <div class="student-controls">
         <label class="presence-control"><span>Kehadiran</span><select ${window.formLocked?'disabled':''} data-presence="${idx}"><option value="hadir" ${i.presence==='hadir'?'selected':''}>Hadir</option><option value="izin" ${i.presence==='izin'?'selected':''}>Izin</option><option value="sakit" ${i.presence==='sakit'?'selected':''}>Sakit</option><option value="alpa" ${i.presence==='alpa'?'selected':''}>Alpa</option></select></label>
-        <button type="button" class="carry-choice ${i.food&&hadir?'active':''}" data-toggle="food" data-index="${idx}" ${(!hadir||window.formLocked)?'disabled':''}><span>🥡</span><b>Wadah</b><small>${i.food&&hadir?'Membawa':'Tidak'}</small></button>
+        <button type="button" class="carry-choice ${i.food&&hadir?'active':''}" data-toggle="food" data-index="${idx}" ${(!hadir||window.formLocked)?'disabled':''}><span>🥡</span><b>Wadah Makan</b><small>${i.food&&hadir?'Membawa':'Tidak'}</small></button>
         <button type="button" class="carry-choice ${i.tumbler&&hadir?'active':''}" data-toggle="tumbler" data-index="${idx}" ${(!hadir||window.formLocked)?'disabled':''}><span>💧</span><b>Tumbler</b><small>${i.tumbler&&hadir?'Membawa':'Tidak'}</small></button>
       </div>
     </article>`;
@@ -550,12 +553,12 @@ function renderCleanForm(){
 
 function recap(){
   pageMeta('Rekap','Pilih modul rekap yang ingin dilihat');
-  content.innerHTML=`<div class="recap-switch"><button class="recap-module active" data-recap="wadah">🥤<b>Wadah & Tumbler</b><small>Rekap pendataan siswa</small></button><button class="recap-module" data-recap="clean">🧹<b>Kebersihan Kelas</b><small>Riwayat pemeriksaan</small></button></div><div id="recapPanel"></div>`;
+  content.innerHTML=`<div class="recap-switch"><button class="recap-module active" data-recap="wadah">${ICON_TUMBLER}<b>Wadah Makan & Tumbler</b><small>Rekap pendataan siswa</small></button><button class="recap-module" data-recap="clean">🧹<b>Kebersihan Kelas</b><small>Riwayat pemeriksaan</small></button></div><div id="recapPanel"></div>`;
   document.querySelectorAll('.recap-module').forEach(b=>b.onclick=()=>{document.querySelectorAll('.recap-module').forEach(x=>x.classList.toggle('active',x===b)); b.dataset.recap==='clean'?renderCleanRecap():renderWadahRecap();});
   renderWadahRecap();
 }
 function renderWadahRecap(){
-  const panel=$('#recapPanel'); panel.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap Wadah & Tumbler</h3><small>Pilih tanggal dan kelas.</small></div><div class="row-actions"><input id="recapDate" class="input-inline" type="date" value="${todayKey()}"><select id="recapClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div><div id="recapBody"><div class="empty">Memuat...</div></div></div>`;
+  const panel=$('#recapPanel'); panel.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap Wadah Makan & Tumbler</h3><small>Pilih tanggal dan kelas.</small></div><div class="row-actions"><input id="recapDate" class="input-inline" type="date" value="${todayKey()}"><select id="recapClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div><div id="recapBody"><div class="empty">Memuat...</div></div></div>`;
   $('#recapDate').onchange=loadRecapDate; $('#recapClass').onchange=loadRecapDate; loadRecapDate();
 }
 async function loadRecapDate(){
@@ -565,7 +568,7 @@ async function loadRecapDate(){
     const snap=await getDocs(query(collection(db,'records'),where('date','==',date)));
     const records=snap.docs.map(d=>({id:d.id,...d.data()})); const classes=cls?[cls]:state.classes;
     const cards=classes.map(c=>{const r=records.find(x=>x.classId===c);if(!r)return {c,status:'Belum',hadir:0,food:0,tumb:0,both:0,by:'-'};const hadir=(r.items||[]).filter(i=>i.presence==='hadir');const pct=f=>hadir.length?Math.round(hadir.filter(f).length/hadir.length*100):0;return {c,status:'Selesai',hadir:hadir.length,food:pct(i=>i.food),tumb:pct(i=>i.tumbler),both:pct(i=>i.food&&i.tumbler),by:r.lastEditedByName||r.createdByName||'Guru'};});
-    target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th></tr></thead><tbody>${cards.map(x=>`<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'neutral'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td></tr>`).join('')}</tbody></table></div>`;
+    target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah Makan</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th></tr></thead><tbody>${cards.map(x=>`<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'neutral'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td></tr>`).join('')}</tbody></table></div>`;
   }catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap.</div>';}
 }
 function renderCleanRecap(){
@@ -647,7 +650,7 @@ function renderMasterTab(){
     target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Kelas</h3><small>Menghapus kelas juga menghapus seluruh siswa di kelas tersebut dari master.</small></div><button id="seedClasses" class="btn ghost">Buat Kelas Standar 7A–9I</button></div>
     <div class="notice warn-note"><b>Catatan:</b> Hapus kelas akan menghapus semua siswa pada kelas itu dan melepas penugasan wali kelas. Riwayat pendataan lama tetap disimpan.</div>
     <div class="grid class-grid admin-class-grid">${state.classes.map(c=>{const n=state.students.filter(s=>s.classId===c).length;return `<div class="class-manage"><div><b>${c}</b><small>${n} siswa</small></div><button class="btn-mini danger" data-delete-class="${c}">Hapus</button></div>`}).join('')||'<div class="empty">Belum ada kelas.</div>'}</div></div>
-    <div class="card master-section"><div class="section-head"><div><h3>Upload Pendataan Wadah & Tumbler</h3><small>Khusus Admin • upload → preview → import.</small></div><div class="row-actions"><a class="btn ghost" href="format-upload-pendataan-wadah.xlsx" download>Format Pendataan</a><button id="importAttendance" class="btn primary">Upload Pendataan</button></div></div>
+    <div class="card master-section"><div class="section-head"><div><h3>Upload Pendataan Wadah Makan & Tumbler Makan & Tumbler</h3><small>Khusus Admin • upload → preview → import.</small></div><div class="row-actions"><a class="btn ghost" href="format-upload-pendataan-wadah.xlsx" download>Format Pendataan</a><button id="importAttendance" class="btn primary">Upload Pendataan</button></div></div>
     <div class="notice">Format: <b>Tanggal | Kelas | NIS | Nama | Kehadiran | Wadah | Tumbler</b>. Nama bersifat informasi; NIS harus sudah ada di master siswa.</div></div>`;
     $('#seedClasses').onclick=seedClasses; $('#importAttendance').onclick=()=>$('#attendanceImport').click();
     document.querySelectorAll('[data-delete-class]').forEach(b=>b.onclick=()=>deleteClassMaster(b.dataset.deleteClass)); return;
@@ -907,12 +910,12 @@ function presenceImport(v){const x=String(v||'hadir').trim().toLowerCase();retur
 $('#attendanceImport').addEventListener('change',async e=>{
   const f=e.target.files?.[0]; if(!f)return;
   try{
-    const buf=await f.arrayBuffer(), wb=XLSX.read(buf), sheet=wb.Sheets['Pendataan Wadah']||wb.Sheets[wb.SheetNames[0]], rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
+    const buf=await f.arrayBuffer(), wb=XLSX.read(buf), sheet=wb.Sheets['Pendataan Wadah Makan & Tumbler']||wb.Sheets[wb.SheetNames[0]], rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
     const studentMap=new Map(state.students.map(st=>[String(st.nis||st.id).trim(),st])); let skipped=0;
     const normalized=rows.map(r=>{const date=normalizeImportDate(r.Tanggal||r.tanggal||r.Date),classId=String(r.Kelas||r.kelas||'').trim().toUpperCase(),nis=String(r.NIS||r.nis||'').trim(),st=studentMap.get(nis),presence=presenceImport(r.Kehadiran||r.kehadiran);return {date,classId,nis,name:st?.name||String(r.Nama||r.nama||'').trim(),studentId:st?.id||'',presence,food:presence==='hadir'&&boolImport(r.Wadah||r.wadah),tumbler:presence==='hadir'&&boolImport(r.Tumbler||r.tumbler),valid:!!(date&&classId&&nis&&st&&st.classId===classId)};}).filter(r=>{if(!r.valid){skipped++;return false}return true;});
     if(!normalized.length)throw new Error('Tidak ada baris pendataan valid. Pastikan Tanggal, Kelas dan NIS sesuai master siswa.');
     window.pendingAttendanceImport=normalized;
-    openImportPreview('Preview Upload Pendataan Wadah & Tumbler',normalized.map(x=>[x.date,x.classId,x.nis,x.name,x.presence,x.food?'Ya':'Tidak',x.tumbler?'Ya':'Tidak']),['Tanggal','Kelas','NIS','Nama','Kehadiran','Wadah','Tumbler'],skipped,()=>commitAttendanceImport(e));
+    openImportPreview('Preview Upload Pendataan Wadah Makan & Tumbler Makan & Tumbler',normalized.map(x=>[x.date,x.classId,x.nis,x.name,x.presence,x.food?'Ya':'Tidak',x.tumbler?'Ya':'Tidak']),['Tanggal','Kelas','NIS','Nama','Kehadiran','Wadah Makan','Tumbler'],skipped,()=>commitAttendanceImport(e));
   }catch(err){console.error(err);toast(err.message||'Upload pendataan gagal.');e.target.value='';}
 });
 async function commitAttendanceImport(e){
