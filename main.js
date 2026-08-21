@@ -625,14 +625,14 @@ function renderCleanClass(classId){
   const rows=state.cleanlinessToday.filter(r=>r.classId===classId),byJp=Object.fromEntries(rows.map(r=>[Number(r.jp),r]));
   pageMeta(`Kebersihan ${classId}`,`Status pemeriksaan per JP hari ini`);
   const total=sc.active?sc.items.length:op.jp;
-  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${esc(classId)}</h3><small>${rows.length} dari ${total} JP sudah diperiksa</small></div><button id="backCleanClasses" class="btn ghost">← Daftar Kelas</button></div>
+  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${esc(classId)}</h3><small>${rows.length} dari ${total} JP sudah diperiksa</small></div><div class="row-actions">${state.profile.role==='admin'&&rows.length?`<button id="resetCleanClass" class="btn danger">Reset Kebersihan Kelas</button>`:''}<button id="backCleanClasses" class="btn ghost">← Daftar Kelas</button></div></div>
   ${ownLocked?`<div class="notice">🔒 Pemeriksaan kelas wali sendiri belum dibuka Admin.</div>`:''}
   <div class="schedule-note">⏱️ Pemeriksaan hanya dapat dibuat selama JP sedang berlangsung. JP yang lewat otomatis terkunci.</div>
   <div class="jp-status-grid">${Array.from({length:total},(_,i)=>{
     const jp=i+1,r=byJp[jp],ts=jpTimeState(jp),time=ts.start!=null?`${hm(ts.start)}–${hm(ts.end)}`:'';
     if(r){
       const mine=r.createdByUid===state.user.uid,used=Number(r.teacherEditCount||0)>=1,admin=state.profile.role==='admin',can=admin||(mine&&!used&&ts.canAssess),st=cleanOverall(r);
-      return `<button class="jp-card assessed ${can?'editable':'locked'}" data-edit-clean="${esc(r.id)}" ${can?'':'disabled'}><b>JP ${jp}</b><span>${time}</span><span class="${st.cls}-text">✓ Sudah Diperiksa</span><small>${esc(r.createdByName||'Guru')}${admin?' • Koreksi Admin':mine&&!used&&ts.canAssess?' • Edit 1× tersedia':mine&&!used?' • Waktu edit berakhir':' • Terkunci'}</small></button>`;
+      return `<div class="jp-card-wrap"><button class="jp-card assessed ${can?'editable':'locked'}" data-edit-clean="${esc(r.id)}" ${can?'':'disabled'}><b>JP ${jp}</b><span>${time}</span><span class="${st.cls}-text">✓ Sudah Diperiksa</span><small>${esc(r.createdByName||'Guru')}${admin?' • Koreksi Admin':mine&&!used&&ts.canAssess?' • Edit 1× tersedia':mine&&!used?' • Waktu edit berakhir':' • Terkunci'}</small></button>${admin?`<button class="btn-mini danger clean-reset-jp" data-reset-clean="${esc(r.id)}">Reset JP ${jp}</button>`:''}</div>`;
     }
     const can=ts.canAssess&&!ownLocked;
     return `<button class="jp-card ${ts.code}" data-new-clean="${jp}" ${can?'':'disabled'}><b>JP ${jp}</b><span>${time}</span><strong>${ts.code==='missed'?'🔒 Terlewat':ts.code==='future'?'🔒 Belum Dibuka':ts.code==='open'?'🟢 Bisa Diperiksa':'🔒 Tidak tersedia'}</strong><small>${can?'Buka pemeriksaan':'Tidak dapat dinilai'}</small></button>`;
@@ -640,6 +640,9 @@ function renderCleanClass(classId){
   $('#backCleanClasses').onclick=cleanlinessPage;
   document.querySelectorAll('[data-new-clean]').forEach(b=>b.onclick=()=>renderCleanForm(classId,Number(b.dataset.newClean),null));
   document.querySelectorAll('[data-edit-clean]').forEach(b=>b.onclick=()=>{const r=state.cleanlinessToday.find(x=>x.id===b.dataset.editClean);if(r)renderCleanForm(classId,Number(r.jp),r)});
+  document.querySelectorAll('[data-reset-clean]').forEach(b=>b.onclick=()=>resetCleanlinessRecord(b.dataset.resetClean));
+  if($('#resetCleanClass')) $('#resetCleanClass').onclick=()=>resetCleanlinessClass(classId,todayKey());
+
 }
 function renderCleanForm(classId,jp,existing=null){
   const ts=jpTimeState(jp),isEdit=!!existing,admin=state.profile.role==='admin',mine=isEdit&&existing.createdByUid===state.user.uid;
@@ -663,6 +666,57 @@ function renderCleanForm(classId,jp,existing=null){
     await refreshCore();toast(isEdit?'Pemeriksaan diedit dan terkunci':'Pemeriksaan tersimpan');renderCleanClass(classId)
   }catch(e){console.error(e);toast(e.message||'Gagal menyimpan');btn.disabled=false}};
 }
+
+async function resetCleanlinessRecord(checkId){
+  if(state.profile.role!=='admin')return;
+  let r=state.cleanlinessToday.find(x=>x.id===checkId);
+  if(!r){
+    try{const snap=await getDoc(doc(db,'cleanliness',checkId));if(snap.exists())r={id:snap.id,...snap.data()};}catch(_){}
+  }
+  if(!r)return toast('Data pemeriksaan tidak ditemukan');
+  const reason=prompt(`Alasan reset ${r.classId} • JP ${r.jp}:`,'Koreksi data');
+  if(reason===null)return;
+  if(!confirm(`Reset pemeriksaan ${r.classId} • JP ${r.jp} menjadi Belum Diperiksa?\n\nData lama tetap disimpan di arsip Admin.`))return;
+  try{
+    const now=new Date(),archiveId=`${checkId}_${now.getTime()}`;
+    await setDoc(doc(db,'cleanlinessResetArchive',archiveId),{
+      ...r,originalId:checkId,resetReason:reason,
+      resetByUid:state.user.uid,resetByName:state.profile.name,resetAt:now.toISOString()
+    });
+    await deleteDoc(doc(db,'cleanliness',checkId));
+    await addAdminAudit('RESET_CLEANLINESS_JP',{checkId,classId:r.classId,jp:r.jp,date:r.date,archiveId,reason});
+    await refreshCore();
+    toast(`${r.classId} • JP ${r.jp} kembali menjadi Belum Diperiksa`);
+    renderCleanClass(r.classId);
+  }catch(e){console.error(e);toast('Reset pemeriksaan gagal')}
+}
+
+async function resetCleanlinessClass(classId,date){
+  if(state.profile.role!=='admin')return;
+  const rows=state.cleanlinessToday.filter(r=>r.classId===classId && r.date===date);
+  if(!rows.length)return toast('Belum ada pemeriksaan yang dapat direset');
+  const reason=prompt(`Alasan reset seluruh pemeriksaan ${classId} tanggal ${date}:`,'Koreksi data');
+  if(reason===null)return;
+  if(!confirm(`Reset ${rows.length} pemeriksaan kelas ${classId} menjadi Belum Diperiksa?\n\nSemua data lama tetap diarsipkan.`))return;
+  try{
+    const now=new Date();
+    const batch=writeBatch(db);
+    for(const r of rows){
+      const archiveId=`${r.id}_${now.getTime()}_${r.jp}`;
+      batch.set(doc(db,'cleanlinessResetArchive',archiveId),{
+        ...r,originalId:r.id,resetReason:reason,
+        resetByUid:state.user.uid,resetByName:state.profile.name,resetAt:now.toISOString()
+      });
+      batch.delete(doc(db,'cleanliness',r.id));
+    }
+    await batch.commit();
+    await addAdminAudit('RESET_CLEANLINESS_CLASS',{classId,date,count:rows.length,reason});
+    await refreshCore();
+    toast(`Kebersihan ${classId} kembali menjadi Belum Diperiksa`);
+    renderCleanClass(classId);
+  }catch(e){console.error(e);toast('Reset kebersihan kelas gagal')}
+}
+
 function cleanCard(r){const st=cleanOverall(r);return `<div class="clean-item"><div class="clean-class"><b>${esc(r.classId)}</b><small>JP ${esc(r.jp)}</small></div><div class="clean-status ${st.cls}"><b>${st.label}</b></div><div class="clean-meta">${esc(r.timeLabel||'')}<br><small>${esc(r.createdByName||'Guru')}</small></div></div>`}
 function cleanOverall(r){const v=['floor','desks','bin','equipment'].map(k=>Number(r[k]||0)),min=Math.min(...v),avg=v.reduce((a,b)=>a+b,0)/v.length;if(min===1||avg<2)return{label:'Perlu Tindakan',cls:'bad'};if(v.every(x=>x===3))return{label:'Bersih & Rapi',cls:'good'};return{label:'Cukup',cls:'fair'}}
 function renderCleanForm(classId,jp,existing=null){
@@ -715,7 +769,8 @@ function renderCleanRecap(){
 }
 async function loadCleanRecap(){
   const target=$('#cleanRecapBody'); if(!target)return; const date=$('#cleanRecapDate').value||todayKey(),cls=$('#cleanRecapClass').value||'';
-  try{const snap=await getDocs(query(collection(db,'cleanliness'),where('date','==',date)));let rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));if(cls)rows=rows.filter(r=>r.classId===cls);target.innerHTML=rows.length?`<div class="clean-list">${rows.map(cleanCard).join('')}</div>`:'<div class="empty">Belum ada pemeriksaan kebersihan pada pilihan ini.</div>';}catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap kebersihan. Pastikan Firestore Rules v2.9.1 sudah dipublish.</div>';}
+  try{const snap=await getDocs(query(collection(db,'cleanliness'),where('date','==',date)));let rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));if(cls)rows=rows.filter(r=>r.classId===cls);target.innerHTML=rows.length?`<div class="clean-list">${rows.map(cleanCard).join('')}</div>`:'<div class="empty">Belum ada pemeriksaan kebersihan pada pilihan ini.</div>';
+    document.querySelectorAll('[data-reset-clean]').forEach(b=>b.onclick=()=>resetCleanlinessRecord(b.dataset.resetClean));}catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap kebersihan. Pastikan Firestore Rules v2.9.1 sudah dipublish.</div>';}
 }
 
 function weekRange(offset=0){

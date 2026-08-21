@@ -45,3 +45,13 @@ Build ini menyelesaikan fitur kontrol yang sebelumnya masih terpisah/setengah te
 Wajib Publish `firestore.rules` terbaru.
 
 Untuk tombol Reset Password Admin, deploy Firebase Function sesuai `SETUP_RESET_PASSWORD.md`.
+
+
+## Reset Kebersihan oleh Admin
+- Reset per JP dari halaman kelas Kebersihan.
+- Reset seluruh pemeriksaan kelas untuk tanggal aktif.
+- Reset juga tersedia dari Rekap Kebersihan per pemeriksaan.
+- Data lama disimpan ke `cleanlinessResetArchive`.
+- Audit tersimpan sebagai `RESET_CLEANLINESS_JP` atau `RESET_CLEANLINESS_CLASS`.
+- Setelah reset, status kembali menjadi Belum Diperiksa.
+- Firestore Rules berubah dan wajib dipublish.

@@ -342,3 +342,8 @@ body{overflow-anchor:none}
 .audit-detail{max-width:460px;white-space:normal;line-height:1.4}
 @media(max-width:750px){.operational-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:480px){.operational-grid{grid-template-columns:1fr}}
+
+/* Admin cleanliness reset */
+.jp-card-wrap{display:flex;flex-direction:column;gap:6px}
+.jp-card-wrap .jp-card{width:100%}
+.clean-reset-jp{align-self:flex-end}
