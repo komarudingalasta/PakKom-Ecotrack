@@ -201,3 +201,81 @@
  #recapPanel>.card{margin-top:20px}
  .account-row{grid-template-columns:100px 1fr}
 }
+
+
+/* FINAL LAYOUT CONSISTENCY — authoritative overrides */
+html{scroll-behavior:auto;overflow-anchor:none}
+body{overflow-anchor:none}
+.app{min-height:100dvh}
+.main{min-height:100dvh;display:flex;flex-direction:column}
+.topbar{
+  height:88px!important;
+  min-height:88px!important;
+  padding:0 24px!important;
+  margin:0!important;
+  flex:0 0 88px;
+  position:sticky;
+  top:0;
+  z-index:40;
+  background:#fff;
+}
+.topbar>div:first-of-type{min-width:0}
+.topbar h2{margin:0!important;line-height:1.15}
+.topbar p{margin:5px 0 0!important;line-height:1.2;min-height:15px}
+.content,#content{
+  width:100%;
+  max-width:1400px;
+  margin:0 auto!important;
+  padding:24px 26px 110px!important;
+  box-sizing:border-box;
+  flex:1 1 auto;
+  overflow-anchor:none;
+}
+.page-content-stable>*:first-child{margin-top:0!important}
+.page-content-stable .card:first-child{margin-top:0!important}
+.clean-hero,.recap-switch,.account-card,.welcome,.section-head:first-child{margin-top:0!important}
+#recapPanel{min-height:560px;overflow-anchor:none}
+#recapPanel>.card{margin-top:18px!important}
+#recapBody,#cleanRecapBody{min-height:300px;overflow-anchor:none}
+.account-card{max-width:none!important;width:100%}
+.holiday-card{margin-top:0!important}
+.approval-head{align-items:center}
+.approval-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.approval-summary{margin-top:8px}
+.approval-table .check-col{width:44px}
+
+@media(max-width:900px){
+  .topbar{
+    height:92px!important;
+    min-height:92px!important;
+    flex-basis:92px!important;
+    padding:0 18px!important;
+  }
+  .content,#content{padding:22px 18px 104px!important}
+}
+@media(max-width:600px){
+  .topbar{
+    height:92px!important;
+    min-height:92px!important;
+    flex-basis:92px!important;
+    padding:0 16px!important;
+    gap:10px!important;
+  }
+  .topbar h2{font-size:20px!important}
+  .topbar p{font-size:12px!important}
+  .content,#content{
+    padding:22px 14px calc(100px + env(safe-area-inset-bottom))!important;
+  }
+  .sidebar nav{
+    min-height:72px;
+    padding:7px 5px max(8px,env(safe-area-inset-bottom))!important;
+  }
+  .recap-switch{margin-bottom:18px!important}
+  #recapPanel{min-height:600px}
+  #recapPanel>.card{margin-top:18px!important}
+  .account-card{padding:20px!important}
+  .approval-head{align-items:flex-start;gap:12px}
+  .approval-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}
+  .approval-actions .btn{width:100%;font-size:12px;padding:10px 8px}
+  .approval-table{min-width:700px}
+}

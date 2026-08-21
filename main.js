@@ -353,10 +353,29 @@ function renderShell(){
   if($('#profileMenuName')) $('#profileMenuName').textContent=displayName;
   if($('#profileMenuRole')) $('#profileMenuRole').textContent=chipRole;
   $('#nav').innerHTML=navItems().map(([k,l])=>`<button class="nav-btn ${state.page===k?'active':''}" data-page="${k}">${l}</button>`).join('');
-  document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;state.selectedClass=null;renderShell();document.querySelector('.sidebar').classList.remove('open')});
+  document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
+    state.page=b.dataset.page;
+    state.selectedClass=null;
+    window.scrollTo({top:0,left:0,behavior:'instant'});
+    document.documentElement.scrollTop=0;
+    document.body.scrollTop=0;
+    renderShell();
+    document.querySelector('.sidebar').classList.remove('open');
+  });
   renderPage();
 }
-function renderPage(){ if(state.page==='home')return home(); if(state.page==='input')return inputPage(); if(state.page==='clean')return cleanlinessPage(); if(state.page==='recap')return recap(); if(state.page==='account')return account(); if(state.page==='master')return master(); }
+function renderPage(){
+  if(content){
+    content.classList.add('page-content-stable');
+    content.setAttribute('data-page',state.page||'home');
+  }
+  if(state.page==='home')return home();
+  if(state.page==='input')return inputPage();
+  if(state.page==='clean')return cleanlinessPage();
+  if(state.page==='recap')return recap();
+  if(state.page==='account')return account();
+  if(state.page==='master')return master();
+}
 
 function home(){
   pageMeta('Beranda',dateID());
@@ -377,10 +396,10 @@ function home(){
   </div>
   ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>🥤 ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div></div>`:''}
   ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah & Tumbler</h3><small>Hanya pendataan wadah & tumbler yang dihitung sekali per kelas per hari.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
-  document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;renderShell()});
-  document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';renderShell()});
+  document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;window.scrollTo(0,0);renderShell()});
+  document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';window.scrollTo(0,0);renderShell()});
 }
-function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;renderShell()}); }
+function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;window.scrollTo(0,0);renderShell()}); }
 
 function inputPage(){
   pageMeta('Wadah & Tumbler','Pilih kelas lalu tandai kondisi siswa');
@@ -713,17 +732,91 @@ function renderPendingApprovals(){
   const target=$('#pendingApprovals'); if(!target)return;
   const rows=(window.masterUsers||[]).filter(u=>u.role==='guru'&&u.approved===false&&u.rejected!==true);
   if(!rows.length){target.innerHTML='';return;}
-  target.innerHTML=`<div class="approval-box"><div class="section-head"><div><h4 style="margin:0">Menunggu Persetujuan (${rows.length})</h4><small>Periksa jenis guru dan kelas wali sebelum menyetujui.</small></div></div><div class="table-wrap"><table><thead><tr><th>NIP Guru</th><th>Nama</th><th>Daftar Sebagai</th><th>Kelas Wali</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td>${u.requestedType==='wali'?'Wali Kelas':'Guru'}</td><td>${u.requestedType==='wali'?esc(u.requestedHomeroomClass||'-'):'-'}</td><td><button class="btn-mini edit" data-approve-teacher="${u.uid}">Approve</button> <button class="btn-mini danger" data-reject-teacher="${u.uid}">Tolak</button></td></tr>`).join('')}</tbody></table></div></div>`;
+  target.innerHTML=`<div class="approval-box">
+    <div class="section-head approval-head">
+      <div><h4 style="margin:0">Menunggu Persetujuan (${rows.length})</h4><small>Pilih beberapa akun atau setujui semuanya sekaligus. Wali kelas yang bentrok akan dilewati otomatis.</small></div>
+      <div class="approval-actions">
+        <button id="approveSelected" class="btn secondary" disabled>✓ Approve Terpilih</button>
+        <button id="approveAllPending" class="btn primary">✓ Approve Semua</button>
+      </div>
+    </div>
+    <div class="bulk-summary approval-summary"><span id="approvalSelectedInfo">Belum ada akun dipilih</span><button id="selectAllPendingBtn" class="btn-mini edit">Pilih Semua</button></div>
+    <div class="table-wrap"><table class="approval-table"><thead><tr><th class="check-col"><input id="pendingSelectAll" type="checkbox" aria-label="Pilih semua akun pending"></th><th>NIP Guru</th><th>Nama</th><th>Daftar Sebagai</th><th>Kelas Wali</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td class="check-col"><input class="pending-check" type="checkbox" value="${esc(u.uid)}" aria-label="Pilih ${esc(u.name||u.loginId||'akun')}"></td><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.requestedType==='wali'?'ok':'neutral'}">${u.requestedType==='wali'?'Wali Kelas':'Guru'}</span></td><td>${u.requestedType==='wali'?esc(u.requestedHomeroomClass||'-'):'-'}</td><td><button class="btn-mini edit" data-approve-teacher="${u.uid}">Approve</button> <button class="btn-mini danger" data-reject-teacher="${u.uid}">Tolak</button></td></tr>`).join('')}</tbody></table></div>
+  </div>`;
+
+  const checks=()=>[...document.querySelectorAll('.pending-check')];
+  const updateSelection=()=>{
+    const all=checks(), selected=all.filter(x=>x.checked);
+    const master=$('#pendingSelectAll');
+    if(master){master.checked=all.length>0&&selected.length===all.length;master.indeterminate=selected.length>0&&selected.length<all.length;}
+    if($('#approveSelected')) $('#approveSelected').disabled=selected.length===0;
+    if($('#approvalSelectedInfo')) $('#approvalSelectedInfo').textContent=selected.length?`${selected.length} akun dipilih`:'Belum ada akun dipilih';
+    if($('#selectAllPendingBtn')) $('#selectAllPendingBtn').textContent=selected.length===all.length?'Batal Pilih Semua':'Pilih Semua';
+  };
+  checks().forEach(c=>c.onchange=updateSelection);
+  if($('#pendingSelectAll')) $('#pendingSelectAll').onchange=e=>{checks().forEach(c=>c.checked=e.target.checked);updateSelection()};
+  if($('#selectAllPendingBtn')) $('#selectAllPendingBtn').onclick=()=>{const all=checks();const choose=!all.every(c=>c.checked);all.forEach(c=>c.checked=choose);updateSelection()};
+  if($('#approveSelected')) $('#approveSelected').onclick=()=>approvePendingBulk(checks().filter(c=>c.checked).map(c=>c.value),false);
+  if($('#approveAllPending')) $('#approveAllPending').onclick=()=>approvePendingBulk(rows.map(u=>u.uid),true);
+
   document.querySelectorAll('[data-approve-teacher]').forEach(b=>b.onclick=()=>approveTeacher(b.dataset.approveTeacher));
   document.querySelectorAll('[data-reject-teacher]').forEach(b=>b.onclick=()=>rejectTeacher(b.dataset.rejectTeacher));
+  updateSelection();
 }
+function pendingApprovalPlan(uid,occupied){
+  const u=(window.masterUsers||[]).find(x=>x.uid===uid);
+  if(!u) return {ok:false,reason:'Akun tidak ditemukan'};
+  const isHomeroom=u.requestedType==='wali';
+  const homeroomClass=isHomeroom?(u.requestedHomeroomClass||''):'';
+  if(isHomeroom&&!state.classes.includes(homeroomClass)) return {ok:false,u,reason:`Kelas ${homeroomClass||'-'} belum tersedia`};
+  if(isHomeroom&&occupied.has(homeroomClass)) return {ok:false,u,reason:`${homeroomClass} sudah memiliki wali kelas`};
+  return {ok:true,u,isHomeroom,homeroomClass};
+}
+
 async function approveTeacher(uid){
-  const u=(window.masterUsers||[]).find(x=>x.uid===uid); if(!u)return;
-  const isHomeroom=u.requestedType==='wali', homeroomClass=isHomeroom?(u.requestedHomeroomClass||''):'';
-  if(isHomeroom&&!state.classes.includes(homeroomClass))return toast(`Kelas ${homeroomClass||'-'} belum tersedia. Buat kelas terlebih dahulu.`);
-  if(isHomeroom){const clash=(window.masterUsers||[]).find(x=>x.uid!==uid&&x.role==='guru'&&x.active!==false&&x.approved!==false&&x.isHomeroom===true&&x.homeroomClass===homeroomClass);if(clash)return toast(`${homeroomClass} sudah memiliki wali kelas: ${clash.name}`);}
-  await setDoc(doc(db,'users',uid),{approved:true,active:true,rejected:false,isHomeroom,homeroomClass,approvedAt:new Date().toISOString(),approvedByUid:state.user.uid,approvedByName:state.profile.name},{merge:true});
-  toast(`Akun ${u.loginId} disetujui`); await master();
+  const occupied=new Set((window.masterUsers||[]).filter(x=>x.role==='guru'&&x.active!==false&&x.approved!==false&&x.isHomeroom===true&&x.homeroomClass).map(x=>x.homeroomClass));
+  const plan=pendingApprovalPlan(uid,occupied);
+  if(!plan.ok) return toast(plan.reason);
+  await setDoc(doc(db,'users',uid),{approved:true,active:true,rejected:false,isHomeroom:plan.isHomeroom,homeroomClass:plan.homeroomClass,approvedAt:new Date().toISOString(),approvedByUid:state.user.uid,approvedByName:state.profile.name},{merge:true});
+  toast(`Akun ${plan.u.loginId} disetujui`);
+  await master();
+}
+
+async function approvePendingBulk(uids,allMode=false){
+  const unique=[...new Set(uids||[])].filter(Boolean);
+  if(!unique.length) return toast('Pilih akun yang ingin disetujui.');
+  const label=allMode?'semua akun pending':`${unique.length} akun terpilih`;
+  if(!confirm(`Approve ${label}?\n\nAkun Wali Kelas yang kelasnya belum tersedia atau bentrok dengan wali kelas lain akan dilewati.`)) return;
+
+  const occupied=new Set((window.masterUsers||[]).filter(x=>x.role==='guru'&&x.active!==false&&x.approved!==false&&x.isHomeroom===true&&x.homeroomClass).map(x=>x.homeroomClass));
+  const approved=[], skipped=[];
+  const now=new Date().toISOString();
+
+  for(const uid of unique){
+    const plan=pendingApprovalPlan(uid,occupied);
+    if(!plan.ok){skipped.push(`${plan.u?.loginId||uid}: ${plan.reason}`);continue;}
+    try{
+      await setDoc(doc(db,'users',uid),{
+        approved:true,active:true,rejected:false,
+        isHomeroom:plan.isHomeroom,
+        homeroomClass:plan.homeroomClass,
+        approvedAt:now,
+        approvedByUid:state.user.uid,
+        approvedByName:state.profile.name
+      },{merge:true});
+      approved.push(plan.u.loginId||plan.u.name||uid);
+      if(plan.isHomeroom&&plan.homeroomClass) occupied.add(plan.homeroomClass);
+    }catch(e){
+      console.error(e);
+      skipped.push(`${plan.u.loginId||uid}: gagal menyimpan`);
+    }
+  }
+
+  let msg=`${approved.length} akun berhasil di-approve`;
+  if(skipped.length) msg+=` • ${skipped.length} dilewati`;
+  toast(msg,6500);
+  await master();
+  if(skipped.length) console.warn('Approval dilewati:',skipped);
 }
 async function rejectTeacher(uid){
   const u=(window.masterUsers||[]).find(x=>x.uid===uid); if(!u)return;
