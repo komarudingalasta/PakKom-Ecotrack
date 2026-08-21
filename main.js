@@ -557,11 +557,26 @@ async function loadCleanRecap(){
   try{const snap=await getDocs(query(collection(db,'cleanliness'),where('date','==',date)));let rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));if(cls)rows=rows.filter(r=>r.classId===cls);target.innerHTML=rows.length?`<div class="clean-list">${rows.map(cleanCard).join('')}</div>`:'<div class="empty">Belum ada pemeriksaan kebersihan pada pilihan ini.</div>';}catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap kebersihan. Pastikan Firestore Rules v2.9.1 sudah dipublish.</div>';}
 }
 
-function account(){ pageMeta('Akun','Informasi pengguna'); const type=state.profile.role==='admin'?'Administrator':(state.profile.isHomeroom?'Wali Kelas':'Guru'); const wali=state.profile.isHomeroom&&state.profile.homeroomClass?`<p><b>Kelas Wali:</b> ${esc(state.profile.homeroomClass)}</p>`:''; content.innerHTML=`<div class="card" style="max-width:600px"><h3>${esc(state.profile.name)}</h3><p><b>ID:</b> ${esc(state.profile.loginId||'-')}</p><p><b>Peran:</b> ${type}</p>${wali}<p><b>Status:</b> ${state.profile.active!==false?'Aktif':'Nonaktif'}</p><div class="notice">Guru dan wali kelas memiliki akses pendataan yang sama. Penanda wali kelas digunakan sebagai informasi tanggung jawab kelas.</div></div>`; }
+function account(){
+  pageMeta('Akun','Informasi pengguna');
+  const type=state.profile.role==='admin'?'Administrator':(state.profile.isHomeroom?'Wali Kelas':'Guru');
+  const wali=state.profile.isHomeroom&&state.profile.homeroomClass
+    ? `<div class="account-row"><span>Kelas Wali</span><b>${esc(state.profile.homeroomClass)}</b></div>`:'';
+  content.innerHTML=`<div class="card account-card">
+    <div class="account-name">${esc(state.profile.name)}</div>
+    <div class="account-details">
+      <div class="account-row"><span>NIP Guru</span><b>${esc(state.profile.loginId||'-')}</b></div>
+      <div class="account-row"><span>Peran</span><b>${type}${state.profile.isHomeroom&&state.profile.homeroomClass?` • ${esc(state.profile.homeroomClass)}`:''}</b></div>
+      ${wali}
+      <div class="account-row"><span>Status</span><b class="account-active">Aktif</b></div>
+    </div>
+    <div class="notice account-notice">Guru dan wali kelas memiliki akses pendataan yang sama. Penanda wali kelas digunakan sebagai informasi tanggung jawab kelas.</div>
+  </div>`;
+}
 
 async function master(){
   if(state.profile.role!=='admin'){state.page='home';return renderShell()}
-  pageMeta('Kelola Data','Khusus Administrator • v2.9.1');
+  pageMeta('Kelola Data','Khusus Administrator');
   content.innerHTML='<div class="card"><div class="empty">Memuat data master...</div></div>';
   const [stuSnap,userSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users'))]);
   state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));
