@@ -436,6 +436,12 @@ function home(){
 }
 function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;window.scrollTo(0,0);renderShell()}); }
 
+function teacherWadahLocked(){
+  if(state.profile?.role==='admin') return false;
+  const op=operationalInfo();
+  if(!op.active) return true;
+  return !wadahTimeInfo().open;
+}
 function inputPage(){
   pageMeta('Wadah Makan & Tumbler','Pilih kelas lalu tandai kondisi siswa');
   const op=operationalInfo();
@@ -446,7 +452,7 @@ function inputPage(){
 
   const wt=wadahTimeInfo();
   const admin=state.profile.role==='admin';
-  const closed=!admin&&!wt.open;
+  const closed=teacherWadahLocked();
 
   if(!state.selectedClass){
     content.innerHTML=`
@@ -462,6 +468,12 @@ function inputPage(){
   loadClassForm(state.selectedClass);
 }
 async function loadClassForm(c){
+  if(teacherWadahLocked() && !classRecord(c)){
+    state.selectedClass=null;
+    toast(`🔒 Pendataan sudah ditutup pukul ${wadahTimeInfo().label}`);
+    inputPage();
+    return;
+  }
   content.innerHTML='<div class="card"><div class="empty">Memuat data siswa...</div></div>';
   try{
     const snap=await getDocs(query(collection(db,'students'),where('classId','==',c)));
@@ -478,7 +490,7 @@ async function loadClassForm(c){
     const isCreator=!!(existing && existing.createdByUid===state.user.uid);
     const teacherEditUsed=Number(existing?.teacherEditCount||0)>=1;
     const wt=wadahTimeInfo();
-    const timeClosed=!isAdmin&&!wt.open;
+    const timeClosed=teacherWadahLocked();
     // Setelah jam tutup, seluruh form Guru/Wali Kelas terkunci.
     // Sebelum jam tutup, pembuat data mendapat tepat 1x edit.
     window.wadahTimeClosed=timeClosed;
@@ -548,7 +560,7 @@ function renderStudentRows(){
   });
 }
 async function saveClass(c){
-  const wt=wadahTimeInfo(); if(state.profile.role!=='admin'&&!wt.open){toast(`Pendataan hari ini sudah ditutup (${wt.label})`);return;}
+  const wt=wadahTimeInfo(); if(teacherWadahLocked()){toast(`🔒 Pendataan sudah ditutup pukul ${wt.label}`);return;}
   if(!window.formItems?.length){toast('Belum ada siswa di kelas ini');return;}
   const btn=$('#saveBtn');btn.disabled=true;btn.textContent='Menyimpan...';
   try{
@@ -562,6 +574,7 @@ async function saveClass(c){
       teacherEditCount,
       teacherEditedAt:isTeacherEdit?now.toISOString():(old?.teacherEditedAt||null),
       lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),audit};
+    if(teacherWadahLocked()) throw new Error(`Pendataan sudah ditutup pukul ${wadahTimeInfo().label}`);
     await setDoc(doc(db,'records',id),payload,{merge:false});
     await refreshCore(); toast(`Data ${c} berhasil disimpan`); state.selectedClass=null; renderPage();
   }catch(e){ console.error(e); toast(e.message||'Gagal menyimpan data'); btn.disabled=false;btn.textContent=`Simpan Data ${c}`; }
@@ -577,12 +590,16 @@ function wadahTimeInfo(){
     return Number.isFinite(x[0])&&Number.isFinite(x[1])?x[0]*60+x[1]:0;
   };
   if(d>=1&&d<=4){
-    const close=hhmmToMin(cfg.wadahCloseMonThu,'14:10');
-    return {open:m<close,close,label:String(cfg.wadahCloseMonThu||'14:10').replace(':','.')};
+    const hardClose=14*60+10;
+    const configured=hhmmToMin(cfg.wadahCloseMonThu,'14:10');
+    const close=Math.min(hardClose,configured||hardClose);
+    return {open:m<close,close,label:`${String(Math.floor(close/60)).padStart(2,'0')}.${String(close%60).padStart(2,'0')}`};
   }
   if(d===5){
-    const close=hhmmToMin(cfg.wadahCloseFri,'11:30');
-    return {open:m<close,close,label:String(cfg.wadahCloseFri||'11:30').replace(':','.')};
+    const hardClose=11*60+30;
+    const configured=hhmmToMin(cfg.wadahCloseFri,'11:30');
+    const close=Math.min(hardClose,configured||hardClose);
+    return {open:m<close,close,label:`${String(Math.floor(close/60)).padStart(2,'0')}.${String(close%60).padStart(2,'0')}`};
   }
   return {open:false,close:0,label:'Hari libur'};
 }
