@@ -301,9 +301,10 @@ async function refreshCore(){
     withTimeout(getDocs(query(collection(db,'classes'),orderBy('name'))),5000,'Memuat kelas'),
     withTimeout(getDocs(query(collection(db,'records'),where('date','==',todayKey()))),5000,'Memuat pendataan hari ini'),
     withTimeout(getDocs(query(collection(db,'cleanliness'),where('date','==',todayKey()))),5000,'Memuat kebersihan hari ini'),
-    withTimeout(getDoc(doc(db,'settings','calendar')),5000,'Memuat kalender sekolah')
+    withTimeout(getDoc(doc(db,'settings','calendar')),5000,'Memuat kalender sekolah'),
+    withTimeout(getDoc(doc(db,'settings','access')),5000,'Memuat pengaturan akses')
   ];
-  const [classRes,recordRes,cleanRes,calendarRes]=await Promise.allSettled(jobs);
+  const [classRes,recordRes,cleanRes,calendarRes,accessRes]=await Promise.allSettled(jobs);
 
   if(classRes.status==='fulfilled'){
     state.classDocs=classRes.value.docs.map(d=>({id:d.id,...d.data()}));
@@ -325,11 +326,21 @@ async function refreshCore(){
       : {overrides:{}};
   } else console.warn(calendarRes.reason);
 
+  if(accessRes.status==='fulfilled'){
+    state.accessSettings=accessRes.value?.exists?.()
+      ? accessRes.value.data()
+      : {homeroomCleanlinessEnabled:false};
+  } else {
+    console.warn(accessRes.reason);
+    state.accessSettings={homeroomCleanlinessEnabled:false};
+  }
+
   return {
     classes:classRes.status,
     records:recordRes.status,
     cleanliness:cleanRes.status,
-    calendar:calendarRes.status
+    calendar:calendarRes.status,
+    access:accessRes.status
   };
 }
 
@@ -422,25 +433,31 @@ async function loadClassForm(c){
       return old?{...old,studentId:st.id,nis:st.nis||st.id,name:st.name}:{studentId:st.id,nis:st.nis||st.id,name:st.name,presence:'hadir',food:true,tumbler:true};
     });
     window.rosterChanged=!!existing && ((existing.items||[]).length!==window.formItems.length || window.formItems.some((i,idx)=>!existing.items?.[idx] || existing.items[idx].studentId!==i.studentId || existing.items[idx].name!==i.name));
-    window.originalRecord=existing||null; window.formLocked=!!(existing && existing.createdByUid!==state.user.uid && state.profile.role!=='admin');
+    window.originalRecord=existing||null;
+    const isAdmin=state.profile.role==='admin';
+    const isCreator=!!(existing && existing.createdByUid===state.user.uid);
+    const teacherEditUsed=Number(existing?.teacherEditCount||0)>=1;
+    // Teacher creator may edit exactly once. Other teachers cannot edit.
+    // Admin may always correct.
+    window.formLocked=!!(existing && !isAdmin && (!isCreator || teacherEditUsed));
+    window.teacherCanEditOnce=!!(existing && !isAdmin && isCreator && !teacherEditUsed);
     renderClassForm(c);
   }catch(e){ console.error(e); content.innerHTML='<div class="card"><div class="empty">Gagal memuat siswa. Periksa Firestore Rules dan koneksi.</div></div>'; }
 }
 function renderClassForm(c){
   const existing=window.originalRecord;
   content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${c}</h3><small>${existing?`Sudah didata oleh ${esc(existing.createdByName||'Guru')} • ${esc(existing.timeLabel||'-')}`:'Belum pernah disimpan hari ini'}</small></div><button class="btn ghost" id="backClasses">← Pilih kelas lain</button></div>
-  ${window.formLocked?'<div class="notice">Data dibuat guru lain. Saat ini hanya ditampilkan. Gunakan “Koreksi Data” jika memang perlu mengubahnya.</div>':''}${window.rosterChanged?'<div class="notice">Daftar siswa aktif kelas ini berubah sejak pendataan terakhir. Form sudah disesuaikan dengan master siswa terbaru tanpa menghapus status siswa yang masih terdaftar.</div>':''}
+  ${window.formLocked?`<div class="notice">${state.profile.role==='admin'?'Data terkunci untuk guru. Administrator tetap dapat melakukan koreksi.':(window.originalRecord?.createdByUid===state.user.uid?'Kesempatan edit 1× untuk pendataan ini sudah digunakan. Data sekarang terkunci.':'Data dibuat oleh guru lain dan tidak dapat diedit dari akun ini.')}</div>`:''}
+  ${window.teacherCanEditOnce?'<div class="notice edit-once-note">Anda memiliki <b>1 kali kesempatan edit</b> setelah data pertama dikirim. Setelah disimpan kembali, data akan terkunci.</div>':''}${window.rosterChanged?'<div class="notice">Daftar siswa aktif kelas ini berubah sejak pendataan terakhir. Form sudah disesuaikan dengan master siswa terbaru tanpa menghapus status siswa yang masih terdaftar.</div>':''}
   <div class="card attendance-card">
     <div class="wadah-sticky-tools">
-      <div class="toolbar wadah-bulk"><button class="btn secondary bulk" data-bulk="presence">✓ Semua Hadir</button><button class="btn secondary bulk" data-bulk="food">🥡 Semua Bawa Wadah</button><button class="btn secondary bulk" data-bulk="tumbler">💧 Semua Bawa Tumbler</button>${window.formLocked?'<button id="unlockBtn" class="btn ghost">Koreksi Data</button>':''}</div>
+      <div class="toolbar wadah-bulk"><button class="btn secondary bulk" data-bulk="presence">✓ Semua Hadir</button><button class="btn secondary bulk" data-bulk="food">🥡 Semua Bawa Wadah</button><button class="btn secondary bulk" data-bulk="tumbler">💧 Semua Bawa Tumbler</button></div>
       <div id="wadahSummary" class="wadah-summary"></div>
     </div>
     <div id="studentRows" class="student-card-list"></div>
     <div class="wadah-save-bar"><div id="wadahSaveSummary" class="save-summary"></div><button id="saveBtn" class="btn primary" ${window.formLocked?'disabled':''}>Simpan Data ${c}</button></div>
   </div>`;
-  $('#backClasses').onclick=()=>{state.selectedClass=null;renderPage()};
-  if($('#unlockBtn')) $('#unlockBtn').onclick=()=>{window.formLocked=false;$('#saveBtn').disabled=false;$('#unlockBtn').disabled=true;renderStudentRows();toast('Mode koreksi aktif')};
-  document.querySelectorAll('.bulk').forEach(b=>b.onclick=()=>setAll(b.dataset.bulk));
+  $('#backClasses').onclick=()=>{state.selectedClass=null;renderPage()};  document.querySelectorAll('.bulk').forEach(b=>b.onclick=()=>setAll(b.dataset.bulk));
   $('#saveBtn').onclick=()=>saveClass(c); renderStudentRows();
 }
 function setAll(field){ if(window.formLocked)return; window.formItems.forEach(i=>{if(field==='presence')i.presence='hadir';else if(i.presence==='hadir')i[field]=true}); renderStudentRows(); }
@@ -492,12 +509,17 @@ async function saveClass(c){
   try{
     const id=`${todayKey()}_${c}`; const old=window.originalRecord; const now=new Date();
     const audit=[...(old?.audit||[])]; if(old) audit.push({editedAt:now.toISOString(),editedByUid:state.user.uid,editedByName:state.profile.name});
+    const isTeacherEdit=!!(old && state.profile.role!=='admin' && old.createdByUid===state.user.uid);
+    const teacherEditCount=isTeacherEdit?Number(old.teacherEditCount||0)+1:Number(old?.teacherEditCount||0);
+    if(isTeacherEdit && teacherEditCount>1) throw new Error('Kesempatan edit 1× sudah digunakan');
     const payload={date:todayKey(),classId:c,items:window.formItems,
       createdByUid:old?.createdByUid||state.user.uid,createdByName:old?.createdByName||state.profile.name,createdAt:old?.createdAt||now.toISOString(),
+      teacherEditCount,
+      teacherEditedAt:isTeacherEdit?now.toISOString():(old?.teacherEditedAt||null),
       lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),audit};
     await setDoc(doc(db,'records',id),payload,{merge:false});
     await refreshCore(); toast(`Data ${c} berhasil disimpan`); state.selectedClass=null; renderPage();
-  }catch(e){ console.error(e); toast('Gagal menyimpan data'); btn.disabled=false;btn.textContent=`Simpan Data ${c}`; }
+  }catch(e){ console.error(e); toast(e.message||'Gagal menyimpan data'); btn.disabled=false;btn.textContent=`Simpan Data ${c}`; }
 }
 
 function cleanlinessPage(){
@@ -527,7 +549,17 @@ function renderCleanForm(){
   pageMeta('Pemeriksaan Kebersihan',`Pilih kelas dan JP 1–${op.jp}, lalu nilai 4 aspek`);
   const aspect=(key,label,icon,labels)=>`<div class="aspect-row"><div class="aspect-name"><span>${icon}</span><b>${label}</b></div><div class="tri-choice" data-aspect="${key}"><button data-v="3" class="good active">${labels[0]}</button><button data-v="2" class="fair">${labels[1]}</button><button data-v="1" class="bad">${labels[2]}</button></div></div>`;
   content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Pemeriksaan Baru</h3><small>${esc(op.label)} • ${op.jp} JP tersedia hari ini.</small></div><button class="btn ghost" id="backClean">← Kembali</button></div>
-  <div class="card clean-form"><div class="form-grid"><label>Kelas<select id="cleanClass">${state.classes.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label><label>JP<select id="cleanJp">${Array.from({length:op.jp},(_,i)=>`<option value="${i+1}">JP ${i+1}</option>`).join('')}</select></label></div>
+  <div class="card clean-form">
+  ${state.profile.isHomeroom===true && state.profile.role!=='admin'
+    ? `<div class="notice clean-access-note">${state.accessSettings?.homeroomCleanlinessEnabled===true
+        ? `Akses kelas sendiri dibuka. Anda dapat menilai semua kelas termasuk ${esc(state.profile.homeroomClass||'-')}.`
+        : `Anda dapat menilai semua kelas kecuali kelas wali Anda (${esc(state.profile.homeroomClass||'-')}).`}</div>`
+    : ''}
+  <div class="form-grid"><label>Kelas<select id="cleanClass">${(
+    state.profile.isHomeroom===true && state.profile.role!=='admin' && state.accessSettings?.homeroomCleanlinessEnabled!==true
+      ? state.classes.filter(c=>c!==state.profile.homeroomClass)
+      : state.classes
+  ).filter(Boolean).map(c=>`<option>${esc(c)}</option>`).join('')}</select></label><label>JP<select id="cleanJp">${Array.from({length:op.jp},(_,i)=>`<option value="${i+1}">JP ${i+1}</option>`).join('')}</select></label></div>
   <div class="aspect-list">${aspect('floor','Lantai','🧹',['Bersih','Cukup Bersih','Kotor'])}${aspect('desks','Meja & Kursi','🪑',['Rapi','Cukup Rapi','Berantakan'])}${aspect('bin','Tempat Sampah','🗑️',['Terkelola','Hampir Penuh','Penuh / Meluber'])}${aspect('equipment','Perlengkapan Kelas','📚',['Rapi','Cukup Rapi','Berantakan'])}</div>
   <label>Catatan <small>(opsional)</small><textarea id="cleanNote" rows="3" placeholder="Contoh: tempat sampah hampir penuh"></textarea></label>
   <div class="clean-actions"><button id="allGood" class="btn secondary">✓ Semua Bersih & Rapi</button><button id="saveClean" class="btn primary">Simpan Pemeriksaan</button></div></div>`;
@@ -543,6 +575,11 @@ function renderCleanForm(){
     const btn=$('#saveClean'); btn.disabled=true; btn.textContent='Menyimpan...';
     try{
       const now=new Date(), classId=$('#cleanClass').value, jp=Number($('#cleanJp').value);
+      if(state.profile.role!=='admin' && state.profile.isHomeroom===true){
+        const own=String(state.profile.homeroomClass||'');
+        const ownAllowed=state.accessSettings?.homeroomCleanlinessEnabled===true;
+        if(classId===own && !ownAllowed) throw new Error('Penilaian kelas wali sendiri belum dibuka oleh Admin');
+      }
       if(jp<1||jp>currentOp.jp) throw new Error('JP tidak tersedia untuk hari ini');
       const id=`${todayKey()}_${classId}_JP${jp}_${Date.now()}`;
       await setDoc(doc(db,'cleanliness',id),{date:todayKey(),classId,jp,...values,note:$('#cleanNote').value.trim(),createdByUid:state.user.uid,createdByName:state.profile.name,createdAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})});
@@ -1058,8 +1095,29 @@ async function editTeacherProfile(uid){
       const name=$('#mName').value.trim(), isHomeroom=$('#mType').value==='wali', homeroomClass=$('#mClass').value, active=$('#mActive').value==='true';
       if(!name)return toast('Nama guru wajib diisi'); if(isHomeroom&&!homeroomClass)return toast('Kelas wali wajib dipilih');
       if(isHomeroom){const clash=(window.masterUsers||[]).find(x=>x.uid!==uid&&x.role==='guru'&&x.active!==false&&x.isHomeroom===true&&x.homeroomClass===homeroomClass);if(clash)return toast(`${homeroomClass} sudah memiliki wali kelas: ${clash.name}`);}
-      await setDoc(doc(db,'users',uid),{name,role:'guru',isHomeroom,homeroomClass:isHomeroom?homeroomClass:'',active,updatedAt:new Date().toISOString()},{merge:true}); closeEditModal(); toast('Data guru diperbarui'); await master();
+      await setDoc(doc(db,'users',uid),{
+        name,role:'guru',approved:true,
+        isHomeroom,
+        homeroomClass:isHomeroom?homeroomClass:'',
+        requestedType:isHomeroom?'wali':'guru',
+        requestedHomeroomClass:isHomeroom?homeroomClass:'',
+        active,
+        updatedAt:new Date().toISOString(),
+        updatedByUid:state.user.uid,
+        updatedByName:state.profile.name
+      },{merge:true});
+      const verify=await getDoc(doc(db,'users',uid));
+      if(!verify.exists() || Boolean(verify.data().isHomeroom)!==isHomeroom || String(verify.data().homeroomClass||'')!==(isHomeroom?homeroomClass:'')){
+        throw new Error('Perubahan peran belum tersimpan');
+      }
+      closeEditModal(); toast(isHomeroom?`Akun diubah menjadi Wali Kelas ${homeroomClass}`:'Akun diubah menjadi Guru'); await master();
     });
+  const syncTeacherType=()=>{
+    const wali=$('#mType')?.value==='wali';
+    if($('#mClass')){ $('#mClass').disabled=!wali; if(!wali) $('#mClass').value=''; }
+  };
+  if($('#mType')) $('#mType').onchange=syncTeacherType;
+  syncTeacherType();
 }
 
 async function ensureClassesFromStudents(){

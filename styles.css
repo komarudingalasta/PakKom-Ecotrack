@@ -311,3 +311,14 @@ body{overflow-anchor:none}
 /* Saved analysis periods */
 .period-list{display:grid;gap:10px;margin-top:16px}.period-card{display:grid;grid-template-columns:minmax(180px,1.5fr) auto minmax(120px,.7fr) auto;gap:12px;align-items:center;border:1px solid #e1e9e5;border-radius:15px;padding:14px}.period-card>div:first-child{display:flex;flex-direction:column;gap:3px}.period-card small{color:#74817b}.period-form{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px;margin:18px 0}.period-form label{display:flex;flex-direction:column;gap:7px;font-weight:700;color:#315347}.period-form input{border:1px solid #dbe5e0;border-radius:12px;padding:12px;background:#fff;font:inherit}.period-actions{margin-bottom:18px}.snapshot-head{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:14px 0;border-top:1px solid #edf1ef}.snapshot-head small{color:#74817b}
 @media(max-width:700px){.period-card{grid-template-columns:1fr auto}.period-access{grid-column:1/2}.period-card .row-actions{grid-column:1/-1}.period-form{grid-template-columns:1fr}.period-actions{display:grid;grid-template-columns:1fr}.period-actions .btn{width:100%}}
+
+/* Homeroom cleanliness access */
+.access-control-card{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 16px;margin:14px 0;border:1px solid #e1e9e5;border-radius:15px;background:#f8fbf9}
+.access-control-card>div{display:flex;flex-direction:column;gap:4px}.access-control-card small{color:#6f7d77}
+.switch-control{display:flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap}.switch-control input{position:absolute;opacity:0}.switch-control span{width:42px;height:24px;border-radius:99px;background:#cfd9d4;position:relative;transition:.2s}.switch-control span:after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;left:3px;top:3px;box-shadow:0 1px 4px rgba(0,0,0,.18);transition:.2s}.switch-control input:checked+span{background:#3b8a68}.switch-control input:checked+span:after{transform:translateX(18px)}
+.access-closed{text-align:center;padding:34px 22px}.access-closed-icon{font-size:38px;margin-bottom:10px}.access-closed h3{margin:0 0 8px}.access-closed p{color:#65746e;margin:0 auto 8px;max-width:520px}.access-closed small{color:#7b8882}
+@media(max-width:600px){.access-control-card{align-items:flex-start;flex-direction:column}.switch-control{width:100%;justify-content:space-between}}
+
+/* Homeroom own-class access & one-edit policy */
+.clean-access-note{margin-bottom:14px}
+.edit-once-note{border-color:#b9dcca;background:#f2fbf6;color:#315f49}
