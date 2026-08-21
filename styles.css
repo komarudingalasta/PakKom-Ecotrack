@@ -347,3 +347,8 @@ body{overflow-anchor:none}
 .jp-card-wrap{display:flex;flex-direction:column;gap:6px}
 .jp-card-wrap .jp-card{width:100%}
 .clean-reset-jp{align-self:flex-end}
+
+.admin-reset-panel{margin:12px 0 16px;padding:16px;display:flex;justify-content:space-between;align-items:center;gap:16px;border:1px solid #eadfdc}
+.admin-reset-panel>div:first-child{display:flex;flex-direction:column;gap:4px}.admin-reset-panel small{color:#6d7873}
+.admin-reset-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.admin-reset-actions select{min-width:210px;padding:10px 12px;border:1px solid #dce5e0;border-radius:10px;background:#fff}
+@media(max-width:760px){.admin-reset-panel{align-items:stretch;flex-direction:column}.admin-reset-actions{display:grid;grid-template-columns:1fr}.admin-reset-actions select{width:100%}}

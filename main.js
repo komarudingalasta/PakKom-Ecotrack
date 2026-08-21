@@ -627,6 +627,7 @@ function renderCleanClass(classId){
   const total=sc.active?sc.items.length:op.jp;
   content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${esc(classId)}</h3><small>${rows.length} dari ${total} JP sudah diperiksa</small></div><div class="row-actions">${state.profile.role==='admin'&&rows.length?`<button id="resetCleanClass" class="btn danger">Reset Kebersihan Kelas</button>`:''}<button id="backCleanClasses" class="btn ghost">← Daftar Kelas</button></div></div>
   ${ownLocked?`<div class="notice">🔒 Pemeriksaan kelas wali sendiri belum dibuka Admin.</div>`:''}
+  ${state.profile.role==='admin'?`<div class="card admin-reset-panel"><div><b>♻️ Reset Kebersihan</b><small>Pilih JP yang sudah diperiksa untuk mereset satu JP, atau reset seluruh pemeriksaan kelas hari ini.</small></div><div class="admin-reset-actions"><select id="resetCleanJpSelect"><option value="">Pilih JP yang sudah diperiksa</option>${rows.sort((a,b)=>Number(a.jp)-Number(b.jp)).map(r=>`<option value="${esc(r.id)}">JP ${r.jp} • ${esc(r.createdByName||'Guru')}</option>`).join('')}</select><button id="resetSelectedCleanJp" class="btn secondary" ${rows.length?'':'disabled'}>Reset JP Terpilih</button><button id="resetAllCleanClass" class="btn danger" ${rows.length?'':'disabled'}>Reset Semua JP Kelas ${esc(classId)}</button></div></div>`:''}
   <div class="schedule-note">⏱️ Pemeriksaan hanya dapat dibuat selama JP sedang berlangsung. JP yang lewat otomatis terkunci.</div>
   <div class="jp-status-grid">${Array.from({length:total},(_,i)=>{
     const jp=i+1,r=byJp[jp],ts=jpTimeState(jp),time=ts.start!=null?`${hm(ts.start)}–${hm(ts.end)}`:'';
@@ -642,6 +643,12 @@ function renderCleanClass(classId){
   document.querySelectorAll('[data-edit-clean]').forEach(b=>b.onclick=()=>{const r=state.cleanlinessToday.find(x=>x.id===b.dataset.editClean);if(r)renderCleanForm(classId,Number(r.jp),r)});
   document.querySelectorAll('[data-reset-clean]').forEach(b=>b.onclick=()=>resetCleanlinessRecord(b.dataset.resetClean));
   if($('#resetCleanClass')) $('#resetCleanClass').onclick=()=>resetCleanlinessClass(classId,todayKey());
+  if($('#resetSelectedCleanJp')) $('#resetSelectedCleanJp').onclick=()=>{
+    const id=$('#resetCleanJpSelect').value;
+    if(!id)return toast('Pilih JP yang akan direset');
+    resetCleanlinessRecord(id);
+  };
+  if($('#resetAllCleanClass')) $('#resetAllCleanClass').onclick=()=>resetCleanlinessClass(classId,todayKey());
 
 }
 function renderCleanForm(classId,jp,existing=null){
