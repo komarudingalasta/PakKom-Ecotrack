@@ -1,22 +1,10 @@
-# PakKom Eco Track v3.2.1 — Auth Core Rebuild
+# PakKom Eco Track v3.2.2 — Classic Auth Core
 
-## Struktur baru
+Login dibangun ulang memakai Firebase Compat sebagai script biasa:
+- tidak memakai ES module untuk proses login;
+- tidak ada session-check splash;
+- login ADMIN diverifikasi langsung ke Firebase Authentication;
+- profil dibaca dari `users/{UID}`;
+- aplikasi utama baru dimuat setelah login valid.
 
-`index.html`
-→ `auth.js`
-→ Firebase Authentication
-→ `users/{UID}`
-→ baru memuat `app.js`
-
-Login tidak lagi berada di dalam file aplikasi utama.
-
-## Dampak
-- Bug dashboard, kalender, import, kebersihan, atau menu Kelola tidak dapat mencegah tombol Login bekerja.
-- Tidak ada "Memeriksa sesi".
-- Refresh kembali ke Login.
-- Password visibility tetap bekerja langsung dari HTML.
-- Setelah Authentication + profil valid, aplikasi utama baru dimuat.
-
-## Admin
-ID: `ADMIN`
-dipetakan ke akun Firebase `komarudingalasta@gmail.com`.
+File penting baru: `auth-core.js`.

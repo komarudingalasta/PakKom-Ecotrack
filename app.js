@@ -103,7 +103,7 @@ function navItems(){
 }
 
 function showAuthLoading(show=true){
-  // v3.2.1 Direct Login: tidak ada splash / pemeriksaan sesi.
+  // v3.2.2 Direct Login: tidak ada splash / pemeriksaan sesi.
   return;
 }
 
@@ -159,7 +159,7 @@ async function finishSignedIn(user){
   }
 }
 
-// v3.2.1 Direct Login
+// v3.2.2 Direct Login
 // Tidak memulihkan sesi pada saat halaman dibuka.
 // Firebase hanya dipakai setelah pengguna menekan MASUK.
 if(!configured){
@@ -755,15 +755,15 @@ async function addTeacherPrompt(){
 }
 
 
-export async function startPakKomApp(core){
-  app=core.app;
-  auth=core.auth;
-  db=core.db;
+window.startPakKomFromCompat = async function(core){
+  // Compat Auth selesai. Firestore modular tetap dipakai aplikasi utama.
+  app=initializeApp(cfg);
+  auth=getAuth(app);
+  db=getFirestore(app);
   state.user=core.user;
   state.profile=core.profile;
   authResolved=true;
-
-  // Tampilkan shell secepatnya, data dashboard menyusul.
   renderShell();
   loadCoreDataInBackground();
-}
+};
+
