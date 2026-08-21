@@ -1,41 +1,169 @@
 rules_version = '2';
+
 service cloud.firestore {
- match /databases/{database}/documents {
-  function signedIn(){return request.auth != null;}
-  function userDoc(){return get(/databases/$(database)/documents/users/$(request.auth.uid));}
-  function activeUser(){return signedIn() && userDoc().data.active == true;}
-  function isAdmin(){return activeUser() && userDoc().data.role == 'admin';}
-  function isTeacher(){return activeUser() && userDoc().data.role == 'guru';}
-  match /users/{uid} {
-   allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-   allow create: if isAdmin() || (signedIn() && request.auth.uid == uid && request.resource.data.keys().hasOnly(['loginId','name','role','approved','active','rejected','requestedType','requestedHomeroomClass','isHomeroom','homeroomClass','createdAt']) && request.resource.data.loginId is string && request.resource.data.name is string && request.resource.data.role == 'guru' && request.resource.data.approved == false && request.resource.data.active == false && request.resource.data.rejected == false && request.resource.data.requestedType in ['guru','wali'] && request.resource.data.isHomeroom == false && request.resource.data.homeroomClass == '');
-   allow update, delete: if isAdmin();
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function activeUser() {
+      return signedIn() && userDoc().data.active == true;
+    }
+
+    function isAdmin() {
+      return activeUser() && userDoc().data.role == 'admin';
+    }
+
+    function isTeacher() {
+      return activeUser() && userDoc().data.role == 'guru';
+    }
+
+    function isHomeroom() {
+      return isTeacher() && userDoc().data.isHomeroom == true;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+
+      allow create: if isAdmin() || (
+        signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'loginId','name','role','approved','active','rejected',
+          'requestedType','requestedHomeroomClass',
+          'isHomeroom','homeroomClass','createdAt'
+        ])
+        && request.resource.data.loginId is string
+        && request.resource.data.name is string
+        && request.resource.data.role == 'guru'
+        && request.resource.data.approved == false
+        && request.resource.data.active == false
+        && request.resource.data.rejected == false
+        && request.resource.data.requestedType in ['guru','wali']
+        && request.resource.data.isHomeroom == false
+        && request.resource.data.homeroomClass == ''
+      );
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /classes/{classId} {
+      allow read: if activeUser();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /students/{studentId} {
+      allow read: if activeUser();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /records/{recordId} {
+      allow read: if activeUser();
+
+      allow create: if
+        (isTeacher() || isAdmin())
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.lastEditedByUid == request.auth.uid;
+
+      allow update: if
+        request.resource.data.createdByUid == resource.data.createdByUid
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.classId == resource.data.classId
+        && request.resource.data.lastEditedByUid == request.auth.uid
+        && (
+          isAdmin()
+          || (
+            isTeacher()
+            && resource.data.createdByUid == request.auth.uid
+            && (
+              !resource.data.keys().hasAny(['teacherEditCount'])
+              || resource.data.teacherEditCount == 0
+            )
+            && request.resource.data.teacherEditCount == 1
+          )
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /cleanliness/{checkId} {
+      allow read: if activeUser();
+
+      allow create: if
+        (isAdmin() || isTeacher())
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.lastEditedByUid == request.auth.uid
+        && (
+          isAdmin()
+          || userDoc().data.isHomeroom != true
+          || request.resource.data.classId != userDoc().data.homeroomClass
+          || get(/databases/$(database)/documents/settings/access).data.homeroomCleanlinessEnabled == true
+        );
+
+      allow update: if
+        request.resource.data.createdByUid == resource.data.createdByUid
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.classId == resource.data.classId
+        && request.resource.data.jp == resource.data.jp
+        && request.resource.data.lastEditedByUid == request.auth.uid
+        && (
+          isAdmin()
+          || (
+            isTeacher()
+            && resource.data.createdByUid == request.auth.uid
+            && (
+              !resource.data.keys().hasAny(['teacherEditCount'])
+              || resource.data.teacherEditCount == 0
+            )
+            && request.resource.data.teacherEditCount == 1
+            && (
+              userDoc().data.isHomeroom != true
+              || request.resource.data.classId != userDoc().data.homeroomClass
+              || get(/databases/$(database)/documents/settings/access).data.homeroomCleanlinessEnabled == true
+            )
+          )
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if activeUser();
+      allow write: if isAdmin();
+    }
+
+    // Admin melihat semua periode. Wali Kelas hanya dokumen yang sudah dibagikan.
+    match /analysisPeriods/{periodId} {
+      allow read: if isAdmin()
+        || (isHomeroom() && resource.data.sharedToHomeroom == true);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Snapshot lama sebelum hitung ulang. Hanya Admin.
+    match /analysisPeriodRevisions/{revisionId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // Riwayat perubahan administratif. Hanya Admin dan immutable.
+    match /auditLogs/{logId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // Arsip pendataan sebelum reset. Hanya Admin dan immutable.
+    match /recordResetArchive/{archiveId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
-  match /classes/{id}{allow read:if activeUser();allow create,update,delete:if isAdmin();}
-  match /students/{id}{allow read:if activeUser();allow create,update,delete:if isAdmin();}
-  match /records/{id}{
-   allow read:if activeUser();
-   allow create:if (isTeacher()||isAdmin()) && request.resource.data.createdByUid==request.auth.uid && request.resource.data.lastEditedByUid==request.auth.uid;
-   allow update:if request.resource.data.createdByUid==resource.data.createdByUid && request.resource.data.date==resource.data.date && request.resource.data.classId==resource.data.classId && request.resource.data.lastEditedByUid==request.auth.uid && (isAdmin() || (isTeacher() && resource.data.createdByUid==request.auth.uid && (!resource.data.keys().hasAny(['teacherEditCount']) || resource.data.teacherEditCount==0) && request.resource.data.teacherEditCount==1));
-   allow delete:if isAdmin();
-  }
-  match /cleanliness/{id}{
-   allow read:if activeUser();
-   allow create:if (isAdmin()||isTeacher()) && request.resource.data.createdByUid==request.auth.uid && request.resource.data.lastEditedByUid==request.auth.uid && (isAdmin() || userDoc().data.isHomeroom!=true || request.resource.data.classId!=userDoc().data.homeroomClass || get(/databases/$(database)/documents/settings/access).data.homeroomCleanlinessEnabled==true);
-   allow update:if request.resource.data.createdByUid==resource.data.createdByUid && request.resource.data.date==resource.data.date && request.resource.data.classId==resource.data.classId && request.resource.data.jp==resource.data.jp && request.resource.data.lastEditedByUid==request.auth.uid && (isAdmin() || (isTeacher() && resource.data.createdByUid==request.auth.uid && (!resource.data.keys().hasAny(['teacherEditCount']) || resource.data.teacherEditCount==0) && request.resource.data.teacherEditCount==1 && (userDoc().data.isHomeroom!=true || request.resource.data.classId!=userDoc().data.homeroomClass || get(/databases/$(database)/documents/settings/access).data.homeroomCleanlinessEnabled==true)));
-   allow delete:if isAdmin();
-  }
-  match /settings/{id}{allow read:if activeUser();allow write:if isAdmin();}
-  match /analysisPeriods/{id}{allow read:if activeUser();allow create,update,delete:if isAdmin();}
-  
-  match /auditLogs/{id} {
-    allow read, create: if isAdmin();
-    allow update, delete: if false;
-  }
-  match /recordResetArchive/{id} {
-    allow read, create: if isAdmin();
-    allow update, delete: if false;
-  }
-match /{document=**}{allow read,write:if false;}
- }
 }

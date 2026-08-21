@@ -25,6 +25,7 @@ function doc(db){
 }
 function where(field,op,value){ return {kind:'where',field,op,value}; }
 function orderBy(field,direction){ return {kind:'orderBy',field,direction:direction||'asc'}; }
+function limit(n){ return {kind:'limit',n:Number(n)}; }
 function query(ref){
   const clauses=Array.prototype.slice.call(arguments,1);
   let q=ref;
@@ -32,6 +33,7 @@ function query(ref){
     if(!c) return;
     if(c.kind==='where') q=q.where(c.field,c.op,c.value);
     if(c.kind==='orderBy') q=q.orderBy(c.field,c.direction);
+    if(c.kind==='limit') q=q.limit(c.n);
   });
   return q;
 }
@@ -131,7 +133,7 @@ const loginEmail = id => {
 let app, auth, db;
 let authResolved = true;
 let loginInProgress = false;
-let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}} };
+let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null };
 
 const APP_VERSION='3.3.7';
 function withTimeout(promise, ms=5000, label='Proses'){
@@ -142,7 +144,7 @@ function withTimeout(promise, ms=5000, label='Proses'){
 }
 function resetCoreState(){
   state.classDocs=[]; state.classes=[]; state.recordsToday=[]; state.cleanlinessToday=[];
-  state.students=[]; state.calendarSettings={overrides:{}};
+  state.students=[]; state.calendarSettings={overrides:{}}; state.accessSettings={homeroomCleanlinessEnabled:false}; state.operationalSettings=null;
 }
 
 
@@ -270,10 +272,11 @@ $('#registerSubmit').onclick=async()=>{
 
 
 async function changeOwnPassword(oldPassword,newPassword){
-  if(!state.user?.email)throw new Error('Email akun tidak tersedia');
-  const cred=EmailAuthProvider.credential(state.user.email,oldPassword);
-  await reauthenticateWithCredential(state.user,cred);
-  await updatePassword(state.user,newPassword);
+  const user=auth.currentUser;
+  if(!user || !user.email) throw new Error('Sesi pengguna tidak tersedia');
+  const credential=firebase.auth.EmailAuthProvider.credential(user.email,oldPassword);
+  await user.reauthenticateWithCredential(credential);
+  await user.updatePassword(newPassword);
 }
 function passwordPanel(){
   pageMeta('Ubah Password','Kelola keamanan akun Anda');
@@ -315,9 +318,10 @@ async function refreshCore(){
     withTimeout(getDocs(query(collection(db,'records'),where('date','==',todayKey()))),5000,'Memuat pendataan hari ini'),
     withTimeout(getDocs(query(collection(db,'cleanliness'),where('date','==',todayKey()))),5000,'Memuat kebersihan hari ini'),
     withTimeout(getDoc(doc(db,'settings','calendar')),5000,'Memuat kalender sekolah'),
-    withTimeout(getDoc(doc(db,'settings','access')),5000,'Memuat pengaturan akses')
+    withTimeout(getDoc(doc(db,'settings','access')),5000,'Memuat pengaturan akses'),
+    withTimeout(getDoc(doc(db,'settings','operational')),5000,'Memuat jadwal operasional')
   ];
-  const [classRes,recordRes,cleanRes,calendarRes,accessRes]=await Promise.allSettled(jobs);
+  const [classRes,recordRes,cleanRes,calendarRes,accessRes,operationalRes]=await Promise.allSettled(jobs);
 
   if(classRes.status==='fulfilled'){
     state.classDocs=classRes.value.docs.map(d=>({id:d.id,...d.data()}));
@@ -347,13 +351,17 @@ async function refreshCore(){
     console.warn(accessRes.reason);
     state.accessSettings={homeroomCleanlinessEnabled:false};
   }
+  if(operationalRes.status==='fulfilled'){
+    state.operationalSettings=operationalRes.value?.exists?.()?operationalRes.value.data():null;
+  } else console.warn(operationalRes.reason);
 
   return {
     classes:classRes.status,
     records:recordRes.status,
     cleanliness:cleanRes.status,
     calendar:calendarRes.status,
-    access:accessRes.status
+    access:accessRes.status,
+    operational:operationalRes.status
   };
 }
 
@@ -539,9 +547,20 @@ async function saveClass(c){
 
 
 function wadahTimeInfo(){
-  const n=new Date(), d=n.getDay(), m=n.getHours()*60+n.getMinutes();
-  if(d>=1&&d<=4)return {open:m<850,close:850,label:'14.10'}; // 14:10
-  if(d===5)return {open:m<690,close:690,label:'11.30'};       // 11:30
+  const n=new Date(),d=n.getDay(),m=n.getHours()*60+n.getMinutes();
+  const cfg=state.operationalSettings||{};
+  const hhmmToMin=(v,fallback)=>{
+    const x=String(v||fallback).split(':').map(Number);
+    return Number.isFinite(x[0])&&Number.isFinite(x[1])?x[0]*60+x[1]:0;
+  };
+  if(d>=1&&d<=4){
+    const close=hhmmToMin(cfg.wadahCloseMonThu,'14:10');
+    return {open:m<close,close,label:String(cfg.wadahCloseMonThu||'14:10').replace(':','.')};
+  }
+  if(d===5){
+    const close=hhmmToMin(cfg.wadahCloseFri,'11:30');
+    return {open:m<close,close,label:String(cfg.wadahCloseFri||'11:30').replace(':','.')};
+  }
   return {open:false,close:0,label:'Hari libur'};
 }
 async function addAdminAudit(action, detail={}){
@@ -555,15 +574,29 @@ async function addAdminAudit(action, detail={}){
   }catch(e){console.warn('Audit log gagal',e)}
 }
 function jpScheduleInfo(){
-  const now=new Date(), day=now.getDay(), mins=now.getHours()*60+now.getMinutes();
-  // Monday–Thursday: JP1 07:10, 40 min; breaks 20 min after JP4 and 40 min after JP7.
-  // Friday: JP1 07:50, 40 min; break 20 min after JP3.
-  let starts=[];
-  if(day>=1&&day<=4) starts=[430,470,510,550,610,650,690,770,810];
-  else if(day===5) starts=[470,510,550,610,650];
-  else return {active:false,day,mins,items:[]};
-  const items=starts.map((start,i)=>({jp:i+1,start,end:start+40}));
-  return {active:true,day,mins,items};
+  const now=new Date(),day=now.getDay(),mins=now.getHours()*60+now.getMinutes();
+  const o=state.operationalSettings||{};
+  const toMin=(v,f)=>{const a=String(v||f).split(':').map(Number);return a[0]*60+a[1]};
+  const duration=Math.max(20,Math.min(60,Number(o.jpDuration||40)));
+  let start,count,breaks=[];
+  if(day>=1&&day<=4){
+    start=toMin(o.jpStartMonThu,'07:10');count=9;
+    breaks=[
+      {after:Number(o.break1AfterMonThu||4),duration:Number(o.break1DurationMonThu||20)},
+      {after:Number(o.break2AfterMonThu||7),duration:Number(o.break2DurationMonThu||40)}
+    ];
+  }else if(day===5){
+    start=toMin(o.jpStartFri,'07:50');count=5;
+    breaks=[{after:Number(o.breakAfterFri||3),duration:Number(o.breakDurationFri||20)}];
+  }else return {active:false,day,mins,items:[]};
+  const items=[];let cursor=start;
+  for(let i=1;i<=count;i++){
+    items.push({jp:i,start:cursor,end:cursor+duration});
+    cursor+=duration;
+    const br=breaks.find(b=>b.after===i);
+    if(br)cursor+=Math.max(0,br.duration);
+  }
+  return {active:true,day,mins,items,duration};
 }
 function jpTimeState(jp){
   const sc=jpScheduleInfo(), x=sc.items.find(v=>v.jp===Number(jp));
@@ -673,7 +706,8 @@ async function loadRecapDate(){
     const snap=await getDocs(query(collection(db,'records'),where('date','==',date)));
     const records=snap.docs.map(d=>({id:d.id,...d.data()})); const classes=cls?[cls]:state.classes;
     const cards=classes.map(c=>{const r=records.find(x=>x.classId===c);if(!r)return {c,status:'Belum',hadir:0,food:0,tumb:0,both:0,by:'-'};const hadir=(r.items||[]).filter(i=>i.presence==='hadir');const pct=f=>hadir.length?Math.round(hadir.filter(f).length/hadir.length*100):0;return {c,status:'Selesai',hadir:hadir.length,food:pct(i=>i.food),tumb:pct(i=>i.tumbler),both:pct(i=>i.food&&i.tumbler),by:r.lastEditedByName||r.createdByName||'Guru'};});
-    target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah Makan</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th></tr></thead><tbody>${cards.map(x=>`<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'neutral'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td></tr>`).join('')}</tbody></table></div>`;
+    target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah Makan</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th>${state.profile.role==='admin'?'<th>Aksi Admin</th>':''}</tr></thead><tbody>${cards.map(x=>{const rec=records.find(r=>r.classId===x.c);return `<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'neutral'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td>${state.profile.role==='admin'?`<td>${rec?`<button class="btn-mini danger" data-reset-wadah="${esc(rec.id)}">Reset → Belum</button>`:'-'}</td>`:''}</tr>`}).join('')}</tbody></table></div>`;
+    document.querySelectorAll('[data-reset-wadah]').forEach(b=>b.onclick=()=>resetWadahRecord(b.dataset.resetWadah));
   }catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap.</div>';}
 }
 function renderCleanRecap(){
@@ -795,8 +829,16 @@ function analysisPeriodStatus(p){
 }
 function analysisStatusLabel(code){return ({scheduled:'Terjadwal',running:'Sedang Berjalan',finished:'Selesai',archived:'Arsip'})[code]||code}
 async function listAnalysisPeriods(){
-  const snap=await getDocs(collection(db,'analysisPeriods'));
-  return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.startDate||'').localeCompare(String(a.startDate||'')));
+  let ref;
+  if(state.profile?.role==='admin'){
+    ref=collection(db,'analysisPeriods');
+  }else if(state.profile?.isHomeroom===true){
+    ref=query(collection(db,'analysisPeriods'),where('sharedToHomeroom','==',true));
+  }else{
+    return [];
+  }
+  const snap=await getDocs(ref);
+  return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
 }
 function roleCanSeePeriod(p){return state.profile.role==='admin'||(state.profile.isHomeroom===true&&p.sharedToHomeroom===true&&!!p.snapshot)}
 async function finalizeEndedPeriods(periods){
@@ -836,27 +878,61 @@ async function renderAnalysisPeriods(){
 async function editAnalysisPeriod(id=null){
  let p={name:'',startDate:todayKey(),endDate:todayKey(),sharedToHomeroom:false};if(id){const d=await getDoc(doc(db,'analysisPeriods',id));if(d.exists())p={id:d.id,...d.data()}}
  const st=id?analysisPeriodStatus(p):'scheduled',locked=id&&(st==='finished'||p.snapshot);
- const host=$('#masterTabContent');host.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>${id?'Detail':'Jadwalkan'} Periode Analisis</h3><small>${id?`Status: ${analysisStatusLabel(st)}`:'Tentukan tanggal mulai dan selesai.'}</small></div><button id="backPeriods" class="btn ghost">← Kembali</button></div><div class="period-form"><label>Nama Periode<input id="periodName" value="${esc(p.name||'')}" ${locked?'disabled':''}></label><label>Tanggal Mulai<input id="periodStart" type="date" value="${p.startDate}" ${locked?'disabled':''}></label><label>Tanggal Selesai<input id="periodEnd" type="date" value="${p.endDate}" ${locked?'disabled':''}></label></div><div class="row-actions period-actions">${!locked?'<button id="saveSchedule" class="btn primary">Simpan Jadwal</button>':''}${id&&st==='finished'&&p.snapshot?`<button id="shareHere" class="btn ${p.sharedToHomeroom?'danger':'primary'}">${p.sharedToHomeroom?'Tarik Akses Wali Kelas':'📤 Bagikan Hasil ke Wali Kelas'}</button>`:''}</div><div id="periodPreview">${p.snapshot?renderPeriodSnapshotHtml(p.snapshot):`<div class="empty">${st==='running'?'Periode sedang berjalan. Hasil final dibuat setelah tanggal akhir.':st==='scheduled'?'Periode belum dimulai.':'Hasil final belum tersedia.'}</div>`}</div>`;
+ const host=$('#masterTabContent');host.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>${id?'Detail':'Jadwalkan'} Periode Analisis</h3><small>${id?`Status: ${analysisStatusLabel(st)}`:'Tentukan tanggal mulai dan selesai.'}</small></div><button id="backPeriods" class="btn ghost">← Kembali</button></div><div class="period-form"><label>Nama Periode<input id="periodName" value="${esc(p.name||'')}" ${locked?'disabled':''}></label><label>Tanggal Mulai<input id="periodStart" type="date" value="${p.startDate}" ${locked?'disabled':''}></label><label>Tanggal Selesai<input id="periodEnd" type="date" value="${p.endDate}" ${locked?'disabled':''}></label></div><div class="row-actions period-actions">${!locked?'<button id="saveSchedule" class="btn primary">Simpan Jadwal</button>':''}${id&&st==='finished'&&p.snapshot?`<button id="shareHere" class="btn ${p.sharedToHomeroom?'danger':'primary'}" ${p.correctionOpen?'disabled':''}>${p.sharedToHomeroom?'Tarik Akses Wali Kelas':'📤 Bagikan Hasil ke Wali Kelas'}</button>${p.correctionOpen?'<button id="recalculatePeriod" class="btn primary">✓ Hitung Ulang & Kunci Hasil</button>':'<button id="openCorrection" class="btn secondary">✎ Buka Koreksi Hasil</button>'}`:''}</div><div id="periodPreview">${p.snapshot?renderPeriodSnapshotHtml(p.snapshot):`<div class="empty">${st==='running'?'Periode sedang berjalan. Hasil final dibuat setelah tanggal akhir.':st==='scheduled'?'Periode belum dimulai.':'Hasil final belum tersedia.'}</div>`}</div>`;
  $('#backPeriods').onclick=renderAnalysisPeriods;if($('#saveSchedule'))$('#saveSchedule').onclick=async()=>{const name=$('#periodName').value.trim(),startDate=$('#periodStart').value,endDate=$('#periodEnd').value;if(!name||!startDate||!endDate||startDate>endDate)return toast('Lengkapi jadwal periode dengan benar');const ref=id?doc(db,'analysisPeriods',id):doc(collection(db,'analysisPeriods'));await setDoc(ref,{name,startDate,endDate,sharedToHomeroom:p.sharedToHomeroom===true,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name,...(!id?{createdAt:new Date().toISOString()}: {})},{merge:true});toast('Jadwal periode tersimpan');renderAnalysisPeriods()};if($('#shareHere'))$('#shareHere').onclick=()=>togglePeriodShare(id);
+ if($('#openCorrection'))$('#openCorrection').onclick=async()=>{
+   if(p.sharedToHomeroom)return toast('Tarik akses Wali Kelas terlebih dahulu.');
+   if(!confirm('Buka mode koreksi hasil? Setelah koreksi data sumber selesai, gunakan Hitung Ulang & Kunci Hasil.'))return;
+   await setDoc(doc(db,'analysisPeriods',id),{correctionOpen:true,correctionOpenedAt:new Date().toISOString(),correctionOpenedByUid:state.user.uid,correctionOpenedByName:state.profile.name},{merge:true});
+   await addAdminAudit('OPEN_ANALYSIS_CORRECTION',{periodId:id,name:p.name});
+   toast('Mode koreksi hasil dibuka');
+   editAnalysisPeriod(id);
+ };
+ if($('#recalculatePeriod'))$('#recalculatePeriod').onclick=async()=>{
+   if(p.sharedToHomeroom)return toast('Tarik akses Wali Kelas terlebih dahulu sebelum menghitung ulang.');
+   if(!confirm('Hitung ulang snapshot periode dari data terbaru? Snapshot lama akan disimpan ke riwayat revisi.'))return;
+   try{
+     const now=new Date(),oldSnapshot=p.snapshot;
+     if(oldSnapshot)await setDoc(doc(db,'analysisPeriodRevisions',`${id}_${now.getTime()}`),{periodId:id,snapshot:oldSnapshot,revisedAt:now.toISOString(),revisedByUid:state.user.uid,revisedByName:state.profile.name});
+     const classes=await metricsForRange(p.startDate,p.endDate),snapshot={classes,awards:buildAwards(classes),calculatedAt:now.toISOString()};
+     await setDoc(doc(db,'analysisPeriods',id),{snapshot,correctionOpen:false,recalculatedAt:now.toISOString(),lockedAt:now.toISOString(),updatedAt:now.toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name},{merge:true});
+     await addAdminAudit('RECALCULATE_AND_LOCK_ANALYSIS',{periodId:id,name:p.name,startDate:p.startDate,endDate:p.endDate});
+     toast('Hasil analisis dihitung ulang dan dikunci kembali');
+     editAnalysisPeriod(id);
+   }catch(e){console.error(e);toast('Gagal menghitung ulang hasil')}
+ };
 }
 function renderPeriodSnapshotHtml(snapshot){const rows=snapshot?.classes||[],a=snapshot?.awards||{};return `<div class="snapshot-head"><b>Hasil Akhir Tersimpan</b><small>${snapshot?.calculatedAt?new Date(snapshot.calculatedAt).toLocaleString('id-ID'):'-'}</small></div><div class="analysis-kpis"><div class="analysis-kpi"><span>🏆 Eco Terbaik</span><strong>${esc(a.bestEco?.cls||'-')}</strong><small>${a.bestEco?.eco??'-'} poin</small></div><div class="analysis-kpi"><span>Wadah Makan</span><strong>${esc(a.bestFood?.cls||'-')}</strong></div><div class="analysis-kpi"><span>Tumbler</span><strong>${esc(a.bestTumb?.cls||'-')}</strong></div></div><div class="analysis-list">${rows.map(m=>`<div class="analysis-row"><div class="analysis-class"><b>${esc(m.cls)}</b></div><div><span>Wadah</span><b>${metricText(m.foodPct)}</b></div><div><span>Tumbler</span><b>${metricText(m.tumbPct)}</b></div><div><span>Kebersihan</span><b>${metricText(m.cleanPct)}</b></div><div><span>Eco</span><b>${m.eco??'-'}</b></div></div>`).join('')}</div>`}
-async function togglePeriodShare(id){const ref=doc(db,'analysisPeriods',id),snap=await getDoc(ref);if(!snap.exists())return;const p=snap.data();if(analysisPeriodStatus(p)!=='finished'||!p.snapshot)return toast('Hasil hanya dapat dibagikan setelah periode selesai');const open=!(p.sharedToHomeroom===true);await setDoc(ref,{sharedToHomeroom:open,sharedAt:open?new Date().toISOString():null,sharedByUid:state.user.uid,sharedByName:state.profile.name,updatedAt:new Date().toISOString()},{merge:true});toast(open?'Hasil dibagikan ke wali kelas':'Akses hasil wali kelas ditarik');renderAnalysisPeriods()}
+async function togglePeriodShare(id){
+  const ref=doc(db,'analysisPeriods',id),snap=await getDoc(ref);if(!snap.exists())return;
+  const p=snap.data();if(analysisPeriodStatus(p)!=='finished'||!p.snapshot)return toast('Hasil hanya dapat dibagikan setelah periode selesai');if(p.correctionOpen===true)return toast('Kunci kembali hasil koreksi sebelum membagikannya.');
+  const open=!(p.sharedToHomeroom===true);
+  await setDoc(ref,{sharedToHomeroom:open,sharedAt:open?new Date().toISOString():null,sharedByUid:state.user.uid,sharedByName:state.profile.name,updatedAt:new Date().toISOString()},{merge:true});
+  await addAdminAudit(open?'SHARE_ANALYSIS':'UNSHARE_ANALYSIS',{periodId:id,name:p.name,startDate:p.startDate,endDate:p.endDate});
+  toast(open?'Hasil dibagikan ke wali kelas':'Akses hasil wali kelas ditarik');
+  renderAnalysisPeriods();
+}
 
 function account(){
-  pageMeta('Akun','Informasi pengguna');
+  pageMeta('Akun','Informasi dan keamanan akun');
   const type=state.profile.role==='admin'?'Administrator':(state.profile.isHomeroom?'Wali Kelas':'Guru');
   const wali=state.profile.isHomeroom&&state.profile.homeroomClass
     ? `<div class="account-row"><span>Kelas Wali</span><b>${esc(state.profile.homeroomClass)}</b></div>`:'';
   content.innerHTML=`<div class="card account-card">
     <div class="account-name">${esc(state.profile.name)}</div>
     <div class="account-details">
-      <div class="account-row"><span>NIP Guru</span><b>${esc(state.profile.loginId||'-')}</b></div>
+      <div class="account-row"><span>NIP Guru</span><b>${state.profile.role==='admin'?'ADMIN':esc(state.profile.loginId||'-')}</b></div>
       <div class="account-row"><span>Peran</span><b>${type}${state.profile.isHomeroom&&state.profile.homeroomClass?` • ${esc(state.profile.homeroomClass)}`:''}</b></div>
       ${wali}
       <div class="account-row"><span>Status</span><b class="account-active">Aktif</b></div>
     </div>
-    <div class="notice account-notice">Guru dan wali kelas memiliki akses pendataan yang sama. Penanda wali kelas digunakan sebagai informasi tanggung jawab kelas.</div>
+    <div class="account-security">
+      <h4>Keamanan Akun</h4>
+      <p>Ubah password dengan memasukkan password saat ini. Setelah berhasil, Anda akan diminta login kembali.</p>
+      <button id="accountChangePassword" class="btn secondary">🔐 Ubah Password</button>
+    </div>
   </div>`;
+  $('#accountChangePassword').onclick=passwordPanel;
 }
 
 async function master(){
@@ -883,6 +959,7 @@ async function master(){
     <button class="master-tab ${state.masterTab==='teachers'?'active':''}" data-master-tab="teachers">👨‍🏫 Guru & Wali Kelas${pendingTeachers.length?` <span class="tab-count">${pendingTeachers.length}</span>`:''}</button>
     <button class="master-tab ${state.masterTab==='classes'?'active':''}" data-master-tab="classes">🏫 Kelas & Import</button>
     <button class="master-tab ${state.masterTab==='calendar'?'active':''}" data-master-tab="calendar">📅 Kalender Sekolah</button>
+    <button class="master-tab ${state.masterTab==='operations'?'active':''}" data-master-tab="operations">🛠️ Operasional</button>
     <button class="master-tab ${state.masterTab==='periods'?'active':''}" data-master-tab="periods">📊 Periode Analisis</button>
     <button class="master-tab ${state.masterTab==='audit'?'active':''}" data-master-tab="audit">🕒 Riwayat</button>
   </div>
@@ -922,10 +999,13 @@ function renderMasterTab(){
   if(state.masterTab==='calendar'){
     renderCalendarSettings(); return;
   }
+  if(state.masterTab==='operations'){
+    renderOperationalSettings(); return;
+  }
   if(state.masterTab==='periods'){
     renderAnalysisPeriods(); return;
   }
-  target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Riwayat Koreksi Hari Ini</h3><small>Menampilkan perubahan pada pendataan hari ini.</small></div></div><div id="auditTable"></div></div>`; renderAuditTable();
+  renderAdminAuditTab(); return; renderAuditTable();
 }
 function renderCalendarSettings(){
   const target=$('#masterTabContent'); if(!target)return;
@@ -947,6 +1027,55 @@ async function saveCalendarOverride(){
 async function removeCalendarOverride(){
   const key=$('#calendarDate').value,overrides={...(state.calendarSettings?.overrides||{})};delete overrides[key];
   try{await setDoc(doc(db,'settings','calendar'),{overrides,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name},{merge:true});await refreshCore();toast('Override tanggal dihapus');renderCalendarSettings();}catch(e){console.error(e);toast('Gagal menghapus override');}
+}
+
+
+function renderOperationalSettings(){
+  const target=$('#masterTabContent');if(!target)return;
+  const o=state.operationalSettings||{};
+  target.innerHTML=`<div class="card master-section">
+    <div class="section-head"><div><h3>Jadwal Operasional</h3><small>Atur waktu pembelajaran tanpa mengedit kode web.</small></div></div>
+    <h4>Wadah Makan & Tumbler</h4>
+    <div class="operational-grid">
+      <label>Jam Tutup Senin–Kamis<input id="opCloseMonThu" type="time" value="${esc(o.wadahCloseMonThu||'14:10')}"></label>
+      <label>Jam Tutup Jumat<input id="opCloseFri" type="time" value="${esc(o.wadahCloseFri||'11:30')}"></label>
+    </div>
+    <h4>Jadwal JP Kebersihan</h4>
+    <div class="operational-grid">
+      <label>JP 1 Senin–Kamis<input id="opStartMonThu" type="time" value="${esc(o.jpStartMonThu||'07:10')}"></label>
+      <label>JP 1 Jumat<input id="opStartFri" type="time" value="${esc(o.jpStartFri||'07:50')}"></label>
+      <label>Durasi 1 JP (menit)<input id="opDuration" type="number" min="20" max="60" value="${Number(o.jpDuration||40)}"></label>
+      <label>Istirahat 1 setelah JP<input id="opBreak1After" type="number" min="1" max="9" value="${Number(o.break1AfterMonThu||4)}"></label>
+      <label>Durasi Istirahat 1 (menit)<input id="opBreak1Duration" type="number" min="0" max="90" value="${Number(o.break1DurationMonThu||20)}"></label>
+      <label>Istirahat 2 setelah JP<input id="opBreak2After" type="number" min="1" max="9" value="${Number(o.break2AfterMonThu||7)}"></label>
+      <label>Durasi Istirahat 2 (menit)<input id="opBreak2Duration" type="number" min="0" max="90" value="${Number(o.break2DurationMonThu||40)}"></label>
+      <label>Jumat istirahat setelah JP<input id="opBreakFriAfter" type="number" min="1" max="5" value="${Number(o.breakAfterFri||3)}"></label>
+      <label>Durasi istirahat Jumat<input id="opBreakFriDuration" type="number" min="0" max="90" value="${Number(o.breakDurationFri||20)}"></label>
+    </div>
+    <div class="notice">Nilai default sesuai jadwal sekolah saat ini. Perubahan berlaku untuk pemeriksaan berikutnya setelah disimpan.</div>
+    <button id="saveOperational" class="btn primary">Simpan Jadwal Operasional</button>
+  </div>`;
+  $('#saveOperational').onclick=async()=>{
+    const data={
+      wadahCloseMonThu:$('#opCloseMonThu').value||'14:10',
+      wadahCloseFri:$('#opCloseFri').value||'11:30',
+      jpStartMonThu:$('#opStartMonThu').value||'07:10',
+      jpStartFri:$('#opStartFri').value||'07:50',
+      jpDuration:Number($('#opDuration').value||40),
+      break1AfterMonThu:Number($('#opBreak1After').value||4),
+      break1DurationMonThu:Number($('#opBreak1Duration').value||20),
+      break2AfterMonThu:Number($('#opBreak2After').value||7),
+      break2DurationMonThu:Number($('#opBreak2Duration').value||40),
+      breakAfterFri:Number($('#opBreakFriAfter').value||3),
+      breakDurationFri:Number($('#opBreakFriDuration').value||20)
+    };
+    try{
+      await setDoc(doc(db,'settings','operational'),{...data,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name},{merge:true});
+      state.operationalSettings=data;
+      await addAdminAudit('UPDATE_OPERATIONAL_SCHEDULE',data);
+      toast('Jadwal operasional disimpan');
+    }catch(e){console.error(e);toast('Gagal menyimpan jadwal operasional')}
+  };
 }
 
 function filteredMasterStudents(){
@@ -976,25 +1105,56 @@ function renderTeacherMasterTable(){
  const target=$('#teacherTable');if(!target)return;const q=String($('#teacherSearch')?.value||'').trim().toLowerCase(),type=$('#teacherTypeFilter')?.value||'',status=$('#teacherStatusFilter')?.value||'',sort=$('#teacherSort')?.value||'class';
  const rows=(window.masterUsers||[]).filter(u=>u.role==='guru'&&u.approved!==false).filter(u=>(!q||String(u.loginId||'').toLowerCase().includes(q)||String(u.name||'').toLowerCase().includes(q))&&(!type||(type==='wali'?u.isHomeroom===true:u.isHomeroom!==true))&&(!status||(status==='aktif'?u.active!==false:u.active===false))).sort((a,b)=>{const aw=a.isHomeroom===true,bw=b.isHomeroom===true;if(aw!==bw)return aw?-1:1;if(sort==='class'&&aw&&bw){const d=classSortKey(a.homeroomClass)-classSortKey(b.homeroomClass);if(d)return d}const n=(a.name||'').localeCompare(b.name||'','id',{sensitivity:'base'});return sort==='za'?-n:n});
  const wc=rows.filter(x=>x.isHomeroom).length,gc=rows.length-wc;
- target.innerHTML=`<div class="teacher-list-summary"><span><b>${wc}</b> Wali Kelas</span><span><b>${gc}</b> Guru</span></div><div class="table-wrap"><table class="student-master"><thead><tr><th>NIP Guru</th><th>Nama</th><th>Jenis</th><th>Kelas Wali</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.map((u,i)=>`${i===wc&&gc?'<tr class="teacher-divider"><td colspan="6">Guru</td></tr>':''}<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.isHomeroom?'ok':'neutral'}">${u.isHomeroom?'Wali Kelas':'Guru'}</span></td><td>${u.isHomeroom?esc(u.homeroomClass||'-'):'-'}</td><td><span class="badge ${u.active===false?'warn':'ok'}">${u.active===false?'Nonaktif':'Aktif'}</span></td><td><div class="row-actions"><button class="btn-mini edit" data-edit-teacher="${esc(u.uid)}">Edit</button><button class="btn-mini danger" data-delete-teacher="${esc(u.uid)}">Hapus Akun</button></div></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Belum ada akun guru.</div></td></tr>'}</tbody></table></div>`;
- document.querySelectorAll('[data-edit-teacher]').forEach(b=>b.onclick=()=>editTeacherProfile(b.dataset.editTeacher));document.querySelectorAll('[data-delete-teacher]').forEach(b=>b.onclick=()=>deleteTeacherAccount(b.dataset.deleteTeacher));
+ target.innerHTML=`<div class="teacher-list-summary"><span><b>${wc}</b> Wali Kelas</span><span><b>${gc}</b> Guru</span></div><div class="table-wrap"><table class="student-master"><thead><tr><th>NIP Guru</th><th>Nama</th><th>Jenis</th><th>Kelas Wali</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.map((u,i)=>`${i===wc&&gc?'<tr class="teacher-divider"><td colspan="6">Guru</td></tr>':''}<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.isHomeroom?'ok':'neutral'}">${u.isHomeroom?'Wali Kelas':'Guru'}</span></td><td>${u.isHomeroom?esc(u.homeroomClass||'-'):'-'}</td><td><span class="badge ${u.active===false?'warn':'ok'}">${u.active===false?'Nonaktif':'Aktif'}</span></td><td><div class="row-actions"><button class="btn-mini edit" data-edit-teacher="${esc(u.uid)}">Edit</button><button class="btn-mini" data-reset-password="${esc(u.uid)}">Reset Password</button><button class="btn-mini danger" data-delete-teacher="${esc(u.uid)}">Hapus Akun</button></div></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Belum ada akun guru.</div></td></tr>'}</tbody></table></div>`;
+ document.querySelectorAll('[data-edit-teacher]').forEach(b=>b.onclick=()=>editTeacherProfile(b.dataset.editTeacher));document.querySelectorAll('[data-reset-password]').forEach(b=>b.onclick=()=>adminResetTeacherPassword(b.dataset.resetPassword));
+  document.querySelectorAll('[data-delete-teacher]').forEach(b=>b.onclick=()=>deleteTeacherAccount(b.dataset.deleteTeacher));
 }
 
 
 async function resetWadahRecord(recordId){
   if(state.profile.role!=='admin')return;
-  const r=(state.records||[]).find(x=>x.id===recordId);
-  if(!r){toast('Data tidak ditemukan');return;}
-  if(!confirm(`Reset pendataan ${r.classId} tanggal ${r.date} menjadi Belum Pendataan?`))return;
+  let r=state.recordsToday.find(x=>x.id===recordId);
+  if(!r){
+    try{const snap=await getDoc(doc(db,'records',recordId));if(snap.exists())r={id:snap.id,...snap.data()};}catch(_){}
+  }
+  if(!r){toast('Data pendataan tidak ditemukan');return;}
+  const reason=prompt(`Alasan reset pendataan ${r.classId} tanggal ${r.date}:`,'Koreksi data');
+  if(reason===null)return;
+  if(!confirm(`Reset ${r.classId} menjadi Belum Pendataan?
+
+Data lama tetap disimpan di arsip Admin.`))return;
   try{
-    const now=new Date(), archiveId=`${recordId}_${now.getTime()}`;
-    await setDoc(doc(db,'recordResetArchive',archiveId),{...r,originalId:recordId,resetByUid:state.user.uid,resetByName:state.profile.name,resetAt:now.toISOString()});
+    const now=new Date(),archiveId=`${recordId}_${now.getTime()}`;
+    await setDoc(doc(db,'recordResetArchive',archiveId),{...r,originalId:recordId,resetReason:reason,resetByUid:state.user.uid,resetByName:state.profile.name,resetAt:now.toISOString()});
     await deleteDoc(doc(db,'records',recordId));
-    await addAdminAudit('RESET_WADAH',{recordId,classId:r.classId,date:r.date,archiveId});
-    await refreshCore(); toast(`${r.classId} kembali menjadi Belum Pendataan`);
-    if(typeof adminDataPage==='function')adminDataPage();
+    await addAdminAudit('RESET_WADAH',{recordId,classId:r.classId,date:r.date,archiveId,reason});
+    await refreshCore();
+    toast(`${r.classId} kembali menjadi Belum Pendataan`);
+    if(state.page==='recap')renderWadahRecap();else renderShell();
   }catch(e){console.error(e);toast('Reset pendataan gagal')}
 }
+
+async function adminResetTeacherPassword(uid){
+  if(state.profile.role!=='admin')return;
+  const u=(window.masterUsers||[]).find(x=>x.uid===uid);if(!u)return;
+  const temp=prompt(`Masukkan password baru sementara untuk ${u.name||u.loginId}.\nMinimal 6 karakter.`);
+  if(temp===null)return;
+  if(temp.length<6)return toast('Password minimal 6 karakter');
+  if(!confirm(`Reset password akun ${u.loginId} - ${u.name}?\n\nPengguna harus memakai password baru ini untuk login.`))return;
+  try{
+    const token=await auth.currentUser.getIdToken(true);
+    const url=`https://us-central1-${cfg.projectId}.cloudfunctions.net/adminResetTeacherPassword`;
+    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({uid,newPassword:temp})});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok||data.ok!==true)throw new Error(data.error||'Cloud Function reset password belum tersedia');
+    await addAdminAudit('RESET_TEACHER_PASSWORD',{uid,loginId:u.loginId,name:u.name});
+    toast(`Password ${u.name||u.loginId} berhasil direset`);
+  }catch(e){
+    console.error(e);
+    toast('Reset password memerlukan Cloud Function Admin. Lihat SETUP_RESET_PASSWORD.md.',7000);
+  }
+}
+
 async function deleteTeacherAccount(uid){
   const u=(window.masterUsers||[]).find(x=>x.uid===uid);
   if(!u) return;
@@ -1149,7 +1309,7 @@ async function editTeacherProfile(uid){
       if(!verify.exists() || Boolean(verify.data().isHomeroom)!==isHomeroom || String(verify.data().homeroomClass||'')!==(isHomeroom?homeroomClass:'')){
         throw new Error('Perubahan peran belum tersimpan');
       }
-      closeEditModal(); toast(isHomeroom?`Akun diubah menjadi Wali Kelas ${homeroomClass}`:'Akun diubah menjadi Guru'); await master();
+      await addAdminAudit('UPDATE_TEACHER_ROLE',{uid,loginId:u.loginId,name,isHomeroom,homeroomClass:isHomeroom?homeroomClass:'',active}); closeEditModal(); toast(isHomeroom?`Akun diubah menjadi Wali Kelas ${homeroomClass}`:'Akun diubah menjadi Guru'); await master();
     });
   const syncTeacherType=()=>{
     const wali=$('#mType')?.value==='wali';
