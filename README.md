@@ -1,25 +1,13 @@
-# PakKom Eco Track — Analisis, Apresiasi & Kontrol Kelas
+# PakKom Eco Track — Periode Analisis Tersimpan
 
-Rekap kini memiliki:
-1. Wadah Makan & Tumbler
-2. Kebersihan
-3. Analisis
-4. Apresiasi
+Fitur baru:
+- Admin membuat kategori periode dengan nama, tanggal mulai, dan tanggal selesai.
+- `Hitung & Preview` menghitung analisis berdasarkan rentang tersebut.
+- `Simpan Hasil Periode` menyimpan snapshot hasil per kelas ke Firestore.
+- Snapshot tidak berubah otomatis saat data harian kemudian berubah.
+- Admin dapat membuka/menutup akses analisis untuk wali kelas.
+- Wali kelas hanya melihat periode yang sudah disimpan dan dipublikasikan.
+- Wali kelas melihat hasil kelas walinya dari snapshot.
+- Periode lama tetap tersimpan sebagai riwayat.
 
-Analisis mingguan:
-- Wadah Makan dan Tumbler dihitung terpisah berdasarkan siswa hadir.
-- Kebersihan dinormalisasi menjadi persentase.
-- Perubahan dibanding minggu sebelumnya.
-- Performa tertinggi, paling meningkat, dan perlu perhatian.
-
-Apresiasi:
-- Kelas Eco Terbaik
-- Wadah Makan Terbaik
-- Tumbler Terbaik
-- Kelas Terbersih
-- Paling Meningkat
-- Perlu Perhatian untuk kontrol/pembinaan
-
-Skor Eco:
-Wadah Makan 30% + Tumbler 30% + Kebersihan 40%.
-Kelas Eco Terbaik mensyaratkan data Wadah/Tumbler dan minimal 2 pemeriksaan kebersihan pada minggu tersebut.
+PENTING: deploy `firestore.rules` terbaru karena terdapat koleksi baru `analysisPeriods`.

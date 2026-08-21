@@ -634,7 +634,7 @@ async function loadEcoComparison(){
   currentMetrics.forEach(m=>{const p=prevMap[m.cls];m.change=(m.eco!==null&&p?.eco!==null)?m.eco-p.eco:null;});
   return {current,previous,currentMetrics,prevMap};
 }
-function renderEcoAnalysis(){
+function renderEcoAnalysisLive(){
   const panel=$('#recapPanel');
   panel.innerHTML=`<div class="card analysis-shell"><div class="section-head"><div><h3>Analisis Mingguan</h3><small>Persentase dihitung berdasarkan siswa hadir. Kebersihan dinormalisasi agar jumlah pemeriksaan tidak menguntungkan kelas tertentu.</small></div></div><div id="analysisBody"><div class="empty">Menghitung analisis...</div></div></div>`;
   loadEcoComparison().then(({current,currentMetrics})=>{
@@ -660,7 +660,7 @@ function renderEcoAnalysis(){
       <div class="analysis-note">Skor Eco untuk apresiasi resmi hanya berlaku jika kelas memiliki data Wadah Makan & Tumbler dan minimal 2 pemeriksaan kebersihan pada minggu tersebut.</div>`;
   }).catch(e=>{console.error(e);if($('#analysisBody'))$('#analysisBody').innerHTML='<div class="empty">Analisis belum dapat dimuat. Pastikan Firestore Rules mengizinkan pembacaan records dan cleanliness.</div>'});
 }
-function renderEcoAwards(){
+function renderEcoAwardsLive(){
   const panel=$('#recapPanel');
   panel.innerHTML=`<div class="card awards-shell"><div class="section-head"><div><h3>Apresiasi & Kontrol Kelas</h3><small>Apresiasi mingguan berdasarkan persentase, bukan jumlah siswa atau banyaknya pemeriksaan.</small></div></div><div id="awardsBody"><div class="empty">Menentukan performa kelas...</div></div></div>`;
   loadEcoComparison().then(({current,currentMetrics})=>{
@@ -690,6 +690,94 @@ function renderEcoAwards(){
       }).join(''):'<div class="empty">Belum ada data yang cukup.</div>'}</div>
       <div class="analysis-note">Bobot Kelas Eco: Wadah Makan 30% + Tumbler 30% + Kebersihan 40%. Hasil ini digunakan untuk apresiasi dan kontrol, bukan hukuman.</div>`;
   }).catch(e=>{console.error(e);if($('#awardsBody'))$('#awardsBody').innerHTML='<div class="empty">Apresiasi belum dapat dihitung.</div>'});
+}
+
+function periodLabel(p){return `${p.startDate||'-'} s.d. ${p.endDate||'-'}`}
+async function listAnalysisPeriods(){
+  const snap=await getDocs(collection(db,'analysisPeriods'));
+  return snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+}
+function roleCanSeePeriod(p){
+  if(state.profile.role==='admin') return true;
+  if(state.profile.isHomeroom) return p.homeroomPublished===true && p.status==='published';
+  return p.teacherPublished===true && p.status==='published';
+}
+async function renderEcoAnalysis(){
+  const panel=$('#recapPanel');
+  if(state.profile.role==='admin') return renderEcoAnalysisLive();
+  panel.innerHTML=`<div class="card analysis-shell"><div class="section-head"><div><h3>Analisis Tersimpan</h3><small>Hanya periode yang telah dibuka oleh administrator yang dapat dilihat.</small></div></div><div id="analysisBody"><div class="empty">Memuat periode...</div></div></div>`;
+  try{
+    const periods=(await listAnalysisPeriods()).filter(roleCanSeePeriod);
+    const target=$('#analysisBody'); if(!periods.length){target.innerHTML='<div class="empty">Analisis belum dibuka oleh administrator.</div>';return;}
+    const own=state.profile.isHomeroom?state.profile.homeroomClass:null;
+    target.innerHTML=`<select id="publishedPeriod" class="input-inline">${periods.map(p=>`<option value="${p.id}">${esc(p.name)} • ${periodLabel(p)}</option>`).join('')}</select><div id="publishedSnapshot"></div>`;
+    const show=async()=>{
+      const id=$('#publishedPeriod').value, snap=await getDoc(doc(db,'analysisPeriods',id)), p=snap.data()||{};
+      let rows=Array.isArray(p.snapshot?.classes)?p.snapshot.classes:[];
+      if(own) rows=rows.filter(x=>x.cls===own);
+      $('#publishedSnapshot').innerHTML=`<div class="analysis-period">${esc(p.name)} • ${periodLabel(p)}</div>${rows.length?`<div class="analysis-list">${rows.map(m=>`<div class="analysis-row"><div class="analysis-class"><b>${esc(m.cls)}</b><small>Hasil tersimpan</small></div><div><span>Wadah Makan</span><b>${metricText(m.foodPct)}</b></div><div><span>Tumbler</span><b>${metricText(m.tumbPct)}</b></div><div><span>Kebersihan</span><b>${metricText(m.cleanPct)}</b></div><div><span>Eco</span><b>${m.eco??'-'}</b></div></div>`).join('')}</div>`:'<div class="empty">Tidak ada hasil untuk kelas ini pada periode tersebut.</div>'}<div class="analysis-note">Hasil ini adalah snapshot yang disimpan administrator dan tidak berubah mengikuti data harian setelah periode disimpan.</div>`;
+    };
+    $('#publishedPeriod').onchange=show; show();
+  }catch(e){console.error(e);$('#analysisBody').innerHTML='<div class="empty">Periode analisis belum dapat dimuat.</div>'}
+}
+async function renderEcoAwards(){
+  if(state.profile.role==='admin') return renderEcoAwardsLive();
+  const panel=$('#recapPanel');
+  panel.innerHTML=`<div class="card awards-shell"><div class="section-head"><div><h3>Apresiasi Tersimpan</h3><small>Apresiasi tampil setelah administrator mempublikasikan periode.</small></div></div><div id="awardsBody"><div class="empty">Memuat...</div></div></div>`;
+  try{
+    const periods=(await listAnalysisPeriods()).filter(roleCanSeePeriod);
+    if(!periods.length){$('#awardsBody').innerHTML='<div class="empty">Apresiasi belum dibuka oleh administrator.</div>';return;}
+    const p=periods[0], a=p.snapshot?.awards||{};
+    $('#awardsBody').innerHTML=`<div class="analysis-period">${esc(p.name)} • ${periodLabel(p)}</div><div class="award-grid">
+      <div class="award-card"><div class="award-icon">🏆</div><span>Kelas Eco Terbaik</span><strong>${esc(a.bestEco?.cls||'-')}</strong><small>${a.bestEco?.eco??'-'} poin</small></div>
+      <div class="award-card"><div class="award-icon">${ICON_WADAH_MAKAN}</div><span>Wadah Makan Terbaik</span><strong>${esc(a.bestFood?.cls||'-')}</strong><small>${a.bestFood?.foodPct??'-'}%</small></div>
+      <div class="award-card"><div class="award-icon">${ICON_TUMBLER}</div><span>Tumbler Terbaik</span><strong>${esc(a.bestTumb?.cls||'-')}</strong><small>${a.bestTumb?.tumbPct??'-'}%</small></div>
+      <div class="award-card"><div class="award-icon">✨</div><span>Kelas Terbersih</span><strong>${esc(a.bestClean?.cls||'-')}</strong><small>${a.bestClean?.cleanPct??'-'}%</small></div>
+    </div><div class="analysis-note">Apresiasi ini berasal dari hasil periode yang telah disimpan dan dipublikasikan administrator.</div>`;
+  }catch(e){console.error(e);$('#awardsBody').innerHTML='<div class="empty">Apresiasi belum dapat dimuat.</div>'}
+}
+async function metricsForRange(startDate,endDate){
+  const data=await fetchEcoPeriod({start:startDate,end:endDate});
+  return state.classes.map(c=>classPeriodMetrics(c,data));
+}
+function buildAwards(ms){
+  const eligible=ms.filter(m=>m.eligible);
+  const desc=(key,filter=()=>true)=>[...ms].filter(filter).sort((a,b)=>(b[key]??-1)-(a[key]??-1))[0]||null;
+  return {bestEco:[...eligible].sort((a,b)=>b.eco-a.eco)[0]||null,bestFood:desc('foodPct',m=>m.foodPct!==null),bestTumb:desc('tumbPct',m=>m.tumbPct!==null),bestClean:desc('cleanPct',m=>m.cleanPct!==null&&m.checks>=2)};
+}
+async function renderAnalysisPeriods(){
+  const target=$('#masterTabContent');
+  target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Periode Analisis</h3><small>Buat rentang waktu, simpan hasil sebagai snapshot, lalu tentukan kapan wali kelas dapat melihatnya.</small></div><button id="newPeriod" class="btn primary">+ Periode Baru</button></div><div id="periodList"><div class="empty">Memuat periode...</div></div></div>`;
+  $('#newPeriod').onclick=()=>editAnalysisPeriod();
+  const periods=await listAnalysisPeriods();
+  $('#periodList').innerHTML=periods.length?`<div class="period-list">${periods.map(p=>`<div class="period-card"><div><b>${esc(p.name||'Tanpa nama')}</b><small>${periodLabel(p)}</small></div><span class="badge ${p.status==='published'?'ok':p.status==='saved'?'info':'warn'}">${p.status==='published'?'Dipublikasikan':p.status==='saved'?'Disimpan':'Draft'}</span><div class="period-access"><small>Wali kelas: <b>${p.homeroomPublished?'Dibuka':'Ditutup'}</b></small></div><div class="row-actions"><button class="btn-mini edit" data-edit-period="${p.id}">Buka</button>${p.status!=='draft'?`<button class="btn-mini" data-toggle-period="${p.id}">${p.homeroomPublished?'Tutup Akses':'Buka Akses'}</button>`:''}</div></div>`).join('')}</div>`:'<div class="empty">Belum ada periode analisis tersimpan.</div>';
+  document.querySelectorAll('[data-edit-period]').forEach(b=>b.onclick=()=>editAnalysisPeriod(b.dataset.editPeriod));
+  document.querySelectorAll('[data-toggle-period]').forEach(b=>b.onclick=()=>togglePeriodAccess(b.dataset.togglePeriod));
+}
+async function editAnalysisPeriod(id=null){
+  let p={name:'',startDate:todayKey(),endDate:todayKey(),status:'draft',homeroomPublished:false,teacherPublished:false};
+  if(id){const d=await getDoc(doc(db,'analysisPeriods',id));if(d.exists())p={id:d.id,...d.data()};}
+  const host=$('#masterTabContent');
+  host.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>${id?'Kelola':'Buat'} Periode Analisis</h3><small>Hasil yang sudah disimpan tidak berubah otomatis.</small></div><button id="backPeriods" class="btn ghost">← Kembali</button></div>
+    <div class="period-form"><label>Nama Periode<input id="periodName" value="${esc(p.name||'')}" placeholder="Contoh: Pekan Eco 1"></label><label>Tanggal Mulai<input id="periodStart" type="date" value="${p.startDate}"></label><label>Tanggal Selesai<input id="periodEnd" type="date" value="${p.endDate}"></label></div>
+    <div class="row-actions period-actions"><button id="previewPeriod" class="btn secondary">Hitung & Preview</button><button id="savePeriod" class="btn primary">Simpan Hasil Periode</button>${id&&p.status!=='draft'?`<button id="toggleAccessHere" class="btn ghost">${p.homeroomPublished?'Tutup Akses Wali Kelas':'Buka Akses Wali Kelas'}</button>`:''}</div>
+    <div id="periodPreview">${p.snapshot?renderPeriodSnapshotHtml(p.snapshot):'<div class="empty">Pilih rentang waktu lalu Hitung & Preview.</div>'}</div>`;
+  $('#backPeriods').onclick=renderAnalysisPeriods;
+  let preview=null;
+  $('#previewPeriod').onclick=async()=>{const st=$('#periodStart').value,en=$('#periodEnd').value;if(!st||!en||st>en)return toast('Rentang tanggal tidak valid');$('#periodPreview').innerHTML='<div class="empty">Menghitung...</div>';const classes=await metricsForRange(st,en);preview={classes,awards:buildAwards(classes),calculatedAt:new Date().toISOString()};$('#periodPreview').innerHTML=renderPeriodSnapshotHtml(preview);};
+  $('#savePeriod').onclick=async()=>{const name=$('#periodName').value.trim(),st=$('#periodStart').value,en=$('#periodEnd').value;if(!name||!st||!en||st>en)return toast('Lengkapi nama dan rentang periode');if(!preview){const classes=await metricsForRange(st,en);preview={classes,awards:buildAwards(classes),calculatedAt:new Date().toISOString()};}const ref=id?doc(db,'analysisPeriods',id):doc(collection(db,'analysisPeriods'));await setDoc(ref,{name,startDate:st,endDate:en,status:'saved',homeroomPublished:p.homeroomPublished===true,teacherPublished:p.teacherPublished===true,snapshot:preview,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name,...(!id?{createdAt:new Date().toISOString()}: {})},{merge:true});toast('Hasil periode tersimpan');renderAnalysisPeriods();};
+  if($('#toggleAccessHere'))$('#toggleAccessHere').onclick=()=>togglePeriodAccess(id);
+}
+function renderPeriodSnapshotHtml(snapshot){
+  const rows=snapshot?.classes||[],a=snapshot?.awards||{};
+  return `<div class="snapshot-head"><b>Preview / Snapshot</b><small>${rows.length} kelas • dihitung ${snapshot?.calculatedAt?new Date(snapshot.calculatedAt).toLocaleString('id-ID'):'-'}</small></div><div class="analysis-kpis"><div class="analysis-kpi"><span>🏆 Eco Terbaik</span><strong>${esc(a.bestEco?.cls||'-')}</strong><small>${a.bestEco?.eco??'-'} poin</small></div><div class="analysis-kpi"><span>Wadah Makan</span><strong>${esc(a.bestFood?.cls||'-')}</strong><small>${a.bestFood?.foodPct??'-'}%</small></div><div class="analysis-kpi"><span>Tumbler</span><strong>${esc(a.bestTumb?.cls||'-')}</strong><small>${a.bestTumb?.tumbPct??'-'}%</small></div></div><div class="analysis-list">${rows.map(m=>`<div class="analysis-row"><div class="analysis-class"><b>${esc(m.cls)}</b><small>${m.records} hari • ${m.checks} pemeriksaan</small></div><div><span>Wadah</span><b>${metricText(m.foodPct)}</b></div><div><span>Tumbler</span><b>${metricText(m.tumbPct)}</b></div><div><span>Kebersihan</span><b>${metricText(m.cleanPct)}</b></div><div><span>Eco</span><b>${m.eco??'-'}</b></div></div>`).join('')}</div>`;
+}
+async function togglePeriodAccess(id){
+  const ref=doc(db,'analysisPeriods',id),snap=await getDoc(ref);if(!snap.exists())return;
+  const p=snap.data(),open=!(p.homeroomPublished===true);
+  await setDoc(ref,{homeroomPublished:open,status:open?'published':'saved',publishedAt:open?new Date().toISOString():null,updatedAt:new Date().toISOString()},{merge:true});
+  toast(open?'Analisis dibuka untuk wali kelas':'Akses wali kelas ditutup');
+  renderAnalysisPeriods();
 }
 
 function account(){
@@ -733,6 +821,7 @@ async function master(){
     <button class="master-tab ${state.masterTab==='teachers'?'active':''}" data-master-tab="teachers">👨‍🏫 Guru & Wali Kelas${pendingTeachers.length?` <span class="tab-count">${pendingTeachers.length}</span>`:''}</button>
     <button class="master-tab ${state.masterTab==='classes'?'active':''}" data-master-tab="classes">🏫 Kelas & Import</button>
     <button class="master-tab ${state.masterTab==='calendar'?'active':''}" data-master-tab="calendar">📅 Kalender Sekolah</button>
+    <button class="master-tab ${state.masterTab==='periods'?'active':''}" data-master-tab="periods">📊 Periode Analisis</button>
     <button class="master-tab ${state.masterTab==='audit'?'active':''}" data-master-tab="audit">🕒 Riwayat</button>
   </div>
   <div id="masterTabContent"></div>`;
@@ -770,6 +859,9 @@ function renderMasterTab(){
   }
   if(state.masterTab==='calendar'){
     renderCalendarSettings(); return;
+  }
+  if(state.masterTab==='periods'){
+    renderAnalysisPeriods(); return;
   }
   target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Riwayat Koreksi Hari Ini</h3><small>Menampilkan perubahan pada pendataan hari ini.</small></div></div><div id="auditTable"></div></div>`; renderAuditTable();
 }

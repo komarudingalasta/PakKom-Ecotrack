@@ -69,6 +69,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Snapshot periode analisis: admin membuat/menyimpan/mempublikasikan.
+    // Pengguna aktif dapat membaca dokumen; UI hanya menampilkan periode yang dipublikasikan
+    // sesuai peran. Penulisan selalu khusus Admin.
+    match /analysisPeriods/{periodId} {
+      allow read: if activeUser();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
