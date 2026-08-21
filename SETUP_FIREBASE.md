@@ -1,12 +1,12 @@
-# Setup Firebase — PakKom Eco Track v3.0
+# Setup Firebase — PakKom Eco Track v3.1.1
 
 1. Authentication → aktifkan Email/Password.
-2. Firestore Database → publish `firestore.rules`.
-3. Pastikan dokumen Admin berada di `users/{UID_ADMIN}` dengan:
-   - loginId: ADMIN
-   - role: admin
-   - active: true
-4. `firebase-config.js` harus menunjuk ke project `pakkom-ecotrack`.
-5. Upload seluruh file v3.0 ke root GitHub Pages.
-
-Pada v3.0, login hanya memerlukan Authentication + profil user. Data dashboard dimuat sesudah aplikasi terbuka.
+2. Publish `firestore.rules`.
+3. Admin:
+   - Firebase Authentication: `komarudingalasta@gmail.com`
+   - Firestore `users/{UID_ADMIN}`:
+     - loginId: ADMIN
+     - role: admin
+     - active: true
+4. Upload seluruh isi v3.1.1 ke root GitHub Pages.
+5. Saat halaman dibuka, Login langsung tampil. Tidak ada pemeriksaan sesi.

@@ -1,5 +1,5 @@
 import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
+import { getAuth, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, setPersistence, inMemoryPersistence } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, writeBatch, serverTimestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 const cfg = window.PAKKOM_FIREBASE_CONFIG || {};
@@ -64,7 +64,7 @@ const loginEmail = id => {
   return `${normalized.toLowerCase().replace(/[^a-z0-9._-]/g,'')}@pakkom-ecotrack.app`;
 };
 let app, auth, db;
-let authResolved = false;
+let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}} };
 
@@ -103,16 +103,10 @@ function navItems(){
 }
 
 function showAuthLoading(show=true){
-  const loading=$('#authLoading'), login=$('#loginView'), appView=$('#appView');
-  if(loading) loading.classList.toggle('hidden',!show);
-  if(show){
-    if(login) login.classList.add('hidden');
-    if(appView) appView.classList.add('hidden');
-  } else if(window.__pakkomAuthFallback){
-    clearTimeout(window.__pakkomAuthFallback);
-    window.__pakkomAuthFallback=null;
-  }
+  // v3.1.1 Direct Login: tidak ada splash / pemeriksaan sesi.
+  return;
 }
+
 function showLoginError(msg=''){
   const el=$('#loginError'); if(!el)return;
   el.textContent=msg; el.classList.toggle('hidden',!msg);
@@ -151,7 +145,6 @@ async function finishSignedIn(user){
 
     // Login selesai begitu Authentication + profil valid.
     // Data dashboard dimuat setelah shell aplikasi sudah tampil.
-    showAuthLoading(false);
     renderShell();
     loadCoreDataInBackground();
   }catch(e){
@@ -161,86 +154,33 @@ async function finishSignedIn(user){
     state.profile=null;
     resetCoreState();
     authResolved=true;
-    showAuthLoading(false);
     renderShell();
     showLoginError(e.message||'Profil akun tidak dapat dibaca.');
   }
 }
 
-let authBootTimer=null;
-function resolveAuthBoot(){
-  authResolved=true;
-  if(authBootTimer){ clearTimeout(authBootTimer); authBootTimer=null; }
-  const retry=$('#authRetry'); if(retry) retry.classList.add('hidden');
-}
-function failAuthBoot(message='Tidak dapat memeriksa sesi.'){
-  authResolved=true;
-  const text=$('#authLoadingText'); if(text) text.textContent=message;
-  const retry=$('#authRetry'); if(retry) retry.classList.remove('hidden');
-}
-async function startAuthObserver(){
-  showAuthLoading(true);
-  const text=$('#authLoadingText'); if(text) text.textContent='Memeriksa sesi...';
-  const retry=$('#authRetry'); if(retry) retry.classList.add('hidden');
-
-  // Persistence tidak boleh menahan observer.
-  setPersistence(auth,browserLocalPersistence).catch(e=>console.warn('Persistence fallback',e));
-
-  if(authBootTimer) clearTimeout(authBootTimer);
-  authBootTimer=setTimeout(()=>{
-    // Jangan tahan layar. Jika auth belum memberi jawaban, tampilkan login.
-    if(!authResolved){
-      authResolved=true;
-      state.user=null; state.profile=null;
-      showAuthLoading(false);
-      renderShell();
-      showLoginError('Pemeriksaan sesi terlalu lama. Silakan login kembali.');
-    }
-  },4500);
-
-  try{
-    onAuthStateChanged(auth, async user=>{
-      if(loginInProgress) return;
-      resolveAuthBoot();
-      if(!user){
-        state.user=null; state.profile=null;
-        showAuthLoading(false); renderShell(); return;
-      }
-      showAuthLoading(true);
-      await finishSignedIn(user);
-    }, err=>{
-      console.error('Auth observer error',err);
-      resolveAuthBoot();
-      state.user=null; state.profile=null;
-      showAuthLoading(false); renderShell();
-      showLoginError('Gagal terhubung ke Firebase Authentication. Silakan login kembali.');
-    });
-  }catch(e){
-    console.error(e);
-    resolveAuthBoot();
-    state.user=null; state.profile=null;
-    showAuthLoading(false); renderShell();
-    showLoginError('Gagal memulai pemeriksaan sesi.');
-  }
-}
+// v3.1.1 Direct Login
+// Tidak memulihkan sesi pada saat halaman dibuka.
+// Firebase hanya dipakai setelah pengguna menekan MASUK.
 if(!configured){
-  authResolved=true; showAuthLoading(false);
   $('#loginHint').innerHTML='Firebase belum dikonfigurasi. Isi <b>firebase-config.js</b> terlebih dahulu.';
-  $('#loginBtn').disabled=true; $('#loginBtn').textContent='Firebase belum aktif';
-  renderShell();
+  $('#loginBtn').disabled=true;
+  $('#loginBtn').textContent='Firebase belum aktif';
 } else {
-  app=initializeApp(cfg); auth=getAuth(app); db=getFirestore(app);
-  startAuthObserver();
+  app=initializeApp(cfg);
+  auth=getAuth(app);
+  db=getFirestore(app);
+  // Sesi hanya hidup di memori. Refresh = kembali ke halaman Login.
+  setPersistence(auth,inMemoryPersistence).catch(e=>console.warn('Persistence',e));
 }
-if($('#authRetry')) $('#authRetry').onclick=()=>location.reload();
+renderShell();
+
 
 function togglePasswordInput(targetId, button){
   const i=document.getElementById(targetId); if(!i)return;
   const reveal=i.type==='password'; i.type=reveal?'text':'password';
   if(button){ button.textContent=reveal?'🙈':'👁'; button.setAttribute('aria-label',reveal?'Sembunyikan password':'Tampilkan password'); }
 }
-$('#togglePassword').onclick=e=>togglePasswordInput('loginPassword',e.currentTarget);
-document.querySelectorAll('.password-toggle').forEach(b=>b.onclick=()=>togglePasswordInput(b.dataset.toggleTarget,b));
 function openRegisterModal(){
   const modal=$('#registerModal');
   $('#regClass').innerHTML=classesDefault.map(c=>`<option value="${c}">${c}</option>`).join('');
@@ -283,8 +223,7 @@ $('#loginForm').addEventListener('submit',async e=>{
   loginInProgress=true; showLoginError('');
   $('#loginBtn').disabled=true; $('#loginBtn').textContent='MEMERIKSA...';
   try{
-    // Pastikan percobaan login baru tidak memakai sesi lama yang masih tersimpan.
-    if(auth.currentUser) await signOut(auth);
+    if(auth.currentUser) await signOut(auth).catch(()=>{});
     const email=loginEmail(id);
     const cred=await signInWithEmailAndPassword(auth,email,password);
     if(id.toUpperCase()==='ADMIN' && cred.user.email?.toLowerCase()!==ADMIN_LOGIN_EMAIL.toLowerCase()) throw new Error('Akun ADMIN tidak sesuai konfigurasi.');
@@ -292,7 +231,6 @@ $('#loginForm').addEventListener('submit',async e=>{
     state.user=cred.user;
     state.profile=profile;
     authResolved=true;
-    showAuthLoading(false);
     renderShell();
     loadCoreDataInBackground();
   }catch(e){
@@ -306,7 +244,7 @@ $('#loginForm').addEventListener('submit',async e=>{
 });
 async function logoutNow(){
   state.user=null; state.profile=null; resetCoreState(); authResolved=true;
-  showAuthLoading(false); renderShell();
+  renderShell();
   await signOut(auth).catch(()=>{});
 }
 $('#logoutBtn').onclick=logoutNow; if($('#quickLogout')) $('#quickLogout').onclick=logoutNow;
@@ -352,9 +290,11 @@ async function refreshCore(){
 function classRecord(c){ return state.recordsToday.find(r=>r.classId===c); }
 
 function renderShell(){
-  if(!authResolved){ showAuthLoading(true); return; }
-  $('#authLoading').classList.add('hidden');
-  if(!state.profile){ $('#loginView').classList.remove('hidden'); $('#appView').classList.add('hidden'); return; }
+  if(!state.profile){
+    $('#loginView').classList.remove('hidden');
+    $('#appView').classList.add('hidden');
+    return;
+  }
   showLoginError(''); $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden');
   const chipRole=state.profile.role==='admin'?'Admin':(state.profile.isHomeroom?`Wali Kelas${state.profile.homeroomClass?' • '+esc(state.profile.homeroomClass):''}`:'Guru');
   $('#userChip').innerHTML=`<b>${esc(state.profile.name)}</b><br>${chipRole}`;

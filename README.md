@@ -1,25 +1,16 @@
-# PakKom Eco Track v3.0 — Stable Structure
+# PakKom Eco Track v3.1.1 — Direct Login
 
-Versi ini merombak alur aplikasi agar login tidak bergantung pada query dashboard.
+## Perubahan utama
+- Tidak ada lagi layar **Memeriksa sesi**.
+- Halaman Login langsung tampil saat web dibuka.
+- Firebase Authentication hanya dijalankan setelah tombol **MASUK** ditekan.
+- Sesi menggunakan `inMemoryPersistence`.
+- Refresh halaman akan kembali ke Login.
+- Login berhasil hanya jika:
+  1. ID/password valid di Firebase Authentication.
+  2. Dokumen `users/{uid}` ada.
+  3. Role dan status akun valid.
+- Data dashboard dimuat setelah login dan tidak menghalangi proses autentikasi.
 
-## Struktur proses
-1. Boot halaman
-2. Firebase Authentication
-3. Baca profil `users/{uid}`
-4. Tampilkan aplikasi
-5. Muat kelas, pendataan, kebersihan, kalender secara background
-
-Kegagalan salah satu query data tidak membatalkan login.
-
-## Modul
-- Wadah & Tumbler
-- Kebersihan Kelas
-- Rekap
-- Kelola Siswa
-- Kelola Guru & Wali Kelas
-- Kelola Kelas & Import
-- Kalender Sekolah
-- Approval akun guru/wali kelas
-
-## Penting
-Gunakan `firestore.rules` yang disertakan dan upload seluruh isi repository agar cache versi lama tidak terbaca.
+## Alasan
+Arsitektur ini lebih sederhana dan stabil untuk penggunaan sekolah karena tidak ada pemulihan sesi yang dapat membuat halaman tersangkut saat startup.

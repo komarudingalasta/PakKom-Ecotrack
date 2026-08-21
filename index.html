@@ -4,17 +4,28 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#0f766e" />
-  <title>PakKom Eco Track v3.0</title>
-  <link rel="stylesheet" href="styles.css?v=3.0" />
+  <title>PakKom Eco Track v3.1.1</title>
+  <link rel="stylesheet" href="styles.css?v=3.1.1" />
+
+  <script>
+    window.pakkomTogglePassword = function(inputId, button) {
+      var input = document.getElementById(inputId);
+      if (!input) return;
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      if (button) {
+        button.textContent = show ? '🙈' : '👁';
+        button.setAttribute('aria-label', show ? 'Sembunyikan password' : 'Tampilkan password');
+        button.setAttribute('title', show ? 'Sembunyikan password' : 'Tampilkan password');
+      }
+      input.focus();
+    };
+  </script>
 </head>
 <body>
   <div id="toast" class="toast"></div>
 
-  <section id="authLoading" class="auth-loading">
-    <div class="loading-brand"><div class="brand-mark">🌿</div><strong>PakKom Eco Track</strong><span id="authLoadingText">Memeriksa sesi...</span><button id="authRetry" class="btn ghost hidden" type="button">Coba Lagi</button></div>
-  </section>
-
-  <section id="loginView" class="login-shell hidden">
+  <section id="loginView" class="login-shell">
     <div class="login-visual">
       <div class="visual-badge">🌱 Sekolah Hijau</div>
       <div class="visual-copy"><h2>Pembiasaan Hijau,<br>Kelas Lebih Bersih</h2><p>Pendataan wadah & tumbler dan pemeriksaan kebersihan kelas dalam satu aplikasi yang sederhana.</p></div>
@@ -25,7 +36,7 @@
       <form id="loginForm" class="form-card login-form">
         <div class="login-heading"><h2>Selamat Datang</h2><p>Silakan masuk untuk melanjutkan.</p></div>
         <label>ID Guru / Admin<input id="loginId" autocomplete="username" placeholder="Contoh: G001" required /></label>
-        <label>Password<div class="password-wrap"><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" required /><button id="togglePassword" type="button" aria-label="Tampilkan password">👁</button></div></label>
+        <label>Password<div class="password-wrap"><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" required /><button id="togglePassword" type="button" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('loginPassword', this)">👁</button></div></label>
         <button id="loginBtn" class="btn primary full login-submit" type="submit">MASUK</button>
         <p id="loginError" class="login-error hidden"></p>
         <p id="loginHint" class="demo-note">Gunakan akun yang sudah disetujui administrator.</p>
@@ -52,32 +63,15 @@
     </main>
   </div>
 
-  <div id="registerModal" class="modal hidden"><div class="modal-card register-card"><div class="modal-head"><div><h3>Daftar Akun Guru</h3><small>Akun baru harus disetujui Admin sebelum dapat digunakan.</small></div><button id="registerClose" class="modal-x">×</button></div><div class="modal-body"><div class="register-grid"><label>ID Guru<input id="regLoginId" placeholder="Contoh: G001"></label><label>Nama Lengkap<input id="regName" placeholder="Nama guru"></label><label>Jenis<select id="regType"><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select></label><label id="regClassWrap" class="hidden">Kelas Wali<select id="regClass"></select></label><label>Password<div class="password-wrap"><input id="regPassword" type="password" placeholder="Minimal 6 karakter"><button class="password-toggle" type="button" data-toggle-target="regPassword" aria-label="Tampilkan password">👁</button></div></label>
-<label>Ulangi Password<div class="password-wrap"><input id="regPassword2" type="password" placeholder="Ulangi password"><button class="password-toggle" type="button" data-toggle-target="regPassword2" aria-label="Tampilkan password">👁</button></div></label></div><div class="notice">Pendaftaran tidak langsung memberikan akses. Admin akan memeriksa dan menyetujui akun terlebih dahulu.</div></div><div class="modal-actions"><button id="registerCancel" class="btn ghost">Batal</button><button id="registerSubmit" class="btn primary">Kirim Pendaftaran</button></div></div></div>
+  <div id="registerModal" class="modal hidden"><div class="modal-card register-card"><div class="modal-head"><div><h3>Daftar Akun Guru</h3><small>Akun baru harus disetujui Admin sebelum dapat digunakan.</small></div><button id="registerClose" class="modal-x">×</button></div><div class="modal-body"><div class="register-grid"><label>ID Guru<input id="regLoginId" placeholder="Contoh: G001"></label><label>Nama Lengkap<input id="regName" placeholder="Nama guru"></label><label>Jenis<select id="regType"><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select></label><label id="regClassWrap" class="hidden">Kelas Wali<select id="regClass"></select></label><label>Password<div class="password-wrap"><input id="regPassword" type="password" placeholder="Minimal 6 karakter"><button class="password-toggle" type="button" data-toggle-target="regPassword" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('regPassword', this)">👁</button></div></label>
+<label>Ulangi Password<div class="password-wrap"><input id="regPassword2" type="password" placeholder="Ulangi password"><button class="password-toggle" type="button" data-toggle-target="regPassword2" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('regPassword2', this)">👁</button></div></label></div><div class="notice">Pendaftaran tidak langsung memberikan akses. Admin akan memeriksa dan menyetujui akun terlebih dahulu.</div></div><div class="modal-actions"><button id="registerCancel" class="btn ghost">Batal</button><button id="registerSubmit" class="btn primary">Kirim Pendaftaran</button></div></div></div>
 
   <div id="editModal" class="modal hidden"><div class="modal-card"><div class="modal-head"><h3 id="editModalTitle">Edit Data</h3><button id="editModalClose" class="modal-x">×</button></div><div id="editModalBody" class="modal-body"></div><div class="modal-actions"><button id="editModalCancel" class="btn ghost">Batal</button><button id="editModalSave" class="btn primary">Simpan</button></div></div></div>
   <input id="studentImport" type="file" accept=".xlsx,.xls,.csv" hidden />
   <input id="teacherImport" type="file" accept=".xlsx,.xls,.csv" hidden />
   <input id="attendanceImport" type="file" accept=".xlsx,.xls,.csv" hidden />
-
-  <script>
-    // Fallback mandiri: login tidak boleh tertahan selamanya jika module/Firebase gagal.
-    window.__pakkomAuthFallback = setTimeout(function () {
-      var loading = document.getElementById('authLoading');
-      var login = document.getElementById('loginView');
-      if (loading && !loading.classList.contains('hidden')) {
-        loading.classList.add('hidden');
-        if (login) login.classList.remove('hidden');
-        var err = document.getElementById('loginError');
-        if (err) {
-          err.textContent = 'Pemeriksaan sesi terlalu lama. Silakan login kembali.';
-          err.classList.remove('hidden');
-        }
-      }
-    }, 5000);
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="firebase-config.js"></script>
-  <script type="module" src="app.js?v=3.0"></script>
+  <script type="module" src="app.js?v=3.1.1"></script>
 </body>
 </html>
