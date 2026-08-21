@@ -61,3 +61,12 @@
 .approval-box{margin:14px 0;padding:14px;border:1px solid #fde68a;background:#fffbeb;border-radius:16px}.import-preview{max-height:420px;overflow:auto}.btn-mini.danger{background:#fff1f2;color:#be123c;border:1px solid #fecdd3}.class-manage{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:13px 14px;border:1px solid var(--border);border-radius:14px;background:#fff}.class-manage>div{display:grid;gap:2px}.class-manage small{color:var(--muted)}
 #openRegister{margin-top:2px}.modal-body .notice{margin-bottom:14px}
 @media(max-width:650px){.register-grid{grid-template-columns:1fr}.class-manage{padding:11px}.approval-box{padding:10px}}
+
+/* v2.9 Data Management tabs, bulk delete, attendance import */
+.master-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:7px;background:#eaf1ef;border:1px solid var(--line);border-radius:16px}
+.master-tab{border:0;background:transparent;color:#536b65;padding:11px 15px;border-radius:11px;font-weight:800;cursor:pointer}
+.master-tab.active{background:#fff;color:var(--brand);box-shadow:0 4px 14px rgba(15,118,110,.10)}
+.tab-count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;margin-left:4px;border-radius:999px;background:#fff3cd;color:#8a6200;font-size:11px}
+.master-section{margin-top:14px}.bulk-summary{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 2px;color:#60756f;font-size:13px}.check-col{width:42px;text-align:center}.check-col input{width:18px;height:18px;accent-color:var(--brand);cursor:pointer}
+.warn-note{background:#fff8e7;color:#7a5200;border:1px solid #f9df9a}.btn.danger{border:1px solid #fecaca}.btn.danger:not(:disabled):hover{background:#fee2e2}
+@media(max-width:650px){.master-tabs{display:grid;grid-template-columns:1fr 1fr}.master-tab{padding:10px 7px;font-size:12px}.bulk-summary{align-items:flex-start;flex-direction:column}.master-tools .btn.danger{order:10}}

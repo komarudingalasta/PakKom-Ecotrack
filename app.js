@@ -18,7 +18,7 @@ const loginEmail = id => {
 let app, auth, db;
 let authResolved = false;
 let loginInProgress = false;
-let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[] };
+let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students' };
 
 function toast(msg, ms=4200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.classList.remove('show'),ms); }
 function authErrorMessage(e){
@@ -335,7 +335,7 @@ function account(){ pageMeta('Akun','Informasi pengguna'); const type=state.prof
 
 async function master(){
   if(state.profile.role!=='admin'){state.page='home';return renderShell()}
-  pageMeta('Kelola Data','Khusus Administrator • v2.8');
+  pageMeta('Kelola Data','Khusus Administrator • v2.9');
   content.innerHTML='<div class="card"><div class="empty">Memuat data master...</div></div>';
   const [stuSnap,userSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users'))]);
   state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));
@@ -352,41 +352,68 @@ async function master(){
     <div class="stat"><span>Wali kelas</span><strong>${homerooms.length}</strong></div>
     <div class="stat"><span>Menunggu approve</span><strong>${pendingTeachers.length}</strong></div>
   </div>
-  <div class="card" style="margin-top:16px">
-    <div class="section-head"><div><h3>Master Siswa</h3><small>Upload file terlebih dahulu, periksa preview, lalu tekan Import.</small></div><div class="row-actions"><a class="btn ghost" href="format-import-pakkom-eco-track.xlsx" download>Format Import</a><button id="importStudents" class="btn primary">Upload Data Siswa</button></div></div>
-    <div class="notice">Format siswa: <b>NIS | Nama | Kelas | Status</b>. Kolom Status boleh kosong dan akan dianggap Aktif. NIS yang sama akan memperbarui data lama.</div>
-    <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button></div>
-    <div id="studentTable"></div>
+  <div class="master-tabs" style="margin-top:16px">
+    <button class="master-tab ${state.masterTab==='students'?'active':''}" data-master-tab="students">👨‍🎓 Data Siswa</button>
+    <button class="master-tab ${state.masterTab==='teachers'?'active':''}" data-master-tab="teachers">👨‍🏫 Guru & Wali Kelas${pendingTeachers.length?` <span class="tab-count">${pendingTeachers.length}</span>`:''}</button>
+    <button class="master-tab ${state.masterTab==='classes'?'active':''}" data-master-tab="classes">🏫 Kelas & Import</button>
+    <button class="master-tab ${state.masterTab==='audit'?'active':''}" data-master-tab="audit">🕒 Riwayat</button>
   </div>
-  <div class="card" style="margin-top:16px">
-    <div class="section-head"><div><h3>Akun Guru & Wali Kelas</h3><small>Akun hasil pendaftaran baru harus di-approve Admin.</small></div><div class="row-actions"><button id="importTeachers" class="btn ghost">Upload Akun Guru</button><button id="addTeacher" class="btn primary">+ Guru</button></div></div><div id="pendingApprovals"></div>
-    <div class="notice">Format guru: <b>ID Guru | Nama | Password Awal | Jenis | Kelas Wali | Status</b>. Jenis diisi <b>Guru</b> atau <b>Wali Kelas</b>. Jika Password Awal kosong, digunakan <b>123456</b>.</div>
-    <div class="master-tools"><input id="teacherSearch" class="input-inline" placeholder="Cari ID atau nama guru"><select id="teacherTypeFilter" class="input-inline"><option value="">Semua jenis</option><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select><select id="teacherStatusFilter" class="input-inline"><option value="">Semua status</option><option value="aktif">Aktif</option><option value="nonaktif">Nonaktif</option></select></div><div id="teacherTable"></div>
-  </div>
-  <div class="card" style="margin-top:16px"><div class="section-head"><div><h3>Riwayat Koreksi Hari Ini</h3><small>Menampilkan perubahan pada pendataan hari ini.</small></div></div><div id="auditTable"></div></div><div class="card" style="margin-top:16px"><div class="section-head"><div><h3>Daftar Kelas</h3><small>Kelas yang dihapus tidak dibuat kembali otomatis.</small></div><button id="seedClasses" class="btn ghost">Buat Kelas Standar 7A–9I</button></div><div class="grid class-grid admin-class-grid">${state.classes.map(c=>`<div class="class-manage"><div><b>${c}</b><small>Aktif</small></div><button class="btn-mini danger" data-delete-class="${c}">Hapus</button></div>`).join('')||'<div class="empty">Belum ada kelas.</div>'}</div></div>`;
-  $('#importStudents').onclick=()=>$('#studentImport').click();
-  $('#importTeachers').onclick=()=>$('#teacherImport').click();
-  $('#addTeacher').onclick=addTeacherPrompt;
-  $('#seedClasses').onclick=seedClasses;
-  $('#addStudentLocal').onclick=addStudentLocal;
-  $('#studentSearch').oninput=renderStudentMasterTable;
-  $('#studentClassFilter').onchange=renderStudentMasterTable;
-  $('#teacherSearch').oninput=renderTeacherMasterTable; $('#teacherTypeFilter').onchange=renderTeacherMasterTable; $('#teacherStatusFilter').onchange=renderTeacherMasterTable;
-  renderStudentMasterTable();
-  renderTeacherMasterTable();
-  renderPendingApprovals();
-  renderAuditTable();
-  document.querySelectorAll('[data-delete-class]').forEach(b=>b.onclick=()=>deleteClassMaster(b.dataset.deleteClass));
+  <div id="masterTabContent"></div>`;
+  document.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMasterTab();document.querySelectorAll('[data-master-tab]').forEach(x=>x.classList.toggle('active',x.dataset.masterTab===state.masterTab));});
+  renderMasterTab();
+}
+function renderMasterTab(){
+  const target=$('#masterTabContent'); if(!target)return;
+  if(state.masterTab==='students'){
+    target.innerHTML=`<div class="card master-section">
+      <div class="section-head"><div><h3>Data Siswa</h3><small>Kelola siswa tanpa mencampur akun guru.</small></div><div class="row-actions"><a class="btn ghost" href="format-import-pakkom-eco-track.xlsx" download>Format Siswa</a><button id="importStudents" class="btn primary">Upload Data Siswa</button></div></div>
+      <div class="notice">Format: <b>NIS | Nama | Kelas | Status</b>. Upload hanya membuka preview; data baru masuk setelah menekan <b>Import Sekarang</b>.</div>
+      <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button><button id="bulkDeleteStudents" class="btn danger" disabled>Hapus Terpilih</button></div>
+      <div id="studentTable"></div></div>`;
+    $('#importStudents').onclick=()=>$('#studentImport').click(); $('#addStudentLocal').onclick=addStudentLocal;
+    $('#studentSearch').oninput=renderStudentMasterTable; $('#studentClassFilter').onchange=renderStudentMasterTable;
+    $('#bulkDeleteStudents').onclick=deleteSelectedStudents; renderStudentMasterTable(); return;
+  }
+  if(state.masterTab==='teachers'){
+    target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Akun Guru & Wali Kelas</h3><small>Akun hasil pendaftaran baru harus disetujui Admin.</small></div><div class="row-actions"><button id="importTeachers" class="btn ghost">Upload Akun Guru</button><button id="addTeacher" class="btn primary">+ Guru</button></div></div><div id="pendingApprovals"></div>
+    <div class="notice">Format: <b>ID Guru | Nama | Password Awal | Jenis | Kelas Wali | Status</b>. Jenis: Guru atau Wali Kelas.</div>
+    <div class="master-tools"><input id="teacherSearch" class="input-inline" placeholder="Cari ID atau nama guru"><select id="teacherTypeFilter" class="input-inline"><option value="">Semua jenis</option><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select><select id="teacherStatusFilter" class="input-inline"><option value="">Semua status</option><option value="aktif">Aktif</option><option value="nonaktif">Nonaktif</option></select></div><div id="teacherTable"></div></div>`;
+    $('#importTeachers').onclick=()=>$('#teacherImport').click(); $('#addTeacher').onclick=addTeacherPrompt;
+    $('#teacherSearch').oninput=renderTeacherMasterTable; $('#teacherTypeFilter').onchange=renderTeacherMasterTable; $('#teacherStatusFilter').onchange=renderTeacherMasterTable;
+    renderPendingApprovals(); renderTeacherMasterTable(); return;
+  }
+  if(state.masterTab==='classes'){
+    target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Kelas</h3><small>Menghapus kelas juga menghapus seluruh siswa di kelas tersebut dari master.</small></div><button id="seedClasses" class="btn ghost">Buat Kelas Standar 7A–9I</button></div>
+    <div class="notice warn-note"><b>Catatan:</b> Hapus kelas akan menghapus semua siswa pada kelas itu dan melepas penugasan wali kelas. Riwayat pendataan lama tetap disimpan.</div>
+    <div class="grid class-grid admin-class-grid">${state.classes.map(c=>{const n=state.students.filter(s=>s.classId===c).length;return `<div class="class-manage"><div><b>${c}</b><small>${n} siswa</small></div><button class="btn-mini danger" data-delete-class="${c}">Hapus</button></div>`}).join('')||'<div class="empty">Belum ada kelas.</div>'}</div></div>
+    <div class="card master-section"><div class="section-head"><div><h3>Upload Pendataan Wadah & Tumbler</h3><small>Khusus Admin • upload → preview → import.</small></div><div class="row-actions"><a class="btn ghost" href="format-upload-pendataan-wadah.xlsx" download>Format Pendataan</a><button id="importAttendance" class="btn primary">Upload Pendataan</button></div></div>
+    <div class="notice">Format: <b>Tanggal | Kelas | NIS | Nama | Kehadiran | Wadah | Tumbler</b>. Nama bersifat informasi; NIS harus sudah ada di master siswa.</div></div>`;
+    $('#seedClasses').onclick=seedClasses; $('#importAttendance').onclick=()=>$('#attendanceImport').click();
+    document.querySelectorAll('[data-delete-class]').forEach(b=>b.onclick=()=>deleteClassMaster(b.dataset.deleteClass)); return;
+  }
+  target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Riwayat Koreksi Hari Ini</h3><small>Menampilkan perubahan pada pendataan hari ini.</small></div></div><div id="auditTable"></div></div>`; renderAuditTable();
 }
 
+function filteredMasterStudents(){
+  const q=String($('#studentSearch')?.value||'').trim().toLowerCase(), cls=$('#studentClassFilter')?.value||'';
+  return state.students.filter(s=>(!cls||s.classId===cls)&&(!q||String(s.nis||s.id).toLowerCase().includes(q)||String(s.name||'').toLowerCase().includes(q)));
+}
 function renderStudentMasterTable(){
   const target=$('#studentTable'); if(!target)return;
-  const q=String($('#studentSearch')?.value||'').trim().toLowerCase();
-  const cls=$('#studentClassFilter')?.value||'';
-  const rows=state.students.filter(s=>(!cls||s.classId===cls)&&(!q||String(s.nis||s.id).toLowerCase().includes(q)||String(s.name||'').toLowerCase().includes(q)));
-  target.innerHTML=`<div class="table-wrap"><table class="student-master"><thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(s=>`<tr><td><b>${esc(s.nis||s.id)}</b></td><td>${esc(s.name||'-')}</td><td>${esc(s.classId||'-')}</td><td><span class="badge ${s.active===false?'warn':'ok'}">${s.active===false?'Nonaktif':'Aktif'}</span></td><td><button class="btn-mini edit" data-edit-student="${esc(s.id)}">Edit</button> <button class="btn-mini danger" data-delete-student="${esc(s.id)}">Hapus</button></td></tr>`).join('')||'<tr><td colspan="5"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
+  const rows=filteredMasterStudents(); window.selectedStudentIds=window.selectedStudentIds||new Set();
+  target.innerHTML=`<div class="bulk-summary"><span><b>${window.selectedStudentIds.size}</b> siswa dipilih</span><small>Centang beberapa siswa lalu pilih Hapus Terpilih.</small></div><div class="table-wrap"><table class="student-master"><thead><tr><th class="check-col"><input id="selectAllStudents" type="checkbox" aria-label="Pilih semua"></th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(st=>`<tr><td class="check-col"><input class="student-check" type="checkbox" data-student-id="${esc(st.id)}" ${window.selectedStudentIds.has(st.id)?'checked':''}></td><td><b>${esc(st.nis||st.id)}</b></td><td>${esc(st.name||'-')}</td><td>${esc(st.classId||'-')}</td><td><span class="badge ${st.active===false?'warn':'ok'}">${st.active===false?'Nonaktif':'Aktif'}</span></td><td><button class="btn-mini edit" data-edit-student="${esc(st.id)}">Edit</button> <button class="btn-mini danger" data-delete-student="${esc(st.id)}">Hapus</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
   document.querySelectorAll('[data-edit-student]').forEach(b=>b.onclick=()=>editStudent(b.dataset.editStudent));
   document.querySelectorAll('[data-delete-student]').forEach(b=>b.onclick=()=>deleteStudentMaster(b.dataset.deleteStudent));
+  document.querySelectorAll('.student-check').forEach(c=>c.onchange=()=>{c.checked?window.selectedStudentIds.add(c.dataset.studentId):window.selectedStudentIds.delete(c.dataset.studentId);updateBulkStudentButton();});
+  const selectAll=$('#selectAllStudents'); if(selectAll){const visible=rows.slice(0,500);selectAll.checked=visible.length>0&&visible.every(x=>window.selectedStudentIds.has(x.id));selectAll.onchange=()=>{visible.forEach(x=>selectAll.checked?window.selectedStudentIds.add(x.id):window.selectedStudentIds.delete(x.id));renderStudentMasterTable();};}
+  updateBulkStudentButton();
+}
+function updateBulkStudentButton(){const b=$('#bulkDeleteStudents');if(b){const n=window.selectedStudentIds?.size||0;b.disabled=!n;b.textContent=n?`Hapus Terpilih (${n})`:'Hapus Terpilih';}}
+async function deleteSelectedStudents(){
+  const ids=[...(window.selectedStudentIds||[])]; if(!ids.length)return;
+  const sample=ids.slice(0,3).map(id=>state.students.find(s=>s.id===id)?.name||id).join(', ');
+  if(!confirm(`Hapus ${ids.length} siswa dari master?${sample?`\nContoh: ${sample}${ids.length>3?', ...':''}`:''}\nRiwayat pendataan lama tetap tersimpan.`))return;
+  try{for(let i=0;i<ids.length;i+=400){const batch=writeBatch(db);ids.slice(i,i+400).forEach(id=>batch.delete(doc(db,'students',id)));await batch.commit();}window.selectedStudentIds=new Set();toast(`${ids.length} siswa berhasil dihapus`);await master();}catch(e){console.error(e);toast('Gagal menghapus beberapa siswa');}
 }
 
 function renderTeacherMasterTable(){
@@ -425,12 +452,14 @@ async function deleteStudentMaster(id){
   try{await deleteDoc(doc(db,'students',id));toast('Siswa dihapus dari master');await master();}catch(e){console.error(e);toast('Gagal menghapus siswa');}
 }
 async function deleteClassMaster(classId){
-  const used=state.students.filter(s=>s.classId===classId&&s.active!==false);
-  if(used.length)return toast(`Kelas ${classId} masih memiliki ${used.length} siswa aktif. Pindahkan/hapus siswa terlebih dahulu.`,6500);
-  const wali=(window.masterUsers||[]).find(u=>u.role==='guru'&&u.active!==false&&u.approved!==false&&u.isHomeroom===true&&u.homeroomClass===classId);
-  if(wali)return toast(`Kelas ${classId} masih menjadi kelas wali ${wali.name}. Ubah data wali kelas terlebih dahulu.`,6500);
-  if(!confirm(`Hapus kelas ${classId} dari master? Riwayat lama tidak ikut dihapus.`))return;
-  try{await deleteDoc(doc(db,'classes',classId));await refreshCore();toast(`Kelas ${classId} dihapus`);await master();}catch(e){console.error(e);toast('Gagal menghapus kelas');}
+  const studentsInClass=state.students.filter(s=>s.classId===classId);
+  const homerooms=(window.masterUsers||[]).filter(u=>u.role==='guru'&&u.isHomeroom===true&&u.homeroomClass===classId);
+  if(!confirm(`Hapus kelas ${classId}?\n\n${studentsInClass.length} siswa di kelas ini akan ikut dihapus dari master.${homerooms.length?`\n${homerooms.length} wali kelas akan diubah menjadi Guru biasa.`:''}\n\nRiwayat pendataan lama tetap tersimpan.`))return;
+  try{
+    for(let i=0;i<studentsInClass.length;i+=350){const batch=writeBatch(db);studentsInClass.slice(i,i+350).forEach(st=>batch.delete(doc(db,'students',st.id)));await batch.commit();}
+    for(let i=0;i<homerooms.length;i+=350){const batch=writeBatch(db);homerooms.slice(i,i+350).forEach(u=>batch.set(doc(db,'users',u.uid),{isHomeroom:false,homeroomClass:'',updatedAt:new Date().toISOString()},{merge:true}));await batch.commit();}
+    await deleteDoc(doc(db,'classes',classId)); await refreshCore(); toast(`Kelas ${classId} dan ${studentsInClass.length} siswa berhasil dihapus`); await master();
+  }catch(e){console.error(e);toast('Gagal menghapus kelas dan siswa');}
 }
 
 async function editTeacherProfile(uid){
@@ -488,6 +517,39 @@ $('#studentImport').addEventListener('change',async e=>{
   }catch(err){console.error(err);toast(err.message||'Upload gagal. Gunakan format siswa yang benar.');e.target.value='';}
 });
 
+function normalizeImportDate(v){
+  if(v instanceof Date&&!isNaN(v))return v.toLocaleDateString('en-CA');
+  if(typeof v==='number'){const d=XLSX.SSF.parse_date_code(v);if(d)return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;}
+  const t=String(v||'').trim(); if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;
+  const m=t.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/); if(m)return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return '';
+}
+function boolImport(v){return ['ya','y','1','true','bawa','membawa','yes','✓'].includes(String(v||'').trim().toLowerCase());}
+function presenceImport(v){const x=String(v||'hadir').trim().toLowerCase();return ['izin','sakit','alpa'].includes(x)?x:'hadir';}
+$('#attendanceImport').addEventListener('change',async e=>{
+  const f=e.target.files?.[0]; if(!f)return;
+  try{
+    const buf=await f.arrayBuffer(), wb=XLSX.read(buf), sheet=wb.Sheets['Pendataan Wadah']||wb.Sheets[wb.SheetNames[0]], rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
+    const studentMap=new Map(state.students.map(st=>[String(st.nis||st.id).trim(),st])); let skipped=0;
+    const normalized=rows.map(r=>{const date=normalizeImportDate(r.Tanggal||r.tanggal||r.Date),classId=String(r.Kelas||r.kelas||'').trim().toUpperCase(),nis=String(r.NIS||r.nis||'').trim(),st=studentMap.get(nis),presence=presenceImport(r.Kehadiran||r.kehadiran);return {date,classId,nis,name:st?.name||String(r.Nama||r.nama||'').trim(),studentId:st?.id||'',presence,food:presence==='hadir'&&boolImport(r.Wadah||r.wadah),tumbler:presence==='hadir'&&boolImport(r.Tumbler||r.tumbler),valid:!!(date&&classId&&nis&&st&&st.classId===classId)};}).filter(r=>{if(!r.valid){skipped++;return false}return true;});
+    if(!normalized.length)throw new Error('Tidak ada baris pendataan valid. Pastikan Tanggal, Kelas dan NIS sesuai master siswa.');
+    window.pendingAttendanceImport=normalized;
+    openImportPreview('Preview Upload Pendataan Wadah & Tumbler',normalized.map(x=>[x.date,x.classId,x.nis,x.name,x.presence,x.food?'Ya':'Tidak',x.tumbler?'Ya':'Tidak']),['Tanggal','Kelas','NIS','Nama','Kehadiran','Wadah','Tumbler'],skipped,()=>commitAttendanceImport(e));
+  }catch(err){console.error(err);toast(err.message||'Upload pendataan gagal.');e.target.value='';}
+});
+async function commitAttendanceImport(e){
+  const data=window.pendingAttendanceImport||[]; const groups=new Map();
+  data.forEach(r=>{const k=`${r.date}_${r.classId}`;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
+  let saved=0;
+  for(const [id,rows] of groups){
+    const oldSnap=await getDoc(doc(db,'records',id)), old=oldSnap.exists()?oldSnap.data():null, oldMap=new Map((old?.items||[]).map(i=>[String(i.studentId||i.nis),i]));
+    rows.forEach(r=>oldMap.set(String(r.studentId),{studentId:r.studentId,nis:r.nis,name:r.name,presence:r.presence,food:r.food,tumbler:r.tumbler}));
+    const now=new Date(), [date,...classParts]=id.split('_'), classId=classParts.join('_');
+    const payload={date,classId,items:[...oldMap.values()],createdByUid:old?.createdByUid||state.user.uid,createdByName:old?.createdByName||state.profile.name,createdAt:old?.createdAt||now.toISOString(),lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),audit:[...(old?.audit||[]),...(old?[{editedAt:now.toISOString(),editedByUid:state.user.uid,editedByName:`${state.profile.name} (Upload Admin)`}]:[])]};
+    await setDoc(doc(db,'records',id),payload,{merge:false}); saved++;
+  }
+  closeEditModal(); window.pendingAttendanceImport=null; e.target.value=''; await refreshCore(); toast(`Upload pendataan selesai: ${data.length} siswa pada ${saved} kelas/tanggal`,7000); state.masterTab='classes'; await master();
+}
 $('#teacherImport').addEventListener('change',async e=>{
   const f=e.target.files?.[0]; if(!f)return;
   try{
@@ -519,7 +581,7 @@ function openImportPreview(title,rows,headers,skipped,onConfirm){
 }
 
 function openEditModal(title,body,onSave){ const modal=$('#editModal'); $('#editModalTitle').textContent=title; $('#editModalBody').innerHTML=body; modal.classList.remove('hidden'); $('#editModalSave').onclick=()=>Promise.resolve(onSave()).catch(e=>{console.error(e);toast('Gagal menyimpan perubahan')}); }
-function closeEditModal(){ $('#editModal').classList.add('hidden'); $('#editModalBody').innerHTML=''; $('#editModalSave').textContent='Simpan'; $('#studentImport').value=''; $('#teacherImport').value=''; window.pendingStudentImport=null; window.pendingTeacherImport=null; }
+function closeEditModal(){ $('#editModal').classList.add('hidden'); $('#editModalBody').innerHTML=''; $('#editModalSave').textContent='Simpan'; $('#studentImport').value=''; $('#teacherImport').value=''; $('#attendanceImport').value=''; window.pendingStudentImport=null; window.pendingTeacherImport=null; window.pendingAttendanceImport=null; }
 $('#editModalCancel').onclick=closeEditModal; $('#editModalClose').onclick=closeEditModal;
 function renderAuditTable(){ const target=$('#auditTable'); if(!target)return; const rows=state.recordsToday.flatMap(r=>(r.audit||[]).map(a=>({classId:r.classId,...a}))).sort((a,b)=>String(b.editedAt||'').localeCompare(String(a.editedAt||''))); target.innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Dikoreksi oleh</th><th>Waktu</th></tr></thead><tbody>${rows.map(a=>`<tr><td><b>${esc(a.classId)}</b></td><td>${esc(a.editedByName||'-')}</td><td>${a.editedAt?new Date(a.editedAt).toLocaleString('id-ID'):'-'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Belum ada koreksi hari ini.</div>'; }
 
