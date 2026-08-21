@@ -1,8 +1,8 @@
-/* PakKom Eco Track v3.3.2 — Unified Core
+/* PakKom Eco Track v3.3.3 — Unified Core
    Application Core + Authentication Core dalam satu file klasik.
 */
 
-/* PakKom Eco Track v3.3.2 — Compat Application Core
+/* PakKom Eco Track v3.3.3 — Compat Application Core
    Seluruh Authentication + Firestore memakai Firebase Compat yang sama. */
 (function(){
 'use strict';
@@ -133,7 +133,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}} };
 
-const APP_VERSION='3.0';
+const APP_VERSION='3.3.3';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -224,21 +224,7 @@ async function finishSignedIn(user){
   }
 }
 
-// v3.2.2 Direct Login
-// Tidak memulihkan sesi pada saat halaman dibuka.
-// Firebase hanya dipakai setelah pengguna menekan MASUK.
-if(!configured){
-  $('#loginHint').innerHTML='Firebase belum dikonfigurasi. Isi <b>firebase-config.js</b> terlebih dahulu.';
-  $('#loginBtn').disabled=true;
-  $('#loginBtn').textContent='Firebase belum aktif';
-} else {
-  app=initializeApp(cfg);
-  auth=getAuth(app);
-  db=getFirestore(app);
-  // Sesi hanya hidup di memori. Refresh = kembali ke halaman Login.
-  setPersistence(auth,inMemoryPersistence).catch(e=>console.warn('Persistence',e));
-}
-renderShell();
+// Login initialization ditangani hanya oleh Auth Core di bagian bawah file.
 
 
 // Password toggle ditangani oleh index.html.
@@ -281,7 +267,7 @@ $('#registerSubmit').onclick=async()=>{
 
 async function logoutNow(){
   state.user=null; state.profile=null; resetCoreState(); authResolved=true;
-  if(window.PAKKOM_AUTH_CORE?.logout) return window.PAKKOM_AUTH_CORE.logout();
+  if(window.PAKKOM_COMPAT_CORE?.logout) return window.PAKKOM_AUTH_CORE.logout();
 }
 
 $('#logoutBtn').onclick=logoutNow; if($('#quickLogout')) $('#quickLogout').onclick=logoutNow;
@@ -823,7 +809,7 @@ async function addTeacherPrompt(){
 
 window.startPakKomApp = async function(core){
   try{
-    console.log('PakKom Application Core v3.3.2 starting');
+    console.log('PakKom Application Core v3.3.3 starting');
     app=core.app;
     auth=core.auth;
     db=core.db;
