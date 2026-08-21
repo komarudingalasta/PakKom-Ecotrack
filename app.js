@@ -1,5 +1,5 @@
 import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, setPersistence, inMemoryPersistence } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
+import { getAuth, signOut, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, writeBatch, serverTimestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 const cfg = window.PAKKOM_FIREBASE_CONFIG || {};
@@ -103,7 +103,7 @@ function navItems(){
 }
 
 function showAuthLoading(show=true){
-  // v3.1.1 Direct Login: tidak ada splash / pemeriksaan sesi.
+  // v3.2 Direct Login: tidak ada splash / pemeriksaan sesi.
   return;
 }
 
@@ -159,7 +159,7 @@ async function finishSignedIn(user){
   }
 }
 
-// v3.1.1 Direct Login
+// v3.2 Direct Login
 // Tidak memulihkan sesi pada saat halaman dibuka.
 // Firebase hanya dipakai setelah pengguna menekan MASUK.
 if(!configured){
@@ -176,11 +176,8 @@ if(!configured){
 renderShell();
 
 
-function togglePasswordInput(targetId, button){
-  const i=document.getElementById(targetId); if(!i)return;
-  const reveal=i.type==='password'; i.type=reveal?'text':'password';
-  if(button){ button.textContent=reveal?'🙈':'👁'; button.setAttribute('aria-label',reveal?'Sembunyikan password':'Tampilkan password'); }
-}
+// Password toggle ditangani oleh index.html.
+
 function openRegisterModal(){
   const modal=$('#registerModal');
   $('#regClass').innerHTML=classesDefault.map(c=>`<option value="${c}">${c}</option>`).join('');
@@ -216,37 +213,12 @@ $('#registerSubmit').onclick=async()=>{
   finally{btn.disabled=false;btn.textContent='Kirim Pendaftaran';if(secondary)await deleteApp(secondary).catch(()=>{});}
 };
 
-$('#loginForm').addEventListener('submit',async e=>{
-  e.preventDefault(); if(!configured||loginInProgress)return;
-  const id=$('#loginId').value.trim(); const password=$('#loginPassword').value;
-  if(!id||!password)return;
-  loginInProgress=true; showLoginError('');
-  $('#loginBtn').disabled=true; $('#loginBtn').textContent='MEMERIKSA...';
-  try{
-    if(auth.currentUser) await signOut(auth).catch(()=>{});
-    const email=loginEmail(id);
-    const cred=await signInWithEmailAndPassword(auth,email,password);
-    if(id.toUpperCase()==='ADMIN' && cred.user.email?.toLowerCase()!==ADMIN_LOGIN_EMAIL.toLowerCase()) throw new Error('Akun ADMIN tidak sesuai konfigurasi.');
-    const profile=await loadProfileForUser(cred.user);
-    state.user=cred.user;
-    state.profile=profile;
-    authResolved=true;
-    renderShell();
-    loadCoreDataInBackground();
-  }catch(e){
-    console.error(e); await signOut(auth).catch(()=>{});
-    state.user=null; state.profile=null; renderShell();
-    const msg=e?.code?authErrorMessage(e):(e.message||'Login gagal.');
-    showLoginError(msg); toast(msg,6000);
-  }finally{
-    loginInProgress=false; $('#loginBtn').disabled=false; $('#loginBtn').textContent='MASUK';
-  }
-});
+
 async function logoutNow(){
   state.user=null; state.profile=null; resetCoreState(); authResolved=true;
-  renderShell();
-  await signOut(auth).catch(()=>{});
+  if(window.PAKKOM_AUTH_CORE?.logout) return window.PAKKOM_AUTH_CORE.logout();
 }
+
 $('#logoutBtn').onclick=logoutNow; if($('#quickLogout')) $('#quickLogout').onclick=logoutNow;
 $('#menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('open');
 
@@ -780,4 +752,18 @@ async function addTeacherPrompt(){
     await signOut(secondaryAuth); toast(`Akun ${loginId.toUpperCase()} berhasil dibuat`); master();
   }catch(e){console.error(e);toast(e.code==='auth/email-already-in-use'?'ID Guru sudah digunakan':'Gagal membuat akun guru');}
   finally{if(secondary)await deleteApp(secondary).catch(()=>{})}
+}
+
+
+export async function startPakKomApp(core){
+  app=core.app;
+  auth=core.auth;
+  db=core.db;
+  state.user=core.user;
+  state.profile=core.profile;
+  authResolved=true;
+
+  // Tampilkan shell secepatnya, data dashboard menyusul.
+  renderShell();
+  loadCoreDataInBackground();
 }

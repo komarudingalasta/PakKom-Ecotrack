@@ -1,16 +1,22 @@
-# PakKom Eco Track v3.1.1 — Direct Login
+# PakKom Eco Track v3.2 — Auth Core Rebuild
 
-## Perubahan utama
-- Tidak ada lagi layar **Memeriksa sesi**.
-- Halaman Login langsung tampil saat web dibuka.
-- Firebase Authentication hanya dijalankan setelah tombol **MASUK** ditekan.
-- Sesi menggunakan `inMemoryPersistence`.
-- Refresh halaman akan kembali ke Login.
-- Login berhasil hanya jika:
-  1. ID/password valid di Firebase Authentication.
-  2. Dokumen `users/{uid}` ada.
-  3. Role dan status akun valid.
-- Data dashboard dimuat setelah login dan tidak menghalangi proses autentikasi.
+## Struktur baru
 
-## Alasan
-Arsitektur ini lebih sederhana dan stabil untuk penggunaan sekolah karena tidak ada pemulihan sesi yang dapat membuat halaman tersangkut saat startup.
+`index.html`
+→ `auth.js`
+→ Firebase Authentication
+→ `users/{UID}`
+→ baru memuat `app.js`
+
+Login tidak lagi berada di dalam file aplikasi utama.
+
+## Dampak
+- Bug dashboard, kalender, import, kebersihan, atau menu Kelola tidak dapat mencegah tombol Login bekerja.
+- Tidak ada "Memeriksa sesi".
+- Refresh kembali ke Login.
+- Password visibility tetap bekerja langsung dari HTML.
+- Setelah Authentication + profil valid, aplikasi utama baru dimuat.
+
+## Admin
+ID: `ADMIN`
+dipetakan ke akun Firebase `komarudingalasta@gmail.com`.
