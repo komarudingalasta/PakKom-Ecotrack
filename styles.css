@@ -352,3 +352,11 @@ body{overflow-anchor:none}
 .admin-reset-panel>div:first-child{display:flex;flex-direction:column;gap:4px}.admin-reset-panel small{color:#6d7873}
 .admin-reset-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.admin-reset-actions select{min-width:210px;padding:10px 12px;border:1px solid #dce5e0;border-radius:10px;background:#fff}
 @media(max-width:760px){.admin-reset-panel{align-items:stretch;flex-direction:column}.admin-reset-actions{display:grid;grid-template-columns:1fr}.admin-reset-actions select{width:100%}}
+
+/* Wadah time lock */
+.wadah-closed-banner{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;border-color:#ead9d5;background:#fff8f6}
+.wadah-closed-banner .lock-icon{font-size:30px;line-height:1}
+.wadah-closed-banner h3{margin:0 0 5px}.wadah-closed-banner p{margin:0;color:#6f625e;line-height:1.45}
+.wadah-open-info{margin:0 0 14px;padding:10px 13px;border-radius:12px;background:#edf8f2;color:#315f49;font-size:13px}
+.class-btn.locked{opacity:.58;cursor:not-allowed}
+.wadah-time-lock{border-color:#ead9d5!important;background:#fff8f6!important;color:#704e46!important}

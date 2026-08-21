@@ -55,3 +55,11 @@ Untuk tombol Reset Password Admin, deploy Firebase Function sesuai `SETUP_RESET_
 - Audit tersimpan sebagai `RESET_CLEANLINESS_JP` atau `RESET_CLEANLINESS_CLASS`.
 - Setelah reset, status kembali menjadi Belum Diperiksa.
 - Firestore Rules berubah dan wajib dipublish.
+
+
+## Perbaikan Penguncian Wadah
+- Setelah jam tutup, Guru/Wali Kelas langsung melihat status `Pendataan Hari Ini Sudah Ditutup`.
+- Kelas yang belum diinput tidak bisa dibuka setelah jam tutup.
+- Kelas yang sudah diinput masih bisa dibuka untuk melihat data tetapi seluruh kontrol dan tombol Simpan terkunci.
+- Kesempatan edit 1x juga otomatis berakhir saat jam tutup.
+- Admin tetap dapat membuka dan melakukan koreksi.

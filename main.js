@@ -438,8 +438,27 @@ function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b
 
 function inputPage(){
   pageMeta('Wadah Makan & Tumbler','Pilih kelas lalu tandai kondisi siswa');
-  const op=operationalInfo(); if(!op.active){ content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p><small>Pendataan Wadah Makan & Tumbler Makan & Tumbler tidak tersedia hari ini.</small></div>`; return; }
-  if(!state.selectedClass){ content.innerHTML=`<div class="card"><h3>Pilih Kelas</h3><div class="grid class-grid">${state.classes.map(c=>{const r=classRecord(c);return `<button class="class-btn ${r?'done':'pending'}" data-class="${c}"><b>${c}</b><small>${r?'Sudah didata':'Belum didata'}</small></button>`}).join('')}</div></div>`; bindClassButtons(); return; }
+  const op=operationalInfo();
+  if(!op.active){
+    content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p><small>Pendataan Wadah Makan & Tumbler tidak tersedia hari ini.</small></div>`;
+    return;
+  }
+
+  const wt=wadahTimeInfo();
+  const admin=state.profile.role==='admin';
+  const closed=!admin&&!wt.open;
+
+  if(!state.selectedClass){
+    content.innerHTML=`
+      ${closed?`<div class="card wadah-closed-banner"><div class="lock-icon">🔒</div><div><h3>Pendataan Hari Ini Sudah Ditutup</h3><p>Waktu pengisian berakhir pukul <b>${esc(wt.label)}</b>. Data yang sudah masuk tetap dapat dilihat, tetapi Guru/Wali Kelas tidak dapat membuat atau mengedit pendataan lagi.</p></div></div>`:
+      `<div class="wadah-open-info">🟢 Pendataan dibuka sampai <b>${esc(wt.label)}</b></div>`}
+      <div class="card"><h3>Pilih Kelas</h3><div class="grid class-grid">${state.classes.map(c=>{
+        const r=classRecord(c);
+        return `<button class="class-btn ${r?'done':'pending'} ${closed&&!r?'locked':''}" data-class="${c}" ${closed&&!r?'disabled':''}><b>${c}</b><small>${r?'Sudah didata':closed?'🔒 Ditutup':'Belum didata'}</small></button>`;
+      }).join('')}</div></div>`;
+    bindClassButtons();
+    return;
+  }
   loadClassForm(state.selectedClass);
 }
 async function loadClassForm(c){
@@ -458,17 +477,21 @@ async function loadClassForm(c){
     const isAdmin=state.profile.role==='admin';
     const isCreator=!!(existing && existing.createdByUid===state.user.uid);
     const teacherEditUsed=Number(existing?.teacherEditCount||0)>=1;
-    // Teacher creator may edit exactly once. Other teachers cannot edit.
-    // Admin may always correct.
-    window.formLocked=!!(existing && !isAdmin && (!isCreator || teacherEditUsed));
-    window.teacherCanEditOnce=!!(existing && !isAdmin && isCreator && !teacherEditUsed);
+    const wt=wadahTimeInfo();
+    const timeClosed=!isAdmin&&!wt.open;
+    // Setelah jam tutup, seluruh form Guru/Wali Kelas terkunci.
+    // Sebelum jam tutup, pembuat data mendapat tepat 1x edit.
+    window.wadahTimeClosed=timeClosed;
+    window.wadahCloseLabel=wt.label;
+    window.formLocked=!!(!isAdmin && (timeClosed || (existing && (!isCreator || teacherEditUsed))));
+    window.teacherCanEditOnce=!!(existing && !isAdmin && !timeClosed && isCreator && !teacherEditUsed);
     renderClassForm(c);
   }catch(e){ console.error(e); content.innerHTML='<div class="card"><div class="empty">Gagal memuat siswa. Periksa Firestore Rules dan koneksi.</div></div>'; }
 }
 function renderClassForm(c){
   const existing=window.originalRecord;
   content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${c}</h3><small>${existing?`Sudah didata oleh ${esc(existing.createdByName||'Guru')} • ${esc(existing.timeLabel||'-')}`:'Belum pernah disimpan hari ini'}</small></div><button class="btn ghost" id="backClasses">← Pilih kelas lain</button></div>
-  ${window.formLocked?`<div class="notice">${state.profile.role==='admin'?'Data terkunci untuk guru. Administrator tetap dapat melakukan koreksi.':(window.originalRecord?.createdByUid===state.user.uid?'Kesempatan edit 1× untuk pendataan ini sudah digunakan. Data sekarang terkunci.':'Data dibuat oleh guru lain dan tidak dapat diedit dari akun ini.')}</div>`:''}
+  ${window.formLocked?`<div class="notice ${window.wadahTimeClosed?'wadah-time-lock':''}">${state.profile.role==='admin'?'Administrator dapat melakukan koreksi.':window.wadahTimeClosed?`🔒 Waktu pendataan sudah berakhir pukul <b>${esc(window.wadahCloseLabel||'-')}</b>. Form hanya dapat dilihat.`:(window.originalRecord?.createdByUid===state.user.uid?'Kesempatan edit 1× untuk pendataan ini sudah digunakan. Data sekarang terkunci.':'Data dibuat oleh guru lain dan tidak dapat diedit dari akun ini.')}</div>`:''}
   ${window.teacherCanEditOnce?'<div class="notice edit-once-note">Anda memiliki <b>1 kali kesempatan edit</b> setelah data pertama dikirim. Setelah disimpan kembali, data akan terkunci.</div>':''}${window.rosterChanged?'<div class="notice">Daftar siswa aktif kelas ini berubah sejak pendataan terakhir. Form sudah disesuaikan dengan master siswa terbaru tanpa menghapus status siswa yang masih terdaftar.</div>':''}
   <div class="card attendance-card">
     <div class="wadah-sticky-tools">
@@ -476,10 +499,10 @@ function renderClassForm(c){
       <div id="wadahSummary" class="wadah-summary"></div>
     </div>
     <div id="studentRows" class="student-card-list"></div>
-    <div class="wadah-save-bar"><div id="wadahSaveSummary" class="save-summary"></div><button id="saveBtn" class="btn primary" ${window.formLocked?'disabled':''}>Simpan Data ${c}</button></div>
+    <div class="wadah-save-bar"><div id="wadahSaveSummary" class="save-summary"></div><button id="saveBtn" class="btn primary" ${window.formLocked?'disabled':''}>${window.wadahTimeClosed?'🔒 Pendataan Ditutup':`Simpan Data ${c}`}</button></div>
   </div>`;
   $('#backClasses').onclick=()=>{state.selectedClass=null;renderPage()};  document.querySelectorAll('.bulk').forEach(b=>b.onclick=()=>setAll(b.dataset.bulk));
-  $('#saveBtn').onclick=()=>saveClass(c); renderStudentRows();
+  if($('#saveBtn')&&!window.formLocked) $('#saveBtn').onclick=()=>saveClass(c); renderStudentRows();
 }
 function setAll(field){ if(window.formLocked)return; window.formItems.forEach(i=>{if(field==='presence')i.presence='hadir';else if(i.presence==='hadir')i[field]=true}); renderStudentRows(); }
 function renderStudentRows(){
