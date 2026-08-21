@@ -1,8 +1,8 @@
-/* PakKom Eco Track v3.3.5 — Unified Core
+/* PakKom Eco Track v3.3.6 — Unified Core
    Application Core + Authentication Core dalam satu file klasik.
 */
 
-/* PakKom Eco Track v3.3.5 — Compat Application Core
+/* PakKom Eco Track v3.3.6 — Compat Application Core
    Seluruh Authentication + Firestore memakai Firebase Compat yang sama. */
 (function(){
 'use strict';
@@ -266,8 +266,21 @@ $('#registerSubmit').onclick=async()=>{
 
 
 async function logoutNow(){
-  state.user=null; state.profile=null; resetCoreState(); authResolved=true;
-  if(window.PAKKOM_COMPAT_CORE?.logout) return window.PAKKOM_AUTH_CORE.logout();
+  state.user=null;
+  state.profile=null;
+  resetCoreState();
+  authResolved=true;
+  renderShell();
+  try{
+    if(window.PAKKOM_COMPAT_CORE){
+      window.PAKKOM_COMPAT_CORE.user=null;
+      window.PAKKOM_COMPAT_CORE.profile=null;
+      window.PAKKOM_COMPAT_CORE.intentionalLogout=true;
+      await window.PAKKOM_COMPAT_CORE.auth.signOut();
+    }
+  }catch(e){ console.warn('Logout',e); }
+  $('#loginPassword').value='';
+  showLoginError('');
 }
 
 $('#logoutBtn').onclick=logoutNow; if($('#quickLogout')) $('#quickLogout').onclick=logoutNow;
@@ -319,8 +332,12 @@ function renderShell(){
     return;
   }
   showLoginError(''); $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden');
-  const chipRole=state.profile.role==='admin'?'Admin':(state.profile.isHomeroom?`Wali Kelas${state.profile.homeroomClass?' • '+esc(state.profile.homeroomClass):''}`:'Guru');
-  $('#userChip').innerHTML=`<b>${esc(state.profile.name)}</b><br>${chipRole}`;
+  const chipRole=state.profile.role==='admin'
+    ? 'Administrator'
+    : (state.profile.isHomeroom
+        ? `Wali Kelas • ${esc(state.profile.homeroomClass||'-')}`
+        : 'Guru');
+  $('#userChip').innerHTML=`<b>${esc(state.profile.name)}</b><br><span class="role-label">${chipRole}</span>`;
   $('#nav').innerHTML=navItems().map(([k,l])=>`<button class="nav-btn ${state.page===k?'active':''}" data-page="${k}">${l}</button>`).join('');
   document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;state.selectedClass=null;renderShell();document.querySelector('.sidebar').classList.remove('open')});
   renderPage();
@@ -640,15 +657,34 @@ function renderTeacherMasterTable(){
   const target=$('#teacherTable'); if(!target)return;
   const q=String($('#teacherSearch')?.value||'').trim().toLowerCase(), type=$('#teacherTypeFilter')?.value||'', status=$('#teacherStatusFilter')?.value||'';
   const rows=(window.masterUsers||[]).filter(u=>u.role==='guru'&&u.approved!==false).filter(u=>(!q||String(u.loginId||'').toLowerCase().includes(q)||String(u.name||'').toLowerCase().includes(q))&&(!type||(type==='wali'?u.isHomeroom===true:u.isHomeroom!==true))&&(!status||(status==='aktif'?u.active!==false:u.active===false))).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  target.innerHTML=`<div class="table-wrap"><table class="student-master"><thead><tr><th>NIP Guru</th><th>Nama</th><th>Jenis</th><th>Kelas Wali</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.isHomeroom?'ok':'neutral'}">${u.isHomeroom?'Wali Kelas':'Guru'}</span></td><td>${u.isHomeroom?esc(u.homeroomClass||'-'):'-'}</td><td><span class="badge ${u.active===false?'warn':'ok'}">${u.active===false?'Nonaktif':'Aktif'}</span></td><td><button class="btn-mini edit" data-edit-teacher="${esc(u.uid)}">Edit</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Belum ada akun guru.</div></td></tr>'}</tbody></table></div>`;
+  target.innerHTML=`<div class="table-wrap"><table class="student-master"><thead><tr><th>NIP Guru</th><th>Nama</th><th>Jenis</th><th>Kelas Wali</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.isHomeroom?'ok':'neutral'}">${u.isHomeroom?'Wali Kelas':'Guru'}</span></td><td>${u.isHomeroom?esc(u.homeroomClass||'-'):'-'}</td><td><span class="badge ${u.active===false?'warn':'ok'}">${u.active===false?'Nonaktif':'Aktif'}</span></td><td><div class="row-actions"><button class="btn-mini edit" data-edit-teacher="${esc(u.uid)}">Edit</button><button class="btn-mini danger" data-delete-teacher="${esc(u.uid)}">Hapus Akun</button></div></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Belum ada akun guru.</div></td></tr>'}</tbody></table></div>`;
   document.querySelectorAll('[data-edit-teacher]').forEach(b=>b.onclick=()=>editTeacherProfile(b.dataset.editTeacher));
+  document.querySelectorAll('[data-delete-teacher]').forEach(b=>b.onclick=()=>deleteTeacherAccount(b.dataset.deleteTeacher));
+}
+
+
+async function deleteTeacherAccount(uid){
+  const u=(window.masterUsers||[]).find(x=>x.uid===uid);
+  if(!u) return;
+  if(u.role==='admin') return toast('Akun Administrator tidak dapat dihapus dari menu ini.');
+  const label=u.isHomeroom?`Wali Kelas ${u.homeroomClass||''}`:'Guru';
+  const ok=confirm(`Hapus akun ${label} ${u.name||u.loginId||''}?\n\nAkses PakKom Eco Track akan langsung dicabut.`);
+  if(!ok) return;
+  try{
+    await deleteDoc(doc(db,'users',uid));
+    toast(`Akun ${u.name||u.loginId||''} berhasil dihapus.`);
+    await master();
+  }catch(e){
+    console.error(e);
+    toast('Gagal menghapus akun guru.');
+  }
 }
 
 function renderPendingApprovals(){
   const target=$('#pendingApprovals'); if(!target)return;
   const rows=(window.masterUsers||[]).filter(u=>u.role==='guru'&&u.approved===false&&u.rejected!==true);
   if(!rows.length){target.innerHTML='';return;}
-  target.innerHTML=`<div class="approval-box"><div class="section-head"><div><h4 style="margin:0">Menunggu Persetujuan (${rows.length})</h4><small>Periksa jenis guru dan kelas wali sebelum menyetujui.</small></div></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Nama</th><th>Daftar Sebagai</th><th>Kelas Wali</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td>${u.requestedType==='wali'?'Wali Kelas':'Guru'}</td><td>${u.requestedType==='wali'?esc(u.requestedHomeroomClass||'-'):'-'}</td><td><button class="btn-mini edit" data-approve-teacher="${u.uid}">Approve</button> <button class="btn-mini danger" data-reject-teacher="${u.uid}">Tolak</button></td></tr>`).join('')}</tbody></table></div></div>`;
+  target.innerHTML=`<div class="approval-box"><div class="section-head"><div><h4 style="margin:0">Menunggu Persetujuan (${rows.length})</h4><small>Periksa jenis guru dan kelas wali sebelum menyetujui.</small></div></div><div class="table-wrap"><table><thead><tr><th>NIP Guru</th><th>Nama</th><th>Daftar Sebagai</th><th>Kelas Wali</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td>${u.requestedType==='wali'?'Wali Kelas':'Guru'}</td><td>${u.requestedType==='wali'?esc(u.requestedHomeroomClass||'-'):'-'}</td><td><button class="btn-mini edit" data-approve-teacher="${u.uid}">Approve</button> <button class="btn-mini danger" data-reject-teacher="${u.uid}">Tolak</button></td></tr>`).join('')}</tbody></table></div></div>`;
   document.querySelectorAll('[data-approve-teacher]').forEach(b=>b.onclick=()=>approveTeacher(b.dataset.approveTeacher));
   document.querySelectorAll('[data-reject-teacher]').forEach(b=>b.onclick=()=>rejectTeacher(b.dataset.rejectTeacher));
 }
@@ -850,7 +886,7 @@ async function addTeacherPrompt(){
 
 window.startPakKomApp = async function(core){
   try{
-    console.log('PakKom Application Core v3.3.5 starting');
+    console.log('PakKom Application Core v3.3.6 starting');
     app=core.app;
     auth=core.auth;
     db=core.db;
@@ -928,10 +964,58 @@ window.startPakKomApp = async function(core){
     db:db,
     user:null,
     profile:null,
+    startedUid:null,
+    intentionalLogout:false,
     logout:function(){
-      return auth.signOut().finally(function(){ location.reload(); });
+      this.intentionalLogout=true;
+      this.user=null;
+      this.profile=null;
+      this.startedUid=null;
+      return auth.signOut();
     }
   };
+  function startAuthenticatedUser(user){
+    if(!user) return Promise.resolve();
+    if(window.PAKKOM_COMPAT_CORE.startedUid===user.uid) return Promise.resolve();
+    return db.collection('users').doc(user.uid).get().then(function(snap){
+      if(!snap.exists) throw new Error('Profil Admin/Guru tidak ditemukan di Firestore.');
+      var profile=Object.assign({uid:user.uid},snap.data());
+      if(profile.rejected===true) throw new Error('Pendaftaran akun tidak disetujui Admin.');
+      if(profile.approved===false && profile.role==='guru') throw new Error('Akun masih menunggu persetujuan Admin.');
+      if(profile.active===false) throw new Error('Akun dinonaktifkan administrator.');
+      if(profile.role!=='admin' && profile.role!=='guru') throw new Error('Role akun tidak dikenali.');
+
+      window.PAKKOM_COMPAT_CORE.user=user;
+      window.PAKKOM_COMPAT_CORE.profile=profile;
+      window.PAKKOM_COMPAT_CORE.startedUid=user.uid;
+
+      qs('#loginView').classList.add('hidden');
+      qs('#appView').classList.remove('hidden');
+
+      if(typeof window.startPakKomApp!=='function'){
+        throw new Error('Application Core tidak tersedia.');
+      }
+      return window.startPakKomApp(window.PAKKOM_COMPAT_CORE);
+    });
+  }
+
+  // Pulihkan sesi secara diam-diam setelah refresh. Tidak ada splash "memeriksa sesi".
+  auth.onAuthStateChanged(function(user){
+    if(window.PAKKOM_COMPAT_CORE.intentionalLogout){
+      window.PAKKOM_COMPAT_CORE.intentionalLogout=false;
+      return;
+    }
+    if(user && window.PAKKOM_COMPAT_CORE.startedUid!==user.uid){
+      startAuthenticatedUser(user).catch(function(err){
+        console.error('SESSION RESTORE',err);
+        auth.signOut().catch(function(){});
+        qs('#loginView').classList.remove('hidden');
+        qs('#appView').classList.add('hidden');
+        showError(authMessage(err));
+      });
+    }
+  });
+
 
   var form=qs('#loginForm');
   var btn=qs('#loginBtn');
@@ -951,6 +1035,7 @@ window.startPakKomApp = async function(core){
     btn.disabled=true;
     btn.textContent='MEMERIKSA...';
 
+    window.PAKKOM_COMPAT_CORE.startedUid=null;
     auth.signOut().catch(function(){})
       .then(function(){
         return auth.signInWithEmailAndPassword(loginEmail(id),password);
@@ -960,27 +1045,7 @@ window.startPakKomApp = async function(core){
            String(cred.user.email||'').toLowerCase()!==ADMIN_EMAIL.toLowerCase()){
           throw new Error('Akun ADMIN tidak sesuai konfigurasi.');
         }
-        return db.collection('users').doc(cred.user.uid).get()
-          .then(function(snap){
-            if(!snap.exists) throw new Error('Profil Admin/Guru tidak ditemukan di Firestore.');
-            var profile=Object.assign({uid:cred.user.uid},snap.data());
-            if(profile.rejected===true) throw new Error('Pendaftaran akun tidak disetujui Admin.');
-            if(profile.approved===false && profile.role==='guru') throw new Error('Akun masih menunggu persetujuan Admin.');
-            if(profile.active===false) throw new Error('Akun dinonaktifkan administrator.');
-            if(profile.role!=='admin' && profile.role!=='guru') throw new Error('Role akun tidak dikenali.');
-
-            window.PAKKOM_COMPAT_CORE.user=cred.user;
-            window.PAKKOM_COMPAT_CORE.profile=profile;
-
-            qs('#loginView').classList.add('hidden');
-            qs('#appView').classList.remove('hidden');
-
-            // Application Core sudah dimuat sejak halaman dibuka.
-            if(typeof window.startPakKomApp !== 'function'){
-              throw new Error('Application Core tidak tersedia. Pastikan app-core.js sudah terunggah.');
-            }
-            return window.startPakKomApp(window.PAKKOM_COMPAT_CORE);
-          });
+        return startAuthenticatedUser(cred.user);
       })
       .catch(function(err){
         console.error('LOGIN ERROR',err);

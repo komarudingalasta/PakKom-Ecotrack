@@ -1,4 +1,4 @@
-# Setup Firebase — v3.3.5
-Tidak ada perubahan struktur Firebase dari v3.3.4.
-Upload seluruh isi ZIP ke root GitHub Pages.
-Firebase Authentication Email/Password harus aktif dan Firestore Rules tetap dipublish.
+# Setup v3.3.6
+Tidak ada perubahan konfigurasi Firebase wajib dari v3.3.5.
+Gunakan Email/Password Authentication dan publish `firestore.rules`.
+Upload seluruh isi v3.3.6 ke root GitHub Pages.

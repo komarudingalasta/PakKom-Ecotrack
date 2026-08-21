@@ -1,12 +1,14 @@
-# PakKom Eco Track v3.3.5 — UI Usability
+# PakKom Eco Track v3.3.6 — Session & Account Management
 
 Perubahan:
-- Istilah **ID Guru** diganti menjadi **NIP Guru** pada login, pendaftaran, kelola akun, import, dan pesan antarmuka.
-- Tombol keluar sekarang memakai ikon 🚪 dan tulisan **Keluar**.
-- Form Wadah & Tumbler diubah menjadi kartu siswa responsif sehingga HP tidak perlu scroll horizontal.
-- Kehadiran, Wadah, dan Tumbler langsung terlihat pada setiap kartu.
-- Siswa tidak hadir otomatis menonaktifkan pilihan Wadah/Tumbler.
-- Tombol aksi massal berada di bagian atas dan sticky.
-- Ringkasan jumlah hadir/wadah/tumbler tampil selama pengisian.
-- Tombol Simpan sticky di bawah pada pengisian panjang.
-- Siswa yang lengkap diberi penanda visual ringan.
+- Tombol 🚪 Keluar langsung mengembalikan pengguna ke Login dan menghapus sesi Firebase.
+- Refresh mempertahankan login menggunakan Firebase LOCAL persistence secara diam-diam, tanpa layar "Memeriksa sesi".
+- Label role lebih jelas:
+  - Guru
+  - Wali Kelas • 7A
+  - Administrator
+- Admin mendapat tombol **Hapus Akun** pada Guru/Wali Kelas.
+- Istilah akun guru tetap menggunakan **NIP Guru**.
+
+Catatan teknis:
+Penghapusan dari menu Admin menghapus profil akses di Firestore sehingga akun tidak dapat menggunakan PakKom Eco Track. Penghapusan identitas Firebase Authentication milik pengguna lain memerlukan Firebase Admin SDK/backend.

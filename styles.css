@@ -136,3 +136,7 @@
   .student-controls{gap:6px}
   .carry-choice{padding:6px}
 }
+
+/* v3.3.6 session & account usability */
+.role-label{font-weight:800;color:#35685b}
+.row-actions{display:flex;gap:6px;flex-wrap:wrap}
