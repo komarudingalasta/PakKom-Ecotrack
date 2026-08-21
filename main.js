@@ -409,7 +409,7 @@ function home(){
     <div class="module-card module-clean"><div class="module-icon">🧹</div><div><span class="eyebrow">PEMERIKSAAN HARI INI</span><h3>Kebersihan Kelas</h3><strong>${state.cleanlinessToday.length} pemeriksaan</strong><p>${lastClean?`Terakhir: ${esc(lastClean.classId)} • JP ${esc(lastClean.jp)} • ${esc(lastClean.timeLabel||'')}`:'Belum ada pemeriksaan hari ini'}</p></div><button class="btn clean-btn module-go" data-go="clean" ${!op.active?'disabled':''}>${op.active?'+ Cek Kebersihan':'Hari Libur'}</button></div>
   </div>
   ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>${ICON_TUMBLER} ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div></div>`:''}
-  ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah Makan & Tumbler Makan & Tumbler</h3><small>Hanya pendataan wadah & tumbler yang dihitung sekali per kelas per hari.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
+  ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah Makan & Tumbler</h3><small>Kelas yang belum melakukan pendataan hari ini.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
   document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;window.scrollTo(0,0);renderShell()});
   document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';window.scrollTo(0,0);renderShell()});
 }
@@ -522,6 +522,27 @@ async function saveClass(c){
   }catch(e){ console.error(e); toast(e.message||'Gagal menyimpan data'); btn.disabled=false;btn.textContent=`Simpan Data ${c}`; }
 }
 
+
+function jpScheduleInfo(){
+  const now=new Date(), day=now.getDay(), mins=now.getHours()*60+now.getMinutes();
+  // Monday–Thursday: JP1 07:10, 40 min; breaks 20 min after JP4 and 40 min after JP7.
+  // Friday: JP1 07:50, 40 min; break 20 min after JP3.
+  let starts=[];
+  if(day>=1&&day<=4) starts=[430,470,510,550,610,650,690,770,810];
+  else if(day===5) starts=[470,510,550,610,650];
+  else return {active:false,day,mins,items:[]};
+  const items=starts.map((start,i)=>({jp:i+1,start,end:start+40}));
+  return {active:true,day,mins,items};
+}
+function jpTimeState(jp){
+  const sc=jpScheduleInfo(), x=sc.items.find(v=>v.jp===Number(jp));
+  if(!sc.active||!x)return {code:'closed',label:'Tidak tersedia',canAssess:false};
+  if(sc.mins<x.start)return {code:'future',label:'Belum Dibuka',canAssess:false,start:x.start,end:x.end};
+  if(sc.mins>=x.end)return {code:'missed',label:'Terlewat',canAssess:false,start:x.start,end:x.end};
+  return {code:'open',label:'Bisa Diperiksa',canAssess:true,start:x.start,end:x.end};
+}
+function hm(m){return String(Math.floor(m/60)).padStart(2,'0')+'.'+String(m%60).padStart(2,'0')}
+
 function cleanlinessPage(){
   pageMeta('Kebersihan Kelas','Pantau kelas yang sudah dan belum diperiksa hari ini');
   const op=operationalInfo(); if(!op.active){content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p></div>`;return;}
@@ -536,13 +557,47 @@ function cleanlinessPage(){
   document.querySelectorAll('[data-clean-class]').forEach(b=>b.onclick=()=>renderCleanClass(b.dataset.cleanClass));
 }
 function renderCleanClass(classId){
-  const op=operationalInfo(),own=state.profile.isHomeroom===true&&state.profile.role!=='admin'?String(state.profile.homeroomClass||''):'',ownLocked=!!(own&&classId===own&&state.accessSettings?.homeroomCleanlinessEnabled!==true);
+  const op=operationalInfo(), sc=jpScheduleInfo(), own=state.profile.isHomeroom===true&&state.profile.role!=='admin'?String(state.profile.homeroomClass||''):'',ownLocked=!!(own&&classId===own&&state.accessSettings?.homeroomCleanlinessEnabled!==true);
   const rows=state.cleanlinessToday.filter(r=>r.classId===classId),byJp=Object.fromEntries(rows.map(r=>[Number(r.jp),r]));
-  pageMeta(`Kebersihan ${classId}`,`Status JP 1–${op.jp} hari ini`);
-  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${esc(classId)}</h3><small>${rows.length} dari ${op.jp} JP sudah dinilai</small></div><button id="backCleanClasses" class="btn ghost">← Daftar Kelas</button></div>${ownLocked?`<div class="notice">🔒 Penilaian kelas wali sendiri belum dibuka Admin. Anda tetap dapat menilai kelas lain.</div>`:''}<div class="jp-status-grid">${Array.from({length:op.jp},(_,i)=>{const jp=i+1,r=byJp[jp];if(!r)return `<button class="jp-card available" data-new-clean="${jp}" ${ownLocked?'disabled':''}><b>JP ${jp}</b><span>Belum Dinilai</span><small>${ownLocked?'Tidak tersedia':'Buka pemeriksaan'}</small></button>`;const mine=r.createdByUid===state.user.uid,used=Number(r.teacherEditCount||0)>=1,admin=state.profile.role==='admin',can=admin||(mine&&!used),st=cleanOverall(r);return `<button class="jp-card assessed ${can?'editable':'locked'}" data-edit-clean="${esc(r.id)}" ${can?'':'disabled'}><b>JP ${jp}</b><span class="${st.cls}-text">✓ ${st.label}</span><small>${esc(r.createdByName||'Guru')}${mine&&!admin?(used?' • Edit sudah digunakan':' • Bisa edit 1×'):admin?' • Admin dapat koreksi':' • Terkunci'}</small></button>`}).join('')}</div>`;
+  pageMeta(`Kebersihan ${classId}`,`Status pemeriksaan per JP hari ini`);
+  const total=sc.active?sc.items.length:op.jp;
+  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${esc(classId)}</h3><small>${rows.length} dari ${total} JP sudah diperiksa</small></div><button id="backCleanClasses" class="btn ghost">← Daftar Kelas</button></div>
+  ${ownLocked?`<div class="notice">🔒 Pemeriksaan kelas wali sendiri belum dibuka Admin.</div>`:''}
+  <div class="schedule-note">⏱️ Pemeriksaan hanya dapat dibuat selama JP sedang berlangsung. JP yang lewat otomatis terkunci.</div>
+  <div class="jp-status-grid">${Array.from({length:total},(_,i)=>{
+    const jp=i+1,r=byJp[jp],ts=jpTimeState(jp),time=ts.start!=null?`${hm(ts.start)}–${hm(ts.end)}`:'';
+    if(r){
+      const mine=r.createdByUid===state.user.uid,used=Number(r.teacherEditCount||0)>=1,admin=state.profile.role==='admin',can=admin||(mine&&!used&&ts.canAssess),st=cleanOverall(r);
+      return `<button class="jp-card assessed ${can?'editable':'locked'}" data-edit-clean="${esc(r.id)}" ${can?'':'disabled'}><b>JP ${jp}</b><span>${time}</span><span class="${st.cls}-text">✓ Sudah Diperiksa</span><small>${esc(r.createdByName||'Guru')}${admin?' • Koreksi Admin':mine&&!used&&ts.canAssess?' • Edit 1× tersedia':mine&&!used?' • Waktu edit berakhir':' • Terkunci'}</small></button>`;
+    }
+    const can=ts.canAssess&&!ownLocked;
+    return `<button class="jp-card ${ts.code}" data-new-clean="${jp}" ${can?'':'disabled'}><b>JP ${jp}</b><span>${time}</span><strong>${ts.code==='missed'?'🔒 Terlewat':ts.code==='future'?'🔒 Belum Dibuka':ts.code==='open'?'🟢 Bisa Diperiksa':'🔒 Tidak tersedia'}</strong><small>${can?'Buka pemeriksaan':'Tidak dapat dinilai'}</small></button>`;
+  }).join('')}</div>`;
   $('#backCleanClasses').onclick=cleanlinessPage;
   document.querySelectorAll('[data-new-clean]').forEach(b=>b.onclick=()=>renderCleanForm(classId,Number(b.dataset.newClean),null));
   document.querySelectorAll('[data-edit-clean]').forEach(b=>b.onclick=()=>{const r=state.cleanlinessToday.find(x=>x.id===b.dataset.editClean);if(r)renderCleanForm(classId,Number(r.jp),r)});
+}
+function renderCleanForm(classId,jp,existing=null){
+  const ts=jpTimeState(jp),isEdit=!!existing,admin=state.profile.role==='admin',mine=isEdit&&existing.createdByUid===state.user.uid;
+  if(!admin&&!ts.canAssess){toast(`JP ${jp} sudah terkunci (${ts.label})`);renderCleanClass(classId);return;}
+  if(isEdit&&!admin&&(!mine||Number(existing.teacherEditCount||0)>=1)){toast('Pemeriksaan ini sudah terkunci');return;}
+  pageMeta(`${isEdit?'Edit':'Pemeriksaan'} Kebersihan`,`${classId} • JP ${jp} • ${ts.start!=null?hm(ts.start)+'–'+hm(ts.end):''}`);
+  const aspect=(key,label,icon,labels)=>`<div class="aspect-row"><div class="aspect-name"><span>${icon}</span><b>${label}</b></div><div class="tri-choice" data-aspect="${key}">${[3,2,1].map((v,n)=>`<button data-v="${v}" class="${v===3?'good':v===2?'fair':'bad'} ${Number(existing?.[key]??3)===v?'active':''}">${labels[n]}</button>`).join('')}</div></div>`;
+  content.innerHTML=`<div class="section-head"><div><h3>${isEdit?'Edit Pemeriksaan':'Pemeriksaan Baru'} • ${esc(classId)} • JP ${jp}</h3><small>${admin?'Admin dapat melakukan koreksi.':isEdit?'Kesempatan edit hanya 1× dan harus sebelum JP berakhir.':'Simpan sebelum JP berakhir.'}</small></div><button class="btn ghost" id="backClean">← Kembali</button></div><div class="card clean-form">${isEdit&&!admin?'<div class="notice edit-once-note">Anda sedang menggunakan <b>1 kali kesempatan edit</b>.</div>':''}<div class="aspect-list">${aspect('floor','Lantai','🧹',['Bersih','Cukup Bersih','Kotor'])}${aspect('desks','Meja & Kursi','🪑',['Rapi','Cukup Rapi','Berantakan'])}${aspect('bin','Tempat Sampah','🗑️',['Terkelola','Hampir Penuh','Penuh / Meluber'])}${aspect('equipment','Perlengkapan Kelas','📚',['Rapi','Cukup Rapi','Berantakan'])}</div><label>Catatan <small>(opsional)</small><textarea id="cleanNote" rows="3">${esc(existing?.note||'')}</textarea></label><div class="clean-actions"><button id="allGood" class="btn secondary">✓ Semua Bersih & Rapi</button><button id="saveClean" class="btn primary">${isEdit?'Simpan Edit Terakhir':'Simpan Pemeriksaan'}</button></div></div>`;
+  const values={floor:Number(existing?.floor??3),desks:Number(existing?.desks??3),bin:Number(existing?.bin??3),equipment:Number(existing?.equipment??3)};
+  document.querySelectorAll('.tri-choice button').forEach(b=>b.onclick=()=>{const w=b.parentElement;values[w.dataset.aspect]=Number(b.dataset.v);w.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b))});
+  $('#allGood').onclick=()=>{Object.keys(values).forEach(k=>values[k]=3);document.querySelectorAll('.tri-choice').forEach(w=>w.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x.dataset.v==='3')))};
+  $('#backClean').onclick=()=>renderCleanClass(classId);
+  $('#saveClean').onclick=async()=>{const btn=$('#saveClean');btn.disabled=true;try{
+    const fresh=jpTimeState(jp); if(!admin&&!fresh.canAssess)throw new Error(`Waktu JP ${jp} sudah berakhir`);
+    const own=state.profile.isHomeroom===true&&state.profile.role!=='admin'?String(state.profile.homeroomClass||''):'';
+    if(own&&classId===own&&state.accessSettings?.homeroomCleanlinessEnabled!==true&&!admin)throw new Error('Penilaian kelas wali sendiri belum dibuka Admin');
+    const collision=state.cleanlinessToday.find(r=>r.classId===classId&&Number(r.jp)===jp);
+    if(!isEdit&&collision)throw new Error(`JP ${jp} sudah diperiksa oleh ${collision.createdByName||'guru lain'}`);
+    const now=new Date(),id=isEdit?existing.id:`${todayKey()}_${classId}_JP${jp}`,cnt=isEdit&&!admin?1:Number(existing?.teacherEditCount||0);
+    await setDoc(doc(db,'cleanliness',id),{date:todayKey(),classId,jp,...values,note:$('#cleanNote').value.trim(),createdByUid:existing?.createdByUid||state.user.uid,createdByName:existing?.createdByName||state.profile.name,createdAt:existing?.createdAt||now.toISOString(),teacherEditCount:cnt,teacherEditedAt:isEdit&&!admin?now.toISOString():(existing?.teacherEditedAt||null),lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})},{merge:false});
+    await refreshCore();toast(isEdit?'Pemeriksaan diedit dan terkunci':'Pemeriksaan tersimpan');renderCleanClass(classId)
+  }catch(e){console.error(e);toast(e.message||'Gagal menyimpan');btn.disabled=false}};
 }
 function cleanCard(r){const st=cleanOverall(r);return `<div class="clean-item"><div class="clean-class"><b>${esc(r.classId)}</b><small>JP ${esc(r.jp)}</small></div><div class="clean-status ${st.cls}"><b>${st.label}</b></div><div class="clean-meta">${esc(r.timeLabel||'')}<br><small>${esc(r.createdByName||'Guru')}</small></div></div>`}
 function cleanOverall(r){const v=['floor','desks','bin','equipment'].map(k=>Number(r[k]||0)),min=Math.min(...v),avg=v.reduce((a,b)=>a+b,0)/v.length;if(min===1||avg<2)return{label:'Perlu Tindakan',cls:'bad'};if(v.every(x=>x===3))return{label:'Bersih & Rapi',cls:'good'};return{label:'Cukup',cls:'fair'}}
