@@ -523,71 +523,41 @@ async function saveClass(c){
 }
 
 function cleanlinessPage(){
-  pageMeta('Kebersihan Kelas','Pemeriksaan dapat dilakukan beberapa kali dalam sehari');
-  const op=operationalInfo(); if(!op.active){ content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p><small>Pemeriksaan kebersihan tidak tersedia hari ini.</small></div>`; return; }
-  const list=state.cleanlinessToday;
-  content.innerHTML=`<div class="clean-hero card"><div><span class="eyebrow">🧹 MODUL KEBERSIHAN</span><h3>Pemeriksaan Kebersihan Kelas</h3><p>Catat hanya pemeriksaan yang dilakukan. Tidak ada daftar JP yang belum diperiksa.</p></div><button id="newClean" class="btn primary">+ Pemeriksaan Baru</button></div>
-  <div class="card"><div class="section-head"><div><h3 style="margin:0">Pemeriksaan Hari Ini</h3><small>${list.length} pemeriksaan tercatat</small></div></div>
-  <div class="clean-list">${list.length?list.map(cleanCard).join(''):'<div class="empty">Belum ada pemeriksaan kebersihan hari ini.</div>'}</div></div>`;
-  $('#newClean').onclick=renderCleanForm;
+  pageMeta('Kebersihan Kelas','Pantau kelas yang sudah dan belum diperiksa hari ini');
+  const op=operationalInfo(); if(!op.active){content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p></div>`;return;}
+  window.cleanClassFilter=window.cleanClassFilter||'all';
+  const own=state.profile.isHomeroom===true&&state.profile.role!=='admin'?String(state.profile.homeroomClass||''):'',ownAllowed=state.accessSettings?.homeroomCleanlinessEnabled===true;
+  const stat=c=>{const rows=state.cleanlinessToday.filter(r=>r.classId===c),n=new Set(rows.map(r=>Number(r.jp))).size;return{rows,n}};
+  const visible=state.classes.filter(c=>{const n=stat(c).n;return window.cleanClassFilter==='none'?n===0:window.cleanClassFilter==='done'?n>0:window.cleanClassFilter==='complete'?n>=op.jp:true});
+  content.innerHTML=`<div class="clean-hero card"><div><span class="eyebrow">🧹 MODUL KEBERSIHAN</span><h3>Pemeriksaan Kebersihan Kelas</h3><p>Pilih kelas untuk melihat status setiap JP. JP yang sudah dinilai terkunci untuk guru lain.</p></div></div>
+  <div class="clean-filterbar">${[['all','Semua'],['none','Belum Dinilai'],['done','Sudah Dinilai'],['complete','Lengkap']].map(x=>`<button class="clean-filter ${window.cleanClassFilter===x[0]?'active':''}" data-clean-filter="${x[0]}">${x[1]}</button>`).join('')}</div>
+  <div class="grid clean-class-grid">${visible.map(c=>{const x=stat(c),locked=own&&c===own&&!ownAllowed,p=Math.round(x.n/op.jp*100);return `<button class="clean-class-card ${x.n===0?'not-started':x.n>=op.jp?'complete':'in-progress'} ${locked?'own-locked':''}" data-clean-class="${esc(c)}"><div class="class-card-top"><strong>${esc(c)}</strong><span>${x.n}/${op.jp} JP</span></div><div class="clean-progress"><i style="width:${p}%"></i></div><div class="clean-card-status">${locked?'🔒 Kelas wali sendiri belum dibuka':x.n===0?'Belum dinilai sama sekali':x.n>=op.jp?'Semua JP sudah dinilai':`${x.n} JP sudah dinilai`}</div></button>`}).join('')||'<div class="empty">Tidak ada kelas pada filter ini.</div>'}</div>`;
+  document.querySelectorAll('[data-clean-filter]').forEach(b=>b.onclick=()=>{window.cleanClassFilter=b.dataset.cleanFilter;cleanlinessPage()});
+  document.querySelectorAll('[data-clean-class]').forEach(b=>b.onclick=()=>renderCleanClass(b.dataset.cleanClass));
 }
-function cleanCard(r){
-  const status=cleanOverall(r);
-  return `<div class="clean-item"><div class="clean-class"><b>${esc(r.classId)}</b><small>JP ${esc(r.jp)}</small></div><div class="clean-status ${status.cls}"><span></span><b>${status.label}</b></div><div class="clean-meta">${esc(r.timeLabel||'')}<br><small>${esc(r.createdByName||'Guru')}</small></div></div>`;
+function renderCleanClass(classId){
+  const op=operationalInfo(),own=state.profile.isHomeroom===true&&state.profile.role!=='admin'?String(state.profile.homeroomClass||''):'',ownLocked=!!(own&&classId===own&&state.accessSettings?.homeroomCleanlinessEnabled!==true);
+  const rows=state.cleanlinessToday.filter(r=>r.classId===classId),byJp=Object.fromEntries(rows.map(r=>[Number(r.jp),r]));
+  pageMeta(`Kebersihan ${classId}`,`Status JP 1–${op.jp} hari ini`);
+  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${esc(classId)}</h3><small>${rows.length} dari ${op.jp} JP sudah dinilai</small></div><button id="backCleanClasses" class="btn ghost">← Daftar Kelas</button></div>${ownLocked?`<div class="notice">🔒 Penilaian kelas wali sendiri belum dibuka Admin. Anda tetap dapat menilai kelas lain.</div>`:''}<div class="jp-status-grid">${Array.from({length:op.jp},(_,i)=>{const jp=i+1,r=byJp[jp];if(!r)return `<button class="jp-card available" data-new-clean="${jp}" ${ownLocked?'disabled':''}><b>JP ${jp}</b><span>Belum Dinilai</span><small>${ownLocked?'Tidak tersedia':'Buka pemeriksaan'}</small></button>`;const mine=r.createdByUid===state.user.uid,used=Number(r.teacherEditCount||0)>=1,admin=state.profile.role==='admin',can=admin||(mine&&!used),st=cleanOverall(r);return `<button class="jp-card assessed ${can?'editable':'locked'}" data-edit-clean="${esc(r.id)}" ${can?'':'disabled'}><b>JP ${jp}</b><span class="${st.cls}-text">✓ ${st.label}</span><small>${esc(r.createdByName||'Guru')}${mine&&!admin?(used?' • Edit sudah digunakan':' • Bisa edit 1×'):admin?' • Admin dapat koreksi':' • Terkunci'}</small></button>`}).join('')}</div>`;
+  $('#backCleanClasses').onclick=cleanlinessPage;
+  document.querySelectorAll('[data-new-clean]').forEach(b=>b.onclick=()=>renderCleanForm(classId,Number(b.dataset.newClean),null));
+  document.querySelectorAll('[data-edit-clean]').forEach(b=>b.onclick=()=>{const r=state.cleanlinessToday.find(x=>x.id===b.dataset.editClean);if(r)renderCleanForm(classId,Number(r.jp),r)});
 }
-function cleanOverall(r){
-  const vals=['floor','desks','bin','equipment'].map(k=>Number(r[k]||0));
-  const min=Math.min(...vals);
-  const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
-  if(min===1 || avg<2) return {label:'Perlu Tindakan',cls:'bad'};
-  if(vals.every(v=>v===3)) return {label:'Bersih & Rapi',cls:'good'};
-  return {label:'Cukup',cls:'fair'};
+function cleanCard(r){const st=cleanOverall(r);return `<div class="clean-item"><div class="clean-class"><b>${esc(r.classId)}</b><small>JP ${esc(r.jp)}</small></div><div class="clean-status ${st.cls}"><b>${st.label}</b></div><div class="clean-meta">${esc(r.timeLabel||'')}<br><small>${esc(r.createdByName||'Guru')}</small></div></div>`}
+function cleanOverall(r){const v=['floor','desks','bin','equipment'].map(k=>Number(r[k]||0)),min=Math.min(...v),avg=v.reduce((a,b)=>a+b,0)/v.length;if(min===1||avg<2)return{label:'Perlu Tindakan',cls:'bad'};if(v.every(x=>x===3))return{label:'Bersih & Rapi',cls:'good'};return{label:'Cukup',cls:'fair'}}
+function renderCleanForm(classId,jp,existing=null){
+  const op=operationalInfo(),isEdit=!!existing,admin=state.profile.role==='admin',mine=isEdit&&existing.createdByUid===state.user.uid;
+  if(isEdit&&!admin&&(!mine||Number(existing.teacherEditCount||0)>=1)){toast('Pemeriksaan ini sudah terkunci');return;}
+  pageMeta(`${isEdit?'Edit':'Pemeriksaan'} Kebersihan`,`${classId} • JP ${jp}`);
+  const aspect=(key,label,icon,labels)=>`<div class="aspect-row"><div class="aspect-name"><span>${icon}</span><b>${label}</b></div><div class="tri-choice" data-aspect="${key}">${[3,2,1].map((v,n)=>`<button data-v="${v}" class="${v===3?'good':v===2?'fair':'bad'} ${Number(existing?.[key]??3)===v?'active':''}">${labels[n]}</button>`).join('')}</div></div>`;
+  content.innerHTML=`<div class="section-head"><div><h3>${isEdit?'Edit 1×':'Pemeriksaan Baru'} • ${esc(classId)} • JP ${jp}</h3><small>${isEdit&&!admin?'Setelah disimpan, pemeriksaan terkunci.':'Nilai 4 aspek kebersihan.'}</small></div><button class="btn ghost" id="backClean">← Kembali</button></div><div class="card clean-form">${isEdit&&!admin?'<div class="notice edit-once-note">Anda sedang menggunakan <b>1 kali kesempatan edit</b>.</div>':''}<div class="aspect-list">${aspect('floor','Lantai','🧹',['Bersih','Cukup Bersih','Kotor'])}${aspect('desks','Meja & Kursi','🪑',['Rapi','Cukup Rapi','Berantakan'])}${aspect('bin','Tempat Sampah','🗑️',['Terkelola','Hampir Penuh','Penuh / Meluber'])}${aspect('equipment','Perlengkapan Kelas','📚',['Rapi','Cukup Rapi','Berantakan'])}</div><label>Catatan <small>(opsional)</small><textarea id="cleanNote" rows="3">${esc(existing?.note||'')}</textarea></label><div class="clean-actions"><button id="allGood" class="btn secondary">✓ Semua Bersih & Rapi</button><button id="saveClean" class="btn primary">${isEdit?'Simpan Edit Terakhir':'Simpan Pemeriksaan'}</button></div></div>`;
+  const values={floor:Number(existing?.floor??3),desks:Number(existing?.desks??3),bin:Number(existing?.bin??3),equipment:Number(existing?.equipment??3)};
+  document.querySelectorAll('.tri-choice button').forEach(b=>b.onclick=()=>{const w=b.parentElement;values[w.dataset.aspect]=Number(b.dataset.v);w.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b))});
+  $('#allGood').onclick=()=>{Object.keys(values).forEach(k=>values[k]=3);document.querySelectorAll('.tri-choice').forEach(w=>w.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x.dataset.v==='3')))};
+  $('#backClean').onclick=()=>renderCleanClass(classId);
+  $('#saveClean').onclick=async()=>{const btn=$('#saveClean');btn.disabled=true;try{const own=state.profile.isHomeroom===true&&state.profile.role!=='admin'?String(state.profile.homeroomClass||''):'';if(own&&classId===own&&state.accessSettings?.homeroomCleanlinessEnabled!==true)throw new Error('Penilaian kelas wali sendiri belum dibuka Admin');const collision=state.cleanlinessToday.find(r=>r.classId===classId&&Number(r.jp)===jp);if(!isEdit&&collision)throw new Error(`JP ${jp} sudah dinilai oleh ${collision.createdByName||'guru lain'}`);const now=new Date(),id=isEdit?existing.id:`${todayKey()}_${classId}_JP${jp}`,cnt=isEdit&&!admin?1:Number(existing?.teacherEditCount||0);await setDoc(doc(db,'cleanliness',id),{date:todayKey(),classId,jp,...values,note:$('#cleanNote').value.trim(),createdByUid:existing?.createdByUid||state.user.uid,createdByName:existing?.createdByName||state.profile.name,createdAt:existing?.createdAt||now.toISOString(),teacherEditCount:cnt,teacherEditedAt:isEdit&&!admin?now.toISOString():(existing?.teacherEditedAt||null),lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})},{merge:false});await refreshCore();toast(isEdit?'Pemeriksaan diedit dan sekarang terkunci':'Pemeriksaan tersimpan');renderCleanClass(classId)}catch(e){console.error(e);toast(e.message||'Gagal menyimpan');btn.disabled=false}};
 }
-function renderCleanForm(){
-  const op=operationalInfo();
-  if(!op.active){ cleanlinessPage(); return; }
-  pageMeta('Pemeriksaan Kebersihan',`Pilih kelas dan JP 1–${op.jp}, lalu nilai 4 aspek`);
-  const aspect=(key,label,icon,labels)=>`<div class="aspect-row"><div class="aspect-name"><span>${icon}</span><b>${label}</b></div><div class="tri-choice" data-aspect="${key}"><button data-v="3" class="good active">${labels[0]}</button><button data-v="2" class="fair">${labels[1]}</button><button data-v="1" class="bad">${labels[2]}</button></div></div>`;
-  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Pemeriksaan Baru</h3><small>${esc(op.label)} • ${op.jp} JP tersedia hari ini.</small></div><button class="btn ghost" id="backClean">← Kembali</button></div>
-  <div class="card clean-form">
-  ${state.profile.isHomeroom===true && state.profile.role!=='admin'
-    ? `<div class="notice clean-access-note">${state.accessSettings?.homeroomCleanlinessEnabled===true
-        ? `Akses kelas sendiri dibuka. Anda dapat menilai semua kelas termasuk ${esc(state.profile.homeroomClass||'-')}.`
-        : `Anda dapat menilai semua kelas kecuali kelas wali Anda (${esc(state.profile.homeroomClass||'-')}).`}</div>`
-    : ''}
-  <div class="form-grid"><label>Kelas<select id="cleanClass">${(
-    state.profile.isHomeroom===true && state.profile.role!=='admin' && state.accessSettings?.homeroomCleanlinessEnabled!==true
-      ? state.classes.filter(c=>c!==state.profile.homeroomClass)
-      : state.classes
-  ).filter(Boolean).map(c=>`<option>${esc(c)}</option>`).join('')}</select></label><label>JP<select id="cleanJp">${Array.from({length:op.jp},(_,i)=>`<option value="${i+1}">JP ${i+1}</option>`).join('')}</select></label></div>
-  <div class="aspect-list">${aspect('floor','Lantai','🧹',['Bersih','Cukup Bersih','Kotor'])}${aspect('desks','Meja & Kursi','🪑',['Rapi','Cukup Rapi','Berantakan'])}${aspect('bin','Tempat Sampah','🗑️',['Terkelola','Hampir Penuh','Penuh / Meluber'])}${aspect('equipment','Perlengkapan Kelas','📚',['Rapi','Cukup Rapi','Berantakan'])}</div>
-  <label>Catatan <small>(opsional)</small><textarea id="cleanNote" rows="3" placeholder="Contoh: tempat sampah hampir penuh"></textarea></label>
-  <div class="clean-actions"><button id="allGood" class="btn secondary">✓ Semua Bersih & Rapi</button><button id="saveClean" class="btn primary">Simpan Pemeriksaan</button></div></div>`;
-  const values={floor:3,desks:3,bin:3,equipment:3};
-  document.querySelectorAll('.tri-choice button').forEach(b=>b.onclick=()=>{
-    const wrap=b.parentElement; values[wrap.dataset.aspect]=Number(b.dataset.v);
-    wrap.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));
-  });
-  $('#allGood').onclick=()=>{Object.keys(values).forEach(k=>values[k]=3);document.querySelectorAll('.tri-choice').forEach(w=>w.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x.dataset.v==='3')));};
-  $('#backClean').onclick=cleanlinessPage;
-  $('#saveClean').onclick=async()=>{
-    const currentOp=operationalInfo(); if(!currentOp.active){toast('Hari ini sudah ditandai sebagai hari tidak aktif.');return;}
-    const btn=$('#saveClean'); btn.disabled=true; btn.textContent='Menyimpan...';
-    try{
-      const now=new Date(), classId=$('#cleanClass').value, jp=Number($('#cleanJp').value);
-      if(state.profile.role!=='admin' && state.profile.isHomeroom===true){
-        const own=String(state.profile.homeroomClass||'');
-        const ownAllowed=state.accessSettings?.homeroomCleanlinessEnabled===true;
-        if(classId===own && !ownAllowed) throw new Error('Penilaian kelas wali sendiri belum dibuka oleh Admin');
-      }
-      if(jp<1||jp>currentOp.jp) throw new Error('JP tidak tersedia untuk hari ini');
-      const id=`${todayKey()}_${classId}_JP${jp}_${Date.now()}`;
-      await setDoc(doc(db,'cleanliness',id),{date:todayKey(),classId,jp,...values,note:$('#cleanNote').value.trim(),createdByUid:state.user.uid,createdByName:state.profile.name,createdAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})});
-      await refreshCore(); toast(`Pemeriksaan ${classId} • JP ${jp} tersimpan`); cleanlinessPage();
-    }catch(e){console.error(e);toast(`Gagal menyimpan pemeriksaan: ${e.code||e.message}`);btn.disabled=false;btn.textContent='Simpan Pemeriksaan';}
-  };
-}
-
 function recap(){
   pageMeta('Rekap & Analisis','Pantau data, perkembangan, apresiasi, dan kelas yang perlu perhatian');
   content.innerHTML=`<div class="recap-switch recap-switch-four">
@@ -880,9 +850,9 @@ function renderMasterTab(){
   if(state.masterTab==='teachers'){
     target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Akun Guru & Wali Kelas</h3><small>Akun hasil pendaftaran baru harus disetujui Admin.</small></div><div class="row-actions"><button id="importTeachers" class="btn ghost">Upload Akun Guru</button><button id="addTeacher" class="btn primary">+ Guru</button></div></div><div id="pendingApprovals"></div>
     <div class="notice">Format: <b>NIP Guru | Nama | Password Awal | Jenis | Kelas Wali | Status</b>. Jenis: Guru atau Wali Kelas.</div>
-    <div class="master-tools"><input id="teacherSearch" class="input-inline" placeholder="Cari ID atau nama guru"><select id="teacherTypeFilter" class="input-inline"><option value="">Semua jenis</option><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select><select id="teacherStatusFilter" class="input-inline"><option value="">Semua status</option><option value="aktif">Aktif</option><option value="nonaktif">Nonaktif</option></select></div><div id="teacherTable"></div></div>`;
+    <div class="master-tools teacher-tools"><input id="teacherSearch" class="input-inline" placeholder="Cari NIP atau nama guru"><select id="teacherTypeFilter" class="input-inline"><option value="">Semua jenis</option><option value="wali">Wali Kelas</option><option value="guru">Guru</option></select><select id="teacherStatusFilter" class="input-inline"><option value="">Semua status</option><option value="aktif">Aktif</option><option value="nonaktif">Nonaktif</option></select><select id="teacherSort" class="input-inline"><option value="class">Urut: Kelas Wali</option><option value="az">Nama A–Z</option><option value="za">Nama Z–A</option></select></div><div id="teacherTable"></div></div>`;
     $('#importTeachers').onclick=()=>$('#teacherImport').click(); $('#addTeacher').onclick=addTeacherPrompt;
-    $('#teacherSearch').oninput=renderTeacherMasterTable; $('#teacherTypeFilter').onchange=renderTeacherMasterTable; $('#teacherStatusFilter').onchange=renderTeacherMasterTable;
+    $('#teacherSearch').oninput=renderTeacherMasterTable; $('#teacherTypeFilter').onchange=renderTeacherMasterTable; $('#teacherStatusFilter').onchange=renderTeacherMasterTable; $('#teacherSort').onchange=renderTeacherMasterTable;
     renderPendingApprovals(); renderTeacherMasterTable(); return;
   }
   if(state.masterTab==='classes'){
@@ -946,15 +916,14 @@ async function deleteSelectedStudents(){
   try{for(let i=0;i<ids.length;i+=400){const batch=writeBatch(db);ids.slice(i,i+400).forEach(id=>batch.delete(doc(db,'students',id)));await batch.commit();}window.selectedStudentIds=new Set();toast(`${ids.length} siswa berhasil dihapus`);await master();}catch(e){console.error(e);toast('Gagal menghapus beberapa siswa');}
 }
 
+function classSortKey(c){const m=String(c||'').toUpperCase().match(/^(\d+)\s*([A-Z]+)$/);return m?Number(m[1])*1000+m[2].split('').reduce((n,ch)=>n*26+(ch.charCodeAt(0)-64),0):999999}
 function renderTeacherMasterTable(){
-  const target=$('#teacherTable'); if(!target)return;
-  const q=String($('#teacherSearch')?.value||'').trim().toLowerCase(), type=$('#teacherTypeFilter')?.value||'', status=$('#teacherStatusFilter')?.value||'';
-  const rows=(window.masterUsers||[]).filter(u=>u.role==='guru'&&u.approved!==false).filter(u=>(!q||String(u.loginId||'').toLowerCase().includes(q)||String(u.name||'').toLowerCase().includes(q))&&(!type||(type==='wali'?u.isHomeroom===true:u.isHomeroom!==true))&&(!status||(status==='aktif'?u.active!==false:u.active===false))).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  target.innerHTML=`<div class="table-wrap"><table class="student-master"><thead><tr><th>NIP Guru</th><th>Nama</th><th>Jenis</th><th>Kelas Wali</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.isHomeroom?'ok':'neutral'}">${u.isHomeroom?'Wali Kelas':'Guru'}</span></td><td>${u.isHomeroom?esc(u.homeroomClass||'-'):'-'}</td><td><span class="badge ${u.active===false?'warn':'ok'}">${u.active===false?'Nonaktif':'Aktif'}</span></td><td><div class="row-actions"><button class="btn-mini edit" data-edit-teacher="${esc(u.uid)}">Edit</button><button class="btn-mini danger" data-delete-teacher="${esc(u.uid)}">Hapus Akun</button></div></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Belum ada akun guru.</div></td></tr>'}</tbody></table></div>`;
-  document.querySelectorAll('[data-edit-teacher]').forEach(b=>b.onclick=()=>editTeacherProfile(b.dataset.editTeacher));
-  document.querySelectorAll('[data-delete-teacher]').forEach(b=>b.onclick=()=>deleteTeacherAccount(b.dataset.deleteTeacher));
+ const target=$('#teacherTable');if(!target)return;const q=String($('#teacherSearch')?.value||'').trim().toLowerCase(),type=$('#teacherTypeFilter')?.value||'',status=$('#teacherStatusFilter')?.value||'',sort=$('#teacherSort')?.value||'class';
+ const rows=(window.masterUsers||[]).filter(u=>u.role==='guru'&&u.approved!==false).filter(u=>(!q||String(u.loginId||'').toLowerCase().includes(q)||String(u.name||'').toLowerCase().includes(q))&&(!type||(type==='wali'?u.isHomeroom===true:u.isHomeroom!==true))&&(!status||(status==='aktif'?u.active!==false:u.active===false))).sort((a,b)=>{const aw=a.isHomeroom===true,bw=b.isHomeroom===true;if(aw!==bw)return aw?-1:1;if(sort==='class'&&aw&&bw){const d=classSortKey(a.homeroomClass)-classSortKey(b.homeroomClass);if(d)return d}const n=(a.name||'').localeCompare(b.name||'','id',{sensitivity:'base'});return sort==='za'?-n:n});
+ const wc=rows.filter(x=>x.isHomeroom).length,gc=rows.length-wc;
+ target.innerHTML=`<div class="teacher-list-summary"><span><b>${wc}</b> Wali Kelas</span><span><b>${gc}</b> Guru</span></div><div class="table-wrap"><table class="student-master"><thead><tr><th>NIP Guru</th><th>Nama</th><th>Jenis</th><th>Kelas Wali</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.map((u,i)=>`${i===wc&&gc?'<tr class="teacher-divider"><td colspan="6">Guru</td></tr>':''}<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.isHomeroom?'ok':'neutral'}">${u.isHomeroom?'Wali Kelas':'Guru'}</span></td><td>${u.isHomeroom?esc(u.homeroomClass||'-'):'-'}</td><td><span class="badge ${u.active===false?'warn':'ok'}">${u.active===false?'Nonaktif':'Aktif'}</span></td><td><div class="row-actions"><button class="btn-mini edit" data-edit-teacher="${esc(u.uid)}">Edit</button><button class="btn-mini danger" data-delete-teacher="${esc(u.uid)}">Hapus Akun</button></div></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Belum ada akun guru.</div></td></tr>'}</tbody></table></div>`;
+ document.querySelectorAll('[data-edit-teacher]').forEach(b=>b.onclick=()=>editTeacherProfile(b.dataset.editTeacher));document.querySelectorAll('[data-delete-teacher]').forEach(b=>b.onclick=()=>deleteTeacherAccount(b.dataset.deleteTeacher));
 }
-
 
 async function deleteTeacherAccount(uid){
   const u=(window.masterUsers||[]).find(x=>x.uid===uid);
