@@ -1,4 +1,4 @@
-# PakKom Eco Track v2.9.1
+# PakKom Eco Track v2.9.2
 
 ## Perubahan utama
 - Kalender operasional sekolah.
@@ -18,4 +18,4 @@
 ## Catatan Firebase
 Tidak ada collection baru. Pengaturan kalender khusus disimpan pada `settings/calendar`, yang sudah tercakup oleh Firestore Rules v2.9.
 
-Upload seluruh file repository agar cache version v2.9.1 ikut terpasang.
+Upload seluruh file repository agar cache version v2.9.2 ikut terpasang.

@@ -101,6 +101,45 @@ async function finishSignedIn(user){
   }
 }
 
+let authBootTimer=null;
+function resolveAuthBoot(){
+  authResolved=true;
+  if(authBootTimer){ clearTimeout(authBootTimer); authBootTimer=null; }
+  const retry=$('#authRetry'); if(retry) retry.classList.add('hidden');
+}
+function failAuthBoot(message='Tidak dapat memeriksa sesi.'){
+  authResolved=true;
+  const text=$('#authLoadingText'); if(text) text.textContent=message;
+  const retry=$('#authRetry'); if(retry) retry.classList.remove('hidden');
+}
+async function startAuthObserver(){
+  showAuthLoading(true);
+  const text=$('#authLoadingText'); if(text) text.textContent='Memeriksa sesi...';
+  const retry=$('#authRetry'); if(retry) retry.classList.add('hidden');
+  if(authBootTimer) clearTimeout(authBootTimer);
+  authBootTimer=setTimeout(()=>failAuthBoot('Pemeriksaan sesi terlalu lama. Periksa koneksi lalu coba lagi.'),8000);
+  try{
+    await Promise.race([
+      setPersistence(auth,browserLocalPersistence),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('persistence-timeout')),4500))
+    ]).catch(e=>console.warn('Persistence fallback',e));
+    onAuthStateChanged(auth, async user=>{
+      if(loginInProgress) return;
+      resolveAuthBoot();
+      if(!user){
+        state.user=null; state.profile=null;
+        showAuthLoading(false); renderShell(); return;
+      }
+      showAuthLoading(true);
+      await finishSignedIn(user);
+    }, err=>{
+      console.error('Auth observer error',err);
+      failAuthBoot('Gagal terhubung ke Firebase Authentication.');
+    });
+  }catch(e){
+    console.error(e); failAuthBoot('Gagal memulai pemeriksaan sesi.');
+  }
+}
 if(!configured){
   authResolved=true; showAuthLoading(false);
   $('#loginHint').innerHTML='Firebase belum dikonfigurasi. Isi <b>firebase-config.js</b> terlebih dahulu.';
@@ -108,19 +147,17 @@ if(!configured){
   renderShell();
 } else {
   app=initializeApp(cfg); auth=getAuth(app); db=getFirestore(app);
-  setPersistence(auth,browserLocalPersistence).catch(console.error).finally(()=>{
-    onAuthStateChanged(auth, async user=>{
-      authResolved=true;
-      if(loginInProgress) return;
-      if(!user){ state.user=null; state.profile=null; showAuthLoading(false); renderShell(); return; }
-      showAuthLoading(true); await finishSignedIn(user);
-    });
-  });
+  startAuthObserver();
 }
+if($('#authRetry')) $('#authRetry').onclick=()=>location.reload();
 
-$('#togglePassword').onclick=()=>{
-  const i=$('#loginPassword'); i.type=i.type==='password'?'text':'password';
-};
+function togglePasswordInput(targetId, button){
+  const i=document.getElementById(targetId); if(!i)return;
+  const reveal=i.type==='password'; i.type=reveal?'text':'password';
+  if(button){ button.textContent=reveal?'🙈':'👁'; button.setAttribute('aria-label',reveal?'Sembunyikan password':'Tampilkan password'); }
+}
+$('#togglePassword').onclick=e=>togglePasswordInput('loginPassword',e.currentTarget);
+document.querySelectorAll('.password-toggle').forEach(b=>b.onclick=()=>togglePasswordInput(b.dataset.toggleTarget,b));
 function openRegisterModal(){
   const modal=$('#registerModal');
   $('#regClass').innerHTML=classesDefault.map(c=>`<option value="${c}">${c}</option>`).join('');

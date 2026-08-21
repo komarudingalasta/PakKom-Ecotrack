@@ -75,3 +75,6 @@
 .holiday-card{text-align:center;max-width:620px;margin:40px auto;padding:42px 24px}.holiday-icon{font-size:52px}.holiday-card h3{font-size:26px;margin:12px 0 4px}.holiday-card p{font-weight:800;color:#92400e}
 .calendar-editor{display:grid;grid-template-columns:minmax(220px,1fr) minmax(220px,1fr);gap:18px;margin-top:18px}.calendar-current{border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:4px}.calendar-current span,.calendar-current small{color:var(--muted)}.text-ok{color:#15803d}.text-off{color:#b91c1c}.calendar-options{display:grid;grid-template-columns:1fr 160px 1.3fr;gap:14px;margin-top:16px}.calendar-options input,.calendar-options select,.calendar-editor input{width:100%;margin-top:6px}
 @media(max-width:760px){.calendar-editor,.calendar-options{grid-template-columns:1fr}}
+
+.loading-brand #authRetry{margin-top:10px;min-width:120px}
+.password-toggle{font-size:17px}
