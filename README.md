@@ -1,4 +1,4 @@
-# PakKom Eco Track v3.2 — Auth Core Rebuild
+# PakKom Eco Track v3.2.1 — Auth Core Rebuild
 
 ## Struktur baru
 

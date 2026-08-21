@@ -1,16 +1,14 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import {
   getAuth,
   signInWithEmailAndPassword,
-  signOut,
-  setPersistence,
-  inMemoryPersistence
-} from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
+  signOut
+} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import {
   getFirestore,
   doc,
   getDoc
-} from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
+} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 const cfg = window.PAKKOM_FIREBASE_CONFIG || {};
 const configured = !!(cfg.apiKey && cfg.projectId);
@@ -73,8 +71,6 @@ if(!configured){
     app = initializeApp(cfg);
     auth = getAuth(app);
     db = getFirestore(app);
-    // Tidak ada pemulihan sesi saat refresh.
-    await setPersistence(auth, inMemoryPersistence).catch(()=>{});
   }catch(e){
     console.error('Firebase init',e);
     showError('Firebase gagal dimulai. Periksa firebase-config.js.');

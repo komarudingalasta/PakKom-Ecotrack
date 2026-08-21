@@ -1,6 +1,6 @@
-import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js';
-import { getAuth, signOut, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, writeBatch, serverTimestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
+import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import { getAuth, signOut, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, writeBatch, serverTimestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 const cfg = window.PAKKOM_FIREBASE_CONFIG || {};
 const configured = cfg.apiKey && !String(cfg.apiKey).includes('GANTI_') && cfg.projectId && !String(cfg.projectId).includes('GANTI_');
@@ -103,7 +103,7 @@ function navItems(){
 }
 
 function showAuthLoading(show=true){
-  // v3.2 Direct Login: tidak ada splash / pemeriksaan sesi.
+  // v3.2.1 Direct Login: tidak ada splash / pemeriksaan sesi.
   return;
 }
 
@@ -159,7 +159,7 @@ async function finishSignedIn(user){
   }
 }
 
-// v3.2 Direct Login
+// v3.2.1 Direct Login
 // Tidak memulihkan sesi pada saat halaman dibuka.
 // Firebase hanya dipakai setelah pengguna menekan MASUK.
 if(!configured){

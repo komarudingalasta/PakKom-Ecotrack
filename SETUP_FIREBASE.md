@@ -1,4 +1,4 @@
-# Setup Firebase — PakKom Eco Track v3.2
+# Setup Firebase — PakKom Eco Track v3.2.1
 
 1. Authentication → Email/Password aktif.
 2. Firestore Rules → publish `firestore.rules`.
@@ -9,4 +9,4 @@
    - name: administrator
    - role: admin
    - active: true
-6. Upload semua file v3.2 termasuk **auth.js** ke root GitHub Pages.
+6. Upload semua file v3.2.1 termasuk **auth.js** ke root GitHub Pages.
