@@ -1,8 +1,8 @@
-/* PakKom Eco Track v3.3.3 — Unified Core
+/* PakKom Eco Track v3.3.4 — Unified Core
    Application Core + Authentication Core dalam satu file klasik.
 */
 
-/* PakKom Eco Track v3.3.3 — Compat Application Core
+/* PakKom Eco Track v3.3.4 — Compat Application Core
    Seluruh Authentication + Firestore memakai Firebase Compat yang sama. */
 (function(){
 'use strict';
@@ -809,7 +809,7 @@ async function addTeacherPrompt(){
 
 window.startPakKomApp = async function(core){
   try{
-    console.log('PakKom Application Core v3.3.3 starting');
+    console.log('PakKom Application Core v3.3.4 starting');
     app=core.app;
     auth=core.auth;
     db=core.db;

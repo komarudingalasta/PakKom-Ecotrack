@@ -1,15 +1,13 @@
-# PakKom Eco Track v3.3.3 — Unified Core Stable Fix
+# PakKom Eco Track v3.3.4 — Firebase Load Order Fix
 
-Perbaikan kritis dari v3.3.2:
-- Menghapus bootstrap Direct Login lama yang masih memanggil `setPersistence` dan `inMemoryPersistence`.
-- Login sekarang hanya diinisialisasi oleh satu Auth Core.
-- Memperbaiki referensi logout ke `PAKKOM_COMPAT_CORE`.
-- Authentication dan Application Core tetap berada dalam satu `main.js`.
-- Tidak ada `auth.js`, `app.js`, `auth-core.js`, atau `app-core.js`.
+Perbaikan kritis:
+- Firebase SDK Compat sekarang dimuat sebelum `firebase-config.js` dan `main.js`.
+- Urutan script:
+  1. firebase-app-compat.js
+  2. firebase-auth-compat.js
+  3. firebase-firestore-compat.js
+  4. firebase-config.js
+  5. main.js
+- Mengatasi pesan **Firebase SDK gagal dimuat**.
 
-Struktur utama:
-- `index.html`
-- `main.js`
-- `firebase-config.js`
-- `styles.css`
-- `firestore.rules`
+Struktur aplikasi tetap menggunakan satu `main.js`.
