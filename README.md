@@ -1,9 +1,25 @@
-# PakKom Eco Track — Wadah Makan & Tumbler Consistency
+# PakKom Eco Track — Analisis, Apresiasi & Kontrol Kelas
 
-- Istilah utama diseragamkan menjadi **Wadah Makan** dan **Tumbler**.
-- Nama modul menjadi **Wadah Makan & Tumbler**.
-- Rekap menggunakan istilah yang sama.
-- Ikon Wadah Makan memakai SVG berwarna model kotak makan reusable.
-- Ikon Tumbler memakai SVG berwarna model botol/tumbler.
-- Ikon tidak menggunakan emoji gelas sehingga tampil konsisten antarperangkat.
-- Perbaikan layout dan bulk approval dari paket sebelumnya tetap dipertahankan.
+Rekap kini memiliki:
+1. Wadah Makan & Tumbler
+2. Kebersihan
+3. Analisis
+4. Apresiasi
+
+Analisis mingguan:
+- Wadah Makan dan Tumbler dihitung terpisah berdasarkan siswa hadir.
+- Kebersihan dinormalisasi menjadi persentase.
+- Perubahan dibanding minggu sebelumnya.
+- Performa tertinggi, paling meningkat, dan perlu perhatian.
+
+Apresiasi:
+- Kelas Eco Terbaik
+- Wadah Makan Terbaik
+- Tumbler Terbaik
+- Kelas Terbersih
+- Paling Meningkat
+- Perlu Perhatian untuk kontrol/pembinaan
+
+Skor Eco:
+Wadah Makan 30% + Tumbler 30% + Kebersihan 40%.
+Kelas Eco Terbaik mensyaratkan data Wadah/Tumbler dan minimal 2 pemeriksaan kebersihan pada minggu tersebut.

@@ -552,9 +552,21 @@ function renderCleanForm(){
 }
 
 function recap(){
-  pageMeta('Rekap','Pilih modul rekap yang ingin dilihat');
-  content.innerHTML=`<div class="recap-switch"><button class="recap-module active" data-recap="wadah">${ICON_TUMBLER}<b>Wadah Makan & Tumbler</b><small>Rekap pendataan siswa</small></button><button class="recap-module" data-recap="clean">🧹<b>Kebersihan Kelas</b><small>Riwayat pemeriksaan</small></button></div><div id="recapPanel"></div>`;
-  document.querySelectorAll('.recap-module').forEach(b=>b.onclick=()=>{document.querySelectorAll('.recap-module').forEach(x=>x.classList.toggle('active',x===b)); b.dataset.recap==='clean'?renderCleanRecap():renderWadahRecap();});
+  pageMeta('Rekap & Analisis','Pantau data, perkembangan, apresiasi, dan kelas yang perlu perhatian');
+  content.innerHTML=`<div class="recap-switch recap-switch-four">
+    <button class="recap-module active" data-recap="wadah">${ICON_WADAH_MAKAN}<b>Wadah Makan & Tumbler</b><small>Rekap pendataan</small></button>
+    <button class="recap-module" data-recap="clean">🧹<b>Kebersihan</b><small>Riwayat pemeriksaan</small></button>
+    <button class="recap-module" data-recap="analysis">📊<b>Analisis</b><small>Tren & perhatian</small></button>
+    <button class="recap-module" data-recap="awards">🏆<b>Apresiasi</b><small>Performa kelas</small></button>
+  </div><div id="recapPanel"></div>`;
+  document.querySelectorAll('.recap-module').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('.recap-module').forEach(x=>x.classList.toggle('active',x===b));
+    const mode=b.dataset.recap;
+    if(mode==='clean') renderCleanRecap();
+    else if(mode==='analysis') renderEcoAnalysis();
+    else if(mode==='awards') renderEcoAwards();
+    else renderWadahRecap();
+  });
   renderWadahRecap();
 }
 function renderWadahRecap(){
@@ -577,6 +589,107 @@ function renderCleanRecap(){
 async function loadCleanRecap(){
   const target=$('#cleanRecapBody'); if(!target)return; const date=$('#cleanRecapDate').value||todayKey(),cls=$('#cleanRecapClass').value||'';
   try{const snap=await getDocs(query(collection(db,'cleanliness'),where('date','==',date)));let rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));if(cls)rows=rows.filter(r=>r.classId===cls);target.innerHTML=rows.length?`<div class="clean-list">${rows.map(cleanCard).join('')}</div>`:'<div class="empty">Belum ada pemeriksaan kebersihan pada pilihan ini.</div>';}catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap kebersihan. Pastikan Firestore Rules v2.9.1 sudah dipublish.</div>';}
+}
+
+function weekRange(offset=0){
+  const now=new Date(); now.setHours(0,0,0,0);
+  const day=(now.getDay()+6)%7;
+  const start=new Date(now); start.setDate(now.getDate()-day+(offset*7));
+  const end=new Date(start); end.setDate(start.getDate()+4);
+  const key=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return {start:key(start),end:key(end)};
+}
+async function fetchEcoPeriod(range){
+  const [recordSnap,cleanSnap]=await Promise.all([
+    getDocs(query(collection(db,'records'),where('date','>=',range.start),where('date','<=',range.end))),
+    getDocs(query(collection(db,'cleanliness'),where('date','>=',range.start),where('date','<=',range.end)))
+  ]);
+  return {
+    records:recordSnap.docs.map(d=>({id:d.id,...d.data()})),
+    clean:cleanSnap.docs.map(d=>({id:d.id,...d.data()}))
+  };
+}
+function classPeriodMetrics(cls,data){
+  const records=data.records.filter(r=>r.classId===cls);
+  let hadir=0,food=0,tumb=0;
+  records.forEach(r=>(r.items||[]).forEach(i=>{if(i.presence==='hadir'){hadir++;if(i.food)food++;if(i.tumbler)tumb++;}}));
+  const cleans=data.clean.filter(r=>r.classId===cls);
+  let cleanPoints=0,cleanCount=0;
+  cleans.forEach(r=>['floor','desks','bin','equipment'].forEach(k=>{const v=Number(r[k]||0);if(v){cleanPoints+=v;cleanCount++;}}));
+  const foodPct=hadir?Math.round(food/hadir*100):null;
+  const tumbPct=hadir?Math.round(tumb/hadir*100):null;
+  const cleanPct=cleanCount?Math.round((cleanPoints/(cleanCount*3))*100):null;
+  const available=[foodPct,tumbPct,cleanPct].filter(v=>v!==null);
+  const eligible=records.length>0 && cleans.length>=2 && foodPct!==null && tumbPct!==null && cleanPct!==null;
+  const eco=eligible?Math.round(foodPct*.30+tumbPct*.30+cleanPct*.40):(available.length?Math.round(available.reduce((a,b)=>a+b,0)/available.length):null);
+  return {cls,records:records.length,checks:cleans.length,hadir,foodPct,tumbPct,cleanPct,eco,eligible};
+}
+function metricText(v){return v===null?'Belum ada data':`${v}%`}
+function ecoClass(v){return v===null?'neutral':v>=85?'good':v>=70?'fair':'bad'}
+async function loadEcoComparison(){
+  const current=weekRange(0),previous=weekRange(-1);
+  const [cur,prev]=await Promise.all([fetchEcoPeriod(current),fetchEcoPeriod(previous)]);
+  const currentMetrics=state.classes.map(c=>classPeriodMetrics(c,cur));
+  const prevMap=Object.fromEntries(state.classes.map(c=>[c,classPeriodMetrics(c,prev)]));
+  currentMetrics.forEach(m=>{const p=prevMap[m.cls];m.change=(m.eco!==null&&p?.eco!==null)?m.eco-p.eco:null;});
+  return {current,previous,currentMetrics,prevMap};
+}
+function renderEcoAnalysis(){
+  const panel=$('#recapPanel');
+  panel.innerHTML=`<div class="card analysis-shell"><div class="section-head"><div><h3>Analisis Mingguan</h3><small>Persentase dihitung berdasarkan siswa hadir. Kebersihan dinormalisasi agar jumlah pemeriksaan tidak menguntungkan kelas tertentu.</small></div></div><div id="analysisBody"><div class="empty">Menghitung analisis...</div></div></div>`;
+  loadEcoComparison().then(({current,currentMetrics})=>{
+    const target=$('#analysisBody'); if(!target)return;
+    const withEco=currentMetrics.filter(m=>m.eco!==null).sort((a,b)=>b.eco-a.eco);
+    const best=withEco[0];
+    const improved=[...currentMetrics].filter(m=>m.change!==null).sort((a,b)=>b.change-a.change)[0];
+    const attention=[...currentMetrics].filter(m=>m.eco!==null).sort((a,b)=>a.eco-b.eco)[0];
+    target.innerHTML=`<div class="analysis-period">Periode ${current.start} s.d. ${current.end}</div>
+      <div class="analysis-kpis">
+        <div class="analysis-kpi"><span>🏆 Performa tertinggi</span><strong>${best?esc(best.cls):'-'}</strong><small>${best?.eco??'-'} poin Eco</small></div>
+        <div class="analysis-kpi"><span>📈 Paling meningkat</span><strong>${improved&&improved.change>0?esc(improved.cls):'-'}</strong><small>${improved&&improved.change>0?`+${improved.change} poin`:'Belum ada peningkatan terukur'}</small></div>
+        <div class="analysis-kpi attention"><span>⚠ Perlu perhatian</span><strong>${attention?esc(attention.cls):'-'}</strong><small>${attention?`${attention.eco} poin Eco`:'Data belum cukup'}</small></div>
+      </div>
+      <div class="analysis-list">${currentMetrics.map(m=>`<div class="analysis-row">
+        <div class="analysis-class"><b>${esc(m.cls)}</b><small>${m.records} hari pendataan • ${m.checks} cek kebersihan</small></div>
+        <div><span>Wadah Makan</span><b>${metricText(m.foodPct)}</b></div>
+        <div><span>Tumbler</span><b>${metricText(m.tumbPct)}</b></div>
+        <div><span>Kebersihan</span><b>${metricText(m.cleanPct)}</b></div>
+        <div><span>Eco</span><b class="${ecoClass(m.eco)}-text">${m.eco??'-'}</b></div>
+        <div><span>Perubahan</span><b>${m.change===null?'-':`${m.change>0?'+':''}${m.change}`}</b></div>
+      </div>`).join('')}</div>
+      <div class="analysis-note">Skor Eco untuk apresiasi resmi hanya berlaku jika kelas memiliki data Wadah Makan & Tumbler dan minimal 2 pemeriksaan kebersihan pada minggu tersebut.</div>`;
+  }).catch(e=>{console.error(e);if($('#analysisBody'))$('#analysisBody').innerHTML='<div class="empty">Analisis belum dapat dimuat. Pastikan Firestore Rules mengizinkan pembacaan records dan cleanliness.</div>'});
+}
+function renderEcoAwards(){
+  const panel=$('#recapPanel');
+  panel.innerHTML=`<div class="card awards-shell"><div class="section-head"><div><h3>Apresiasi & Kontrol Kelas</h3><small>Apresiasi mingguan berdasarkan persentase, bukan jumlah siswa atau banyaknya pemeriksaan.</small></div></div><div id="awardsBody"><div class="empty">Menentukan performa kelas...</div></div></div>`;
+  loadEcoComparison().then(({current,currentMetrics})=>{
+    const target=$('#awardsBody'); if(!target)return;
+    const eligible=currentMetrics.filter(m=>m.eligible);
+    const bestEco=[...eligible].sort((a,b)=>b.eco-a.eco)[0];
+    const bestFood=[...currentMetrics].filter(m=>m.foodPct!==null).sort((a,b)=>b.foodPct-a.foodPct)[0];
+    const bestTumb=[...currentMetrics].filter(m=>m.tumbPct!==null).sort((a,b)=>b.tumbPct-a.tumbPct)[0];
+    const clean=[...currentMetrics].filter(m=>m.cleanPct!==null&&m.checks>=2).sort((a,b)=>b.cleanPct-a.cleanPct);
+    const bestClean=clean[0];
+    const improved=[...currentMetrics].filter(m=>m.change!==null&&m.change>0).sort((a,b)=>b.change-a.change)[0];
+    const attention=[...currentMetrics].filter(m=>m.eco!==null).sort((a,b)=>a.eco-b.eco).slice(0,3);
+    const award=(icon,title,m,value,sub)=>`<div class="award-card"><div class="award-icon">${icon}</div><span>${title}</span><strong>${m?esc(m.cls):'-'}</strong><small>${m?`${value}${sub||''}`:'Data belum cukup'}</small></div>`;
+    target.innerHTML=`<div class="analysis-period">Periode ${current.start} s.d. ${current.end}</div>
+      <div class="award-grid">
+        ${award('🏆','Kelas Eco Terbaik',bestEco,bestEco?.eco??'', ' poin')}
+        ${award(ICON_WADAH_MAKAN,'Wadah Makan Terbaik',bestFood,bestFood?.foodPct??'', '%')}
+        ${award(ICON_TUMBLER,'Tumbler Terbaik',bestTumb,bestTumb?.tumbPct??'', '%')}
+        ${award('✨','Kelas Terbersih',bestClean,bestClean?.cleanPct??'', '%')}
+        ${award('📈','Paling Meningkat',improved,improved?`+${improved.change}`:'', ' poin')}
+      </div>
+      <div class="attention-box"><div class="section-head"><div><h4>Perlu Perhatian</h4><small>Bukan “kelas terburuk”. Bagian ini membantu menentukan fokus pembinaan.</small></div></div>
+      ${attention.length?attention.map(m=>{
+        const vals=[['Wadah Makan',m.foodPct],['Tumbler',m.tumbPct],['Kebersihan',m.cleanPct]].filter(x=>x[1]!==null).sort((a,b)=>a[1]-b[1]);
+        const focus=vals[0];
+        return `<div class="attention-row"><b>${esc(m.cls)}</b><span>Eco ${m.eco}</span><span>${m.change===null?'Belum ada pembanding':`${m.change>0?'↑':'↓'} ${Math.abs(m.change)} poin dari minggu lalu`}</span><strong>Fokus: ${focus?`${focus[0]} ${focus[1]}%`:'lengkapi data'}</strong></div>`;
+      }).join(''):'<div class="empty">Belum ada data yang cukup.</div>'}</div>
+      <div class="analysis-note">Bobot Kelas Eco: Wadah Makan 30% + Tumbler 30% + Kebersihan 40%. Hasil ini digunakan untuk apresiasi dan kontrol, bukan hukuman.</div>`;
+  }).catch(e=>{console.error(e);if($('#awardsBody'))$('#awardsBody').innerHTML='<div class="empty">Apresiasi belum dapat dihitung.</div>'});
 }
 
 function account(){
