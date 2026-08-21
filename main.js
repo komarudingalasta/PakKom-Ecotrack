@@ -268,6 +268,19 @@ $('#registerSubmit').onclick=async()=>{
 };
 
 
+
+async function changeOwnPassword(oldPassword,newPassword){
+  if(!state.user?.email)throw new Error('Email akun tidak tersedia');
+  const cred=EmailAuthProvider.credential(state.user.email,oldPassword);
+  await reauthenticateWithCredential(state.user,cred);
+  await updatePassword(state.user,newPassword);
+}
+function passwordPanel(){
+  pageMeta('Ubah Password','Kelola keamanan akun Anda');
+  content.innerHTML=`<div class="card"><h3>Ubah Password</h3><label>Password Lama<div class="password-wrap"><input id="pwOld" type="password"><button class="pw-eye" data-eye="pwOld">👁</button></div></label><label>Password Baru<div class="password-wrap"><input id="pwNew" type="password"><button class="pw-eye" data-eye="pwNew">👁</button></div></label><label>Ulangi Password Baru<div class="password-wrap"><input id="pwNew2" type="password"><button class="pw-eye" data-eye="pwNew2">👁</button></div></label><button id="savePassword" class="btn primary">Ubah Password</button></div>`;
+  document.querySelectorAll('[data-eye]').forEach(b=>b.onclick=()=>{const x=$('#'+b.dataset.eye);x.type=x.type==='password'?'text':'password'});
+  $('#savePassword').onclick=async()=>{try{const a=$('#pwOld').value,b=$('#pwNew').value,c=$('#pwNew2').value;if(b.length<6)throw new Error('Password baru minimal 6 karakter');if(b!==c)throw new Error('Konfirmasi password tidak sama');await changeOwnPassword(a,b);toast('Password berhasil diubah. Silakan login kembali.');await signOut(auth)}catch(e){toast(e.message||'Gagal mengubah password')}};
+}
 async function logoutNow(){
   state.user=null;
   state.profile=null;
@@ -504,6 +517,7 @@ function renderStudentRows(){
   });
 }
 async function saveClass(c){
+  const wt=wadahTimeInfo(); if(state.profile.role!=='admin'&&!wt.open){toast(`Pendataan hari ini sudah ditutup (${wt.label})`);return;}
   if(!window.formItems?.length){toast('Belum ada siswa di kelas ini');return;}
   const btn=$('#saveBtn');btn.disabled=true;btn.textContent='Menyimpan...';
   try{
@@ -523,6 +537,23 @@ async function saveClass(c){
 }
 
 
+
+function wadahTimeInfo(){
+  const n=new Date(), d=n.getDay(), m=n.getHours()*60+n.getMinutes();
+  if(d>=1&&d<=4)return {open:m<850,close:850,label:'14.10'}; // 14:10
+  if(d===5)return {open:m<690,close:690,label:'11.30'};       // 11:30
+  return {open:false,close:0,label:'Hari libur'};
+}
+async function addAdminAudit(action, detail={}){
+  if(state.profile?.role!=='admin')return;
+  try{
+    const now=new Date(), id=`${now.getTime()}_${state.user.uid}`;
+    await setDoc(doc(db,'auditLogs',id),{
+      action,detail,adminUid:state.user.uid,adminName:state.profile.name||'Admin',
+      createdAt:now.toISOString(),date:todayKey()
+    });
+  }catch(e){console.warn('Audit log gagal',e)}
+}
 function jpScheduleInfo(){
   const now=new Date(), day=now.getDay(), mins=now.getHours()*60+now.getMinutes();
   // Monday–Thursday: JP1 07:10, 40 min; breaks 20 min after JP4 and 40 min after JP7.
@@ -949,6 +980,21 @@ function renderTeacherMasterTable(){
  document.querySelectorAll('[data-edit-teacher]').forEach(b=>b.onclick=()=>editTeacherProfile(b.dataset.editTeacher));document.querySelectorAll('[data-delete-teacher]').forEach(b=>b.onclick=()=>deleteTeacherAccount(b.dataset.deleteTeacher));
 }
 
+
+async function resetWadahRecord(recordId){
+  if(state.profile.role!=='admin')return;
+  const r=(state.records||[]).find(x=>x.id===recordId);
+  if(!r){toast('Data tidak ditemukan');return;}
+  if(!confirm(`Reset pendataan ${r.classId} tanggal ${r.date} menjadi Belum Pendataan?`))return;
+  try{
+    const now=new Date(), archiveId=`${recordId}_${now.getTime()}`;
+    await setDoc(doc(db,'recordResetArchive',archiveId),{...r,originalId:recordId,resetByUid:state.user.uid,resetByName:state.profile.name,resetAt:now.toISOString()});
+    await deleteDoc(doc(db,'records',recordId));
+    await addAdminAudit('RESET_WADAH',{recordId,classId:r.classId,date:r.date,archiveId});
+    await refreshCore(); toast(`${r.classId} kembali menjadi Belum Pendataan`);
+    if(typeof adminDataPage==='function')adminDataPage();
+  }catch(e){console.error(e);toast('Reset pendataan gagal')}
+}
 async function deleteTeacherAccount(uid){
   const u=(window.masterUsers||[]).find(x=>x.uid===uid);
   if(!u) return;
@@ -1466,3 +1512,12 @@ window.startPakKomApp = async function(core){
       });
   });
 })();
+
+async function adminAuditPage(){
+  if(state.profile.role!=='admin')return;
+  pageMeta('Riwayat Aktivitas Admin','Hanya dapat dilihat Administrator');
+  const q=await getDocs(query(collection(db,'auditLogs'),orderBy('createdAt','desc'),limit(200)));
+  const rows=q.docs.map(d=>({id:d.id,...d.data()}));
+  content.innerHTML=`<div class="card"><div class="master-tools"><input id="auditSearch" class="input-inline" placeholder="Cari aktivitas, kelas, atau admin"></div><div id="auditList"></div></div>`;
+  const draw=()=>{const x=($('#auditSearch').value||'').toLowerCase();$('#auditList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>Waktu</th><th>Admin</th><th>Aktivitas</th><th>Detail</th></tr></thead><tbody>${rows.filter(r=>JSON.stringify(r).toLowerCase().includes(x)).map(r=>`<tr><td>${esc(r.createdAt||'-')}</td><td>${esc(r.adminName||'-')}</td><td><b>${esc(r.action||'-')}</b></td><td>${esc(JSON.stringify(r.detail||{}))}</td></tr>`).join('')}</tbody></table></div>`};$('#auditSearch').oninput=draw;draw();
+}

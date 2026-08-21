@@ -27,6 +27,15 @@ service cloud.firestore {
   }
   match /settings/{id}{allow read:if activeUser();allow write:if isAdmin();}
   match /analysisPeriods/{id}{allow read:if activeUser();allow create,update,delete:if isAdmin();}
-  match /{document=**}{allow read,write:if false;}
+  
+  match /auditLogs/{id} {
+    allow read, create: if isAdmin();
+    allow update, delete: if false;
+  }
+  match /recordResetArchive/{id} {
+    allow read, create: if isAdmin();
+    allow update, delete: if false;
+  }
+match /{document=**}{allow read,write:if false;}
  }
 }

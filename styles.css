@@ -330,3 +330,5 @@ body{overflow-anchor:none}
 .jp-card.open{border-color:#7fc5a3;background:#f1fbf6}
 .jp-card.open strong{color:#24734e}.jp-card.missed strong{color:#8a5d5d}
 .analysis-period{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:14px 0}.analysis-period small{color:#718078}.compact-awards{margin-top:14px}.period-card .btn-mini{white-space:nowrap}
+
+.password-wrap{display:flex;gap:8px;align-items:center}.password-wrap input{flex:1}.pw-eye{min-width:44px;height:42px;border:1px solid #dfe8e3;border-radius:10px;background:#fff}
