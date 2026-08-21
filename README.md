@@ -1,21 +1,25 @@
-# PakKom Eco Track v2.9.4
+# PakKom Eco Track v3.0 — Stable Structure
 
-## Perubahan utama
-- Kalender operasional sekolah.
-- Senin–Kamis: JP 1–9.
-- Jumat: JP 1–5.
-- Sabtu–Minggu otomatis OFF.
-- Libur nasional Indonesia otomatis OFF melalui kalender hari libur nasional.
-- Admin dapat override tanggal tertentu dari **Kelola → Kalender Sekolah** untuk libur sekolah atau kegiatan khusus, termasuk jumlah JP.
-- Pada hari OFF, Wadah & Tumbler dan Pemeriksaan Kebersihan tidak dapat diinput dan dashboard tidak menandai kelas sebagai belum didata.
-- Penilaian kebersihan diperjelas:
-  - Lantai: Bersih / Cukup Bersih / Kotor
-  - Meja & Kursi: Rapi / Cukup Rapi / Berantakan
-  - Tempat Sampah: Terkelola / Hampir Penuh / Penuh / Meluber
-  - Perlengkapan Kelas: Rapi / Cukup Rapi / Berantakan
-- Tombol cepat menjadi **Semua Bersih & Rapi**.
+Versi ini merombak alur aplikasi agar login tidak bergantung pada query dashboard.
 
-## Catatan Firebase
-Tidak ada collection baru. Pengaturan kalender khusus disimpan pada `settings/calendar`, yang sudah tercakup oleh Firestore Rules v2.9.
+## Struktur proses
+1. Boot halaman
+2. Firebase Authentication
+3. Baca profil `users/{uid}`
+4. Tampilkan aplikasi
+5. Muat kelas, pendataan, kebersihan, kalender secara background
 
-Upload seluruh file repository agar cache version v2.9.4 ikut terpasang.
+Kegagalan salah satu query data tidak membatalkan login.
+
+## Modul
+- Wadah & Tumbler
+- Kebersihan Kelas
+- Rekap
+- Kelola Siswa
+- Kelola Guru & Wali Kelas
+- Kelola Kelas & Import
+- Kalender Sekolah
+- Approval akun guru/wali kelas
+
+## Penting
+Gunakan `firestore.rules` yang disertakan dan upload seluruh isi repository agar cache versi lama tidak terbaca.

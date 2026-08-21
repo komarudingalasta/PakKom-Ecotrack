@@ -68,6 +68,19 @@ let authResolved = false;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}} };
 
+const APP_VERSION='3.0';
+function withTimeout(promise, ms=5000, label='Proses'){
+  return Promise.race([
+    promise,
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error(`${label} terlalu lama.`)),ms))
+  ]);
+}
+function resetCoreState(){
+  state.classDocs=[]; state.classes=[]; state.recordsToday=[]; state.cleanlinessToday=[];
+  state.students=[]; state.calendarSettings={overrides:{}};
+}
+
+
 function toast(msg, ms=4200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.classList.remove('show'),ms); }
 function authErrorMessage(e){
   const code=e?.code||'';
@@ -105,7 +118,11 @@ function showLoginError(msg=''){
   el.textContent=msg; el.classList.toggle('hidden',!msg);
 }
 async function loadProfileForUser(user){
-  const snap=await getDoc(doc(db,'users',user.uid));
+  const snap=await withTimeout(
+    getDoc(doc(db,'users',user.uid)),
+    5000,
+    'Membaca profil pengguna'
+  );
   if(!snap.exists()) throw new Error(`Profil users/${user.uid} tidak ditemukan.`);
   const profile={uid:user.uid,...snap.data()};
   if(profile.rejected===true) throw new Error('Pendaftaran akun tidak disetujui Admin.');
@@ -114,15 +131,38 @@ async function loadProfileForUser(user){
   if(!['admin','guru'].includes(profile.role)) throw new Error('Role akun tidak dikenali.');
   return profile;
 }
+async function loadCoreDataInBackground(){
+  try{
+    await refreshCore();
+    if(state.profile) renderShell();
+  }catch(e){
+    console.error('Core data background error',e);
+    toast('Sebagian data belum dapat dimuat. Coba refresh menu jika diperlukan.',5000);
+  }
+  syncNationalHolidaysInBackground();
+}
+
 async function finishSignedIn(user){
   try{
     const profile=await loadProfileForUser(user);
-    state.user=user; state.profile=profile;
-    await refreshCore();
-    showAuthLoading(false); renderShell(); syncNationalHolidaysInBackground();
+    state.user=user;
+    state.profile=profile;
+    authResolved=true;
+
+    // Login selesai begitu Authentication + profil valid.
+    // Data dashboard dimuat setelah shell aplikasi sudah tampil.
+    showAuthLoading(false);
+    renderShell();
+    loadCoreDataInBackground();
   }catch(e){
-    console.error(e); await signOut(auth).catch(()=>{});
-    state.user=null; state.profile=null; showAuthLoading(false); renderShell();
+    console.error('Profile/login completion error',e);
+    await signOut(auth).catch(()=>{});
+    state.user=null;
+    state.profile=null;
+    resetCoreState();
+    authResolved=true;
+    showAuthLoading(false);
+    renderShell();
     showLoginError(e.message||'Profil akun tidak dapat dibaca.');
   }
 }
@@ -249,9 +289,12 @@ $('#loginForm').addEventListener('submit',async e=>{
     const cred=await signInWithEmailAndPassword(auth,email,password);
     if(id.toUpperCase()==='ADMIN' && cred.user.email?.toLowerCase()!==ADMIN_LOGIN_EMAIL.toLowerCase()) throw new Error('Akun ADMIN tidak sesuai konfigurasi.');
     const profile=await loadProfileForUser(cred.user);
-    state.user=cred.user; state.profile=profile;
-    await refreshCore();
-    authResolved=true; showAuthLoading(false); renderShell(); syncNationalHolidaysInBackground();
+    state.user=cred.user;
+    state.profile=profile;
+    authResolved=true;
+    showAuthLoading(false);
+    renderShell();
+    loadCoreDataInBackground();
   }catch(e){
     console.error(e); await signOut(auth).catch(()=>{});
     state.user=null; state.profile=null; renderShell();
@@ -261,21 +304,49 @@ $('#loginForm').addEventListener('submit',async e=>{
     loginInProgress=false; $('#loginBtn').disabled=false; $('#loginBtn').textContent='MASUK';
   }
 });
-$('#logoutBtn').onclick=()=>signOut(auth); if($('#quickLogout')) $('#quickLogout').onclick=()=>signOut(auth);
+async function logoutNow(){
+  state.user=null; state.profile=null; resetCoreState(); authResolved=true;
+  showAuthLoading(false); renderShell();
+  await signOut(auth).catch(()=>{});
+}
+$('#logoutBtn').onclick=logoutNow; if($('#quickLogout')) $('#quickLogout').onclick=logoutNow;
 $('#menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('open');
 
 async function refreshCore(){
-  const [classSnap, recordSnap, cleanSnap, calendarSnap] = await Promise.all([
-    getDocs(query(collection(db,'classes'),orderBy('name'))).catch(()=>null),
-    getDocs(query(collection(db,'records'),where('date','==',todayKey()))).catch(()=>null),
-    getDocs(query(collection(db,'cleanliness'),where('date','==',todayKey()))).catch(()=>null),
-    getDoc(doc(db,'settings','calendar')).catch(()=>null)
-  ]);
-  state.classDocs = classSnap ? classSnap.docs.map(d=>({id:d.id,...d.data()})) : [];
-  state.classes = state.classDocs.filter(c=>c.active!==false).map(c=>c.id);
-  state.recordsToday = recordSnap ? recordSnap.docs.map(d=>({id:d.id,...d.data()})) : [];
-  state.cleanlinessToday = cleanSnap ? cleanSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')) : [];
-  state.calendarSettings = calendarSnap?.exists?.() ? calendarSnap.data() : {overrides:{}};
+  const jobs=[
+    withTimeout(getDocs(query(collection(db,'classes'),orderBy('name'))),5000,'Memuat kelas'),
+    withTimeout(getDocs(query(collection(db,'records'),where('date','==',todayKey()))),5000,'Memuat pendataan hari ini'),
+    withTimeout(getDocs(query(collection(db,'cleanliness'),where('date','==',todayKey()))),5000,'Memuat kebersihan hari ini'),
+    withTimeout(getDoc(doc(db,'settings','calendar')),5000,'Memuat kalender sekolah')
+  ];
+  const [classRes,recordRes,cleanRes,calendarRes]=await Promise.allSettled(jobs);
+
+  if(classRes.status==='fulfilled'){
+    state.classDocs=classRes.value.docs.map(d=>({id:d.id,...d.data()}));
+    state.classes=state.classDocs.filter(c=>c.active!==false).map(c=>c.id);
+  } else console.warn(classRes.reason);
+
+  if(recordRes.status==='fulfilled'){
+    state.recordsToday=recordRes.value.docs.map(d=>({id:d.id,...d.data()}));
+  } else console.warn(recordRes.reason);
+
+  if(cleanRes.status==='fulfilled'){
+    state.cleanlinessToday=cleanRes.value.docs.map(d=>({id:d.id,...d.data()}))
+      .sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  } else console.warn(cleanRes.reason);
+
+  if(calendarRes.status==='fulfilled'){
+    state.calendarSettings=calendarRes.value?.exists?.()
+      ? calendarRes.value.data()
+      : {overrides:{}};
+  } else console.warn(calendarRes.reason);
+
+  return {
+    classes:classRes.status,
+    records:recordRes.status,
+    cleanliness:cleanRes.status,
+    calendar:calendarRes.status
+  };
 }
 
 function classRecord(c){ return state.recordsToday.find(r=>r.classId===c); }
