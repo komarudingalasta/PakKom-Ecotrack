@@ -9,6 +9,35 @@ const content = $('#content');
 const classesDefault = ['7A','7B','7C','7D','7E','7F','7G','7H','7I','8A','8B','8C','8D','8E','8F','8G','8H','8I','9A','9B','9C','9D','9E','9F','9G','9H','9I'];
 const todayKey = () => new Date().toLocaleDateString('en-CA');
 const dateID = () => new Intl.DateTimeFormat('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date());
+function dayFromKey(key){ const [y,m,d]=String(key).split('-').map(Number); return new Date(y,m-1,d).getDay(); }
+async function loadNationalHolidays(year){
+  const cacheKey=`pakkom_holidays_${year}`;
+  try{
+    const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');
+    if(cached && cached.savedAt && Date.now()-cached.savedAt<7*86400000){ state.holidays=cached.items||{}; return; }
+  }catch(_){ }
+  try{
+    const r=await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/ID`,{cache:'no-cache'});
+    if(!r.ok) throw new Error('holiday-api');
+    const arr=await r.json();
+    state.holidays=Object.fromEntries(arr.map(h=>[h.date,h.localName||h.name||'Libur Nasional']));
+    localStorage.setItem(cacheKey,JSON.stringify({savedAt:Date.now(),items:state.holidays}));
+  }catch(e){ console.warn('Gagal memuat kalender libur nasional',e); state.holidays=state.holidays||{}; }
+}
+function operationalInfo(dateKey=todayKey()){
+  const override=state.calendarSettings?.overrides?.[dateKey];
+  const dow=dayFromKey(dateKey);
+  const national=state.holidays?.[dateKey];
+  let active=!(dow===0||dow===6) && !national;
+  let jp=active?(dow===5?5:9):0;
+  let label=national?`Libur Nasional • ${national}`:(dow===0||dow===6?'Akhir Pekan':'Hari Sekolah');
+  if(override){
+    if(typeof override.active==='boolean') active=override.active;
+    if(Number.isFinite(Number(override.jp))) jp=active?Math.max(1,Math.min(12,Number(override.jp))):0;
+    label=override.label|| (active?'Hari Aktif Khusus':'Libur Sekolah');
+  }
+  return {active,jp,label,national:!!national,override};
+}
 const ADMIN_LOGIN_EMAIL = 'komarudingalasta@gmail.com';
 const loginEmail = id => {
   const normalized = String(id).trim().toUpperCase();
@@ -18,7 +47,7 @@ const loginEmail = id => {
 let app, auth, db;
 let authResolved = false;
 let loginInProgress = false;
-let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students' };
+let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}} };
 
 function toast(msg, ms=4200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.classList.remove('show'),ms); }
 function authErrorMessage(e){
@@ -156,16 +185,20 @@ $('#logoutBtn').onclick=()=>signOut(auth); if($('#quickLogout')) $('#quickLogout
 $('#menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('open');
 
 async function refreshCore(){
-  const [classSnap, recordSnap, cleanSnap] = await Promise.all([
+  await loadNationalHolidays(new Date().getFullYear());
+  const [classSnap, recordSnap, cleanSnap, calendarSnap] = await Promise.all([
     getDocs(query(collection(db,'classes'),orderBy('name'))).catch(()=>null),
     getDocs(query(collection(db,'records'),where('date','==',todayKey()))).catch(()=>null),
-    getDocs(query(collection(db,'cleanliness'),where('date','==',todayKey()))).catch(()=>null)
+    getDocs(query(collection(db,'cleanliness'),where('date','==',todayKey()))).catch(()=>null),
+    getDoc(doc(db,'settings','calendar')).catch(()=>null)
   ]);
   state.classDocs = classSnap ? classSnap.docs.map(d=>({id:d.id,...d.data()})) : [];
   state.classes = state.classDocs.filter(c=>c.active!==false).map(c=>c.id);
   state.recordsToday = recordSnap ? recordSnap.docs.map(d=>({id:d.id,...d.data()})) : [];
   state.cleanlinessToday = cleanSnap ? cleanSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')) : [];
+  state.calendarSettings = calendarSnap?.exists?.() ? calendarSnap.data() : {overrides:{}};
 }
+
 function classRecord(c){ return state.recordsToday.find(r=>r.classId===c); }
 
 function renderShell(){
@@ -191,13 +224,15 @@ function home(){
   const waliClass=state.profile?.isHomeroom?state.profile.homeroomClass:'';
   const waliRec=waliClass?classRecord(waliClass):null;
   const waliClean=waliClass?state.cleanlinessToday.find(x=>x.classId===waliClass):null;
+  const op=operationalInfo();
   content.innerHTML=`<div class="welcome"><span>Selamat datang,</span><h2>${esc(state.profile.name)} 👋</h2></div>
-  <div class="module-grid">
-    <div class="module-card module-wadah"><div class="module-icon">🥤</div><div><span class="eyebrow">PENDATAAN HARI INI</span><h3>Wadah & Tumbler</h3><strong>${done.size} dari ${state.classes.length} kelas</strong><div class="progress"><i style="width:${state.classes.length?Math.round(done.size/state.classes.length*100):0}%"></i></div><p>Wadah ${food}% • Tumbler ${tumb}%</p></div><button class="btn primary module-go" data-go="input">Mulai Pendataan →</button></div>
-    <div class="module-card module-clean"><div class="module-icon">🧹</div><div><span class="eyebrow">PEMERIKSAAN HARI INI</span><h3>Kebersihan Kelas</h3><strong>${state.cleanlinessToday.length} pemeriksaan</strong><p>${lastClean?`Terakhir: ${esc(lastClean.classId)} • JP ${esc(lastClean.jp)} • ${esc(lastClean.timeLabel||'')}`:'Belum ada pemeriksaan hari ini'}</p></div><button class="btn clean-btn module-go" data-go="clean">+ Cek Kebersihan</button></div>
+  ${!op.active?`<div class="holiday-banner"><div>🏖️</div><div><b>Hari Tidak Aktif</b><span>${esc(op.label)} • Pendataan harian dan pemeriksaan kebersihan dinonaktifkan.</span></div></div>`:''}
+  <div class="module-grid ${!op.active?'modules-off':''}">
+    <div class="module-card module-wadah"><div class="module-icon">🥤</div><div><span class="eyebrow">PENDATAAN HARI INI</span><h3>Wadah & Tumbler</h3><strong>${done.size} dari ${state.classes.length} kelas</strong><div class="progress"><i style="width:${state.classes.length?Math.round(done.size/state.classes.length*100):0}%"></i></div><p>Wadah ${food}% • Tumbler ${tumb}%</p></div><button class="btn primary module-go" data-go="input" ${!op.active?'disabled':''}>${op.active?'Mulai Pendataan →':'Hari Libur'}</button></div>
+    <div class="module-card module-clean"><div class="module-icon">🧹</div><div><span class="eyebrow">PEMERIKSAAN HARI INI</span><h3>Kebersihan Kelas</h3><strong>${state.cleanlinessToday.length} pemeriksaan</strong><p>${lastClean?`Terakhir: ${esc(lastClean.classId)} • JP ${esc(lastClean.jp)} • ${esc(lastClean.timeLabel||'')}`:'Belum ada pemeriksaan hari ini'}</p></div><button class="btn clean-btn module-go" data-go="clean" ${!op.active?'disabled':''}>${op.active?'+ Cek Kebersihan':'Hari Libur'}</button></div>
   </div>
   ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>🥤 ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div></div>`:''}
-  <div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah & Tumbler</h3><small>Hanya pendataan wadah & tumbler yang dihitung sekali per kelas per hari.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`;
+  ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah & Tumbler</h3><small>Hanya pendataan wadah & tumbler yang dihitung sekali per kelas per hari.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
   document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;renderShell()});
   document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';renderShell()});
 }
@@ -205,6 +240,7 @@ function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b
 
 function inputPage(){
   pageMeta('Wadah & Tumbler','Pilih kelas lalu tandai kondisi siswa');
+  const op=operationalInfo(); if(!op.active){ content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p><small>Pendataan Wadah & Tumbler tidak tersedia hari ini.</small></div>`; return; }
   if(!state.selectedClass){ content.innerHTML=`<div class="card"><h3>Pilih Kelas</h3><div class="grid class-grid">${state.classes.map(c=>{const r=classRecord(c);return `<button class="class-btn ${r?'done':'pending'}" data-class="${c}"><b>${c}</b><small>${r?'Sudah didata':'Belum didata'}</small></button>`}).join('')}</div></div>`; bindClassButtons(); return; }
   loadClassForm(state.selectedClass);
 }
@@ -259,6 +295,7 @@ async function saveClass(c){
 
 function cleanlinessPage(){
   pageMeta('Kebersihan Kelas','Pemeriksaan dapat dilakukan beberapa kali dalam sehari');
+  const op=operationalInfo(); if(!op.active){ content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p><small>Pemeriksaan kebersihan tidak tersedia hari ini.</small></div>`; return; }
   const list=state.cleanlinessToday;
   content.innerHTML=`<div class="clean-hero card"><div><span class="eyebrow">🧹 MODUL KEBERSIHAN</span><h3>Pemeriksaan Kebersihan Kelas</h3><p>Catat hanya pemeriksaan yang dilakukan. Tidak ada daftar JP yang belum diperiksa.</p></div><button id="newClean" class="btn primary">+ Pemeriksaan Baru</button></div>
   <div class="card"><div class="section-head"><div><h3 style="margin:0">Pemeriksaan Hari Ini</h3><small>${list.length} pemeriksaan tercatat</small></div></div>
@@ -273,18 +310,20 @@ function cleanOverall(r){
   const vals=['floor','desks','bin','equipment'].map(k=>Number(r[k]||0));
   const min=Math.min(...vals);
   const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
-  if(min===1 || avg<2) return {label:'Perlu Ditangani',cls:'bad'};
-  if(vals.every(v=>v===3)) return {label:'Baik',cls:'good'};
+  if(min===1 || avg<2) return {label:'Perlu Tindakan',cls:'bad'};
+  if(vals.every(v=>v===3)) return {label:'Bersih & Rapi',cls:'good'};
   return {label:'Cukup',cls:'fair'};
 }
 function renderCleanForm(){
-  pageMeta('Pemeriksaan Kebersihan','Pilih kelas dan JP, lalu nilai 4 aspek');
-  const aspect=(key,label,icon)=>`<div class="aspect-row"><div class="aspect-name"><span>${icon}</span><b>${label}</b></div><div class="tri-choice" data-aspect="${key}"><button data-v="3" class="good active">Baik</button><button data-v="2" class="fair">Cukup</button><button data-v="1" class="bad">Perlu</button></div></div>`;
-  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Pemeriksaan Baru</h3><small>Hanya pemeriksaan yang disimpan akan muncul di riwayat.</small></div><button class="btn ghost" id="backClean">← Kembali</button></div>
-  <div class="card clean-form"><div class="form-grid"><label>Kelas<select id="cleanClass">${state.classes.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label><label>JP<select id="cleanJp">${Array.from({length:12},(_,i)=>`<option value="${i+1}">JP ${i+1}</option>`).join('')}</select></label></div>
-  <div class="aspect-list">${aspect('floor','Lantai','🧹')}${aspect('desks','Meja & Kursi','🪑')}${aspect('bin','Tempat Sampah','🗑️')}${aspect('equipment','Perlengkapan Kelas','📚')}</div>
+  const op=operationalInfo();
+  if(!op.active){ cleanlinessPage(); return; }
+  pageMeta('Pemeriksaan Kebersihan',`Pilih kelas dan JP 1–${op.jp}, lalu nilai 4 aspek`);
+  const aspect=(key,label,icon,labels)=>`<div class="aspect-row"><div class="aspect-name"><span>${icon}</span><b>${label}</b></div><div class="tri-choice" data-aspect="${key}"><button data-v="3" class="good active">${labels[0]}</button><button data-v="2" class="fair">${labels[1]}</button><button data-v="1" class="bad">${labels[2]}</button></div></div>`;
+  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Pemeriksaan Baru</h3><small>${esc(op.label)} • ${op.jp} JP tersedia hari ini.</small></div><button class="btn ghost" id="backClean">← Kembali</button></div>
+  <div class="card clean-form"><div class="form-grid"><label>Kelas<select id="cleanClass">${state.classes.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label><label>JP<select id="cleanJp">${Array.from({length:op.jp},(_,i)=>`<option value="${i+1}">JP ${i+1}</option>`).join('')}</select></label></div>
+  <div class="aspect-list">${aspect('floor','Lantai','🧹',['Bersih','Cukup Bersih','Kotor'])}${aspect('desks','Meja & Kursi','🪑',['Rapi','Cukup Rapi','Berantakan'])}${aspect('bin','Tempat Sampah','🗑️',['Terkelola','Hampir Penuh','Penuh / Meluber'])}${aspect('equipment','Perlengkapan Kelas','📚',['Rapi','Cukup Rapi','Berantakan'])}</div>
   <label>Catatan <small>(opsional)</small><textarea id="cleanNote" rows="3" placeholder="Contoh: tempat sampah hampir penuh"></textarea></label>
-  <div class="clean-actions"><button id="allGood" class="btn secondary">✓ Semua Baik</button><button id="saveClean" class="btn primary">Simpan Pemeriksaan</button></div></div>`;
+  <div class="clean-actions"><button id="allGood" class="btn secondary">✓ Semua Bersih & Rapi</button><button id="saveClean" class="btn primary">Simpan Pemeriksaan</button></div></div>`;
   const values={floor:3,desks:3,bin:3,equipment:3};
   document.querySelectorAll('.tri-choice button').forEach(b=>b.onclick=()=>{
     const wrap=b.parentElement; values[wrap.dataset.aspect]=Number(b.dataset.v);
@@ -293,9 +332,11 @@ function renderCleanForm(){
   $('#allGood').onclick=()=>{Object.keys(values).forEach(k=>values[k]=3);document.querySelectorAll('.tri-choice').forEach(w=>w.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x.dataset.v==='3')));};
   $('#backClean').onclick=cleanlinessPage;
   $('#saveClean').onclick=async()=>{
+    const currentOp=operationalInfo(); if(!currentOp.active){toast('Hari ini sudah ditandai sebagai hari tidak aktif.');return;}
     const btn=$('#saveClean'); btn.disabled=true; btn.textContent='Menyimpan...';
     try{
       const now=new Date(), classId=$('#cleanClass').value, jp=Number($('#cleanJp').value);
+      if(jp<1||jp>currentOp.jp) throw new Error('JP tidak tersedia untuk hari ini');
       const id=`${todayKey()}_${classId}_JP${jp}_${Date.now()}`;
       await setDoc(doc(db,'cleanliness',id),{date:todayKey(),classId,jp,...values,note:$('#cleanNote').value.trim(),createdByUid:state.user.uid,createdByName:state.profile.name,createdAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})});
       await refreshCore(); toast(`Pemeriksaan ${classId} • JP ${jp} tersimpan`); cleanlinessPage();
@@ -328,14 +369,14 @@ function renderCleanRecap(){
 }
 async function loadCleanRecap(){
   const target=$('#cleanRecapBody'); if(!target)return; const date=$('#cleanRecapDate').value||todayKey(),cls=$('#cleanRecapClass').value||'';
-  try{const snap=await getDocs(query(collection(db,'cleanliness'),where('date','==',date)));let rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));if(cls)rows=rows.filter(r=>r.classId===cls);target.innerHTML=rows.length?`<div class="clean-list">${rows.map(cleanCard).join('')}</div>`:'<div class="empty">Belum ada pemeriksaan kebersihan pada pilihan ini.</div>';}catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap kebersihan. Pastikan Firestore Rules v2.8 sudah dipublish.</div>';}
+  try{const snap=await getDocs(query(collection(db,'cleanliness'),where('date','==',date)));let rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));if(cls)rows=rows.filter(r=>r.classId===cls);target.innerHTML=rows.length?`<div class="clean-list">${rows.map(cleanCard).join('')}</div>`:'<div class="empty">Belum ada pemeriksaan kebersihan pada pilihan ini.</div>';}catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap kebersihan. Pastikan Firestore Rules v2.9.1 sudah dipublish.</div>';}
 }
 
 function account(){ pageMeta('Akun','Informasi pengguna'); const type=state.profile.role==='admin'?'Administrator':(state.profile.isHomeroom?'Wali Kelas':'Guru'); const wali=state.profile.isHomeroom&&state.profile.homeroomClass?`<p><b>Kelas Wali:</b> ${esc(state.profile.homeroomClass)}</p>`:''; content.innerHTML=`<div class="card" style="max-width:600px"><h3>${esc(state.profile.name)}</h3><p><b>ID:</b> ${esc(state.profile.loginId||'-')}</p><p><b>Peran:</b> ${type}</p>${wali}<p><b>Status:</b> ${state.profile.active!==false?'Aktif':'Nonaktif'}</p><div class="notice">Guru dan wali kelas memiliki akses pendataan yang sama. Penanda wali kelas digunakan sebagai informasi tanggung jawab kelas.</div></div>`; }
 
 async function master(){
   if(state.profile.role!=='admin'){state.page='home';return renderShell()}
-  pageMeta('Kelola Data','Khusus Administrator • v2.9');
+  pageMeta('Kelola Data','Khusus Administrator • v2.9.1');
   content.innerHTML='<div class="card"><div class="empty">Memuat data master...</div></div>';
   const [stuSnap,userSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users'))]);
   state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));
@@ -356,6 +397,7 @@ async function master(){
     <button class="master-tab ${state.masterTab==='students'?'active':''}" data-master-tab="students">👨‍🎓 Data Siswa</button>
     <button class="master-tab ${state.masterTab==='teachers'?'active':''}" data-master-tab="teachers">👨‍🏫 Guru & Wali Kelas${pendingTeachers.length?` <span class="tab-count">${pendingTeachers.length}</span>`:''}</button>
     <button class="master-tab ${state.masterTab==='classes'?'active':''}" data-master-tab="classes">🏫 Kelas & Import</button>
+    <button class="master-tab ${state.masterTab==='calendar'?'active':''}" data-master-tab="calendar">📅 Kalender Sekolah</button>
     <button class="master-tab ${state.masterTab==='audit'?'active':''}" data-master-tab="audit">🕒 Riwayat</button>
   </div>
   <div id="masterTabContent"></div>`;
@@ -391,7 +433,31 @@ function renderMasterTab(){
     $('#seedClasses').onclick=seedClasses; $('#importAttendance').onclick=()=>$('#attendanceImport').click();
     document.querySelectorAll('[data-delete-class]').forEach(b=>b.onclick=()=>deleteClassMaster(b.dataset.deleteClass)); return;
   }
+  if(state.masterTab==='calendar'){
+    renderCalendarSettings(); return;
+  }
   target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Riwayat Koreksi Hari Ini</h3><small>Menampilkan perubahan pada pendataan hari ini.</small></div></div><div id="auditTable"></div></div>`; renderAuditTable();
+}
+function renderCalendarSettings(){
+  const target=$('#masterTabContent'); if(!target)return;
+  const key=window.calendarEditDate||todayKey(); const info=operationalInfo(key); const ov=state.calendarSettings?.overrides?.[key]||{};
+  target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Kalender Operasional Sekolah</h3><small>Senin–Kamis 9 JP • Jumat 5 JP • Sabtu–Minggu dan libur nasional otomatis OFF.</small></div></div>
+  <div class="notice">Libur nasional dimuat otomatis dari kalender Indonesia. Admin dapat mengubah status tanggal tertentu untuk libur sekolah atau kegiatan khusus.</div>
+  <div class="calendar-editor"><label>Tanggal<input id="calendarDate" type="date" value="${key}"></label><div class="calendar-current"><span>Status otomatis</span><b class="${info.active?'text-ok':'text-off'}">${info.active?'AKTIF':'OFF'}</b><small>${esc(info.label)}${info.active?` • ${info.jp} JP`:''}</small></div></div>
+  <div class="calendar-options"><label>Status Override<select id="calendarActive"><option value="auto" ${ov.active===undefined?'selected':''}>Ikuti kalender otomatis</option><option value="on" ${ov.active===true?'selected':''}>Paksa Aktif</option><option value="off" ${ov.active===false?'selected':''}>Paksa Libur / OFF</option></select></label><label>Jumlah JP<input id="calendarJp" type="number" min="1" max="12" value="${ov.jp||info.jp||9}"></label><label>Keterangan<input id="calendarLabel" value="${esc(ov.label||'')}" placeholder="Contoh: Libur sekolah / Kegiatan khusus"></label></div>
+  <div class="clean-actions"><button id="removeCalendarOverride" class="btn ghost" ${ov.active===undefined&&!ov.label&&!ov.jp?'disabled':''}>Hapus Override</button><button id="saveCalendarOverride" class="btn primary">Simpan Pengaturan Tanggal</button></div></div>`;
+  $('#calendarDate').onchange=e=>{window.calendarEditDate=e.target.value;renderCalendarSettings();};
+  $('#saveCalendarOverride').onclick=saveCalendarOverride; $('#removeCalendarOverride').onclick=removeCalendarOverride;
+}
+async function saveCalendarOverride(){
+  const key=$('#calendarDate').value, mode=$('#calendarActive').value, label=$('#calendarLabel').value.trim(), jp=Math.max(1,Math.min(12,Number($('#calendarJp').value)||9));
+  const overrides={...(state.calendarSettings?.overrides||{})};
+  if(mode==='auto'&&!label){delete overrides[key]} else {overrides[key]={...(mode==='on'?{active:true}:{mode==='off'?{active:false}:{}}),jp,label};}
+  try{await setDoc(doc(db,'settings','calendar'),{overrides,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name},{merge:true});await refreshCore();toast('Kalender sekolah diperbarui');renderCalendarSettings();}catch(e){console.error(e);toast('Gagal menyimpan kalender sekolah');}
+}
+async function removeCalendarOverride(){
+  const key=$('#calendarDate').value,overrides={...(state.calendarSettings?.overrides||{})};delete overrides[key];
+  try{await setDoc(doc(db,'settings','calendar'),{overrides,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name},{merge:true});await refreshCore();toast('Override tanggal dihapus');renderCalendarSettings();}catch(e){console.error(e);toast('Gagal menghapus override');}
 }
 
 function filteredMasterStudents(){
