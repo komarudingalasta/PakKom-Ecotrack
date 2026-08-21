@@ -71,8 +71,15 @@ function navItems(){
 }
 
 function showAuthLoading(show=true){
-  $('#authLoading').classList.toggle('hidden',!show);
-  if(show){ $('#loginView').classList.add('hidden'); $('#appView').classList.add('hidden'); }
+  const loading=$('#authLoading'), login=$('#loginView'), appView=$('#appView');
+  if(loading) loading.classList.toggle('hidden',!show);
+  if(show){
+    if(login) login.classList.add('hidden');
+    if(appView) appView.classList.add('hidden');
+  } else if(window.__pakkomAuthFallback){
+    clearTimeout(window.__pakkomAuthFallback);
+    window.__pakkomAuthFallback=null;
+  }
 }
 function showLoginError(msg=''){
   const el=$('#loginError'); if(!el)return;
@@ -116,13 +123,23 @@ async function startAuthObserver(){
   showAuthLoading(true);
   const text=$('#authLoadingText'); if(text) text.textContent='Memeriksa sesi...';
   const retry=$('#authRetry'); if(retry) retry.classList.add('hidden');
+
+  // Persistence tidak boleh menahan observer.
+  setPersistence(auth,browserLocalPersistence).catch(e=>console.warn('Persistence fallback',e));
+
   if(authBootTimer) clearTimeout(authBootTimer);
-  authBootTimer=setTimeout(()=>failAuthBoot('Pemeriksaan sesi terlalu lama. Periksa koneksi lalu coba lagi.'),8000);
+  authBootTimer=setTimeout(()=>{
+    // Jangan tahan layar. Jika auth belum memberi jawaban, tampilkan login.
+    if(!authResolved){
+      authResolved=true;
+      state.user=null; state.profile=null;
+      showAuthLoading(false);
+      renderShell();
+      showLoginError('Pemeriksaan sesi terlalu lama. Silakan login kembali.');
+    }
+  },4500);
+
   try{
-    await Promise.race([
-      setPersistence(auth,browserLocalPersistence),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('persistence-timeout')),4500))
-    ]).catch(e=>console.warn('Persistence fallback',e));
     onAuthStateChanged(auth, async user=>{
       if(loginInProgress) return;
       resolveAuthBoot();
@@ -134,10 +151,17 @@ async function startAuthObserver(){
       await finishSignedIn(user);
     }, err=>{
       console.error('Auth observer error',err);
-      failAuthBoot('Gagal terhubung ke Firebase Authentication.');
+      resolveAuthBoot();
+      state.user=null; state.profile=null;
+      showAuthLoading(false); renderShell();
+      showLoginError('Gagal terhubung ke Firebase Authentication. Silakan login kembali.');
     });
   }catch(e){
-    console.error(e); failAuthBoot('Gagal memulai pemeriksaan sesi.');
+    console.error(e);
+    resolveAuthBoot();
+    state.user=null; state.profile=null;
+    showAuthLoading(false); renderShell();
+    showLoginError('Gagal memulai pemeriksaan sesi.');
   }
 }
 if(!configured){
@@ -208,7 +232,7 @@ $('#loginForm').addEventListener('submit',async e=>{
     const profile=await loadProfileForUser(cred.user);
     state.user=cred.user; state.profile=profile;
     await refreshCore();
-    authResolved=true; renderShell();
+    authResolved=true; showAuthLoading(false); renderShell();
   }catch(e){
     console.error(e); await signOut(auth).catch(()=>{});
     state.user=null; state.profile=null; renderShell();
