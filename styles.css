@@ -140,3 +140,38 @@
 /* v3.3.6 session & account usability */
 .role-label{font-weight:800;color:#35685b}
 .row-actions{display:flex;gap:6px;flex-wrap:wrap}
+
+/* Session & Header Polish */
+.boot-view{position:fixed;inset:0;z-index:9999;background:#f6faf7;display:grid;place-items:center}
+.boot-view.hidden{display:none}
+.boot-brand{display:flex;flex-direction:column;align-items:center;gap:8px;color:#234d3d}
+.boot-logo{width:64px;height:64px;border-radius:20px;background:#e6f4eb;display:grid;place-items:center;font-size:32px;margin-bottom:4px}
+.boot-brand strong{font-size:21px}
+.boot-brand span{font-size:13px;color:#718079}
+.boot-loader{width:110px;height:3px;background:#dce8e1;border-radius:99px;overflow:hidden;margin-top:10px}
+.boot-loader:after{content:"";display:block;width:45%;height:100%;background:#4b8a6c;border-radius:99px;animation:bootmove 1s ease-in-out infinite}
+@keyframes bootmove{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+.profile-trigger{margin-left:auto;border:1px solid #e1e9e5;background:#fff;border-radius:14px;padding:6px 9px 6px 6px;display:flex;align-items:center;gap:8px;cursor:pointer;min-width:0}
+.profile-trigger:hover{background:#f7faf8}
+.profile-avatar{width:34px;height:34px;border-radius:11px;background:#e6f4eb;color:#285a43;display:grid;place-items:center;font-weight:900;font-size:12px;flex:0 0 auto}
+.user-chip{display:flex;flex-direction:column;text-align:left;line-height:1.15;min-width:0}
+.user-chip b{font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-chip .role-label{font-size:10px;margin-top:3px;color:#65746e}
+.profile-chevron{font-size:15px;color:#73817b}
+.profile-menu{position:absolute;right:18px;top:62px;z-index:80;width:245px;background:#fff;border:1px solid #e0e8e4;border-radius:16px;box-shadow:0 14px 40px rgba(32,60,48,.14);padding:8px}
+.profile-menu.hidden{display:none}
+.profile-menu-head{padding:10px 10px 12px;display:flex;flex-direction:column;gap:4px;border-bottom:1px solid #edf1ef}
+.profile-menu-head b{font-size:14px}.profile-menu-head span{font-size:11px;color:#6c7974}
+.profile-logout{width:100%;margin-top:6px;border:0;background:transparent;border-radius:10px;padding:10px;display:flex;align-items:center;gap:9px;text-align:left;font-weight:750;color:#8a3434;cursor:pointer}
+.profile-logout:hover{background:#fff3f3}
+.profile-logout svg,.logout-confirm-icon svg{width:20px;height:20px;fill:currentColor}
+.logout-confirm-card{max-width:380px;text-align:center;padding:26px}
+.logout-confirm-icon{margin:0 auto 12px;width:48px;height:48px;border-radius:15px;background:#fff0f0;color:#a33f3f;display:grid;place-items:center}
+.logout-confirm-card h3{margin:0 0 7px}.logout-confirm-card p{margin:0;color:#69756f;font-size:13px}
+.logout-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:22px}
+.btn.danger{background:#a84343;color:#fff;border-color:#a84343}
+@media(max-width:700px){
+ .profile-trigger{padding:5px;border-radius:12px}
+ .profile-trigger .user-chip,.profile-chevron{display:none}
+ .profile-menu{right:10px;top:58px;width:min(245px,calc(100vw - 20px))}
+}

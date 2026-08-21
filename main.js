@@ -133,7 +133,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}} };
 
-const APP_VERSION='3.3.3';
+const APP_VERSION='3.3.7';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -270,6 +270,7 @@ async function logoutNow(){
   state.profile=null;
   resetCoreState();
   authResolved=true;
+  $('#bootView')?.classList.add('hidden');
   renderShell();
   try{
     if(window.PAKKOM_COMPAT_CORE){
@@ -283,7 +284,13 @@ async function logoutNow(){
   showLoginError('');
 }
 
-$('#logoutBtn').onclick=logoutNow; if($('#quickLogout')) $('#quickLogout').onclick=logoutNow;
+const profileTrigger=$('#profileTrigger');
+const profileMenu=$('#profileMenu');
+if(profileTrigger) profileTrigger.onclick=(e)=>{e.stopPropagation();profileMenu?.classList.toggle('hidden')};
+document.addEventListener('click',(e)=>{if(profileMenu && !profileMenu.contains(e.target) && !profileTrigger?.contains(e.target)) profileMenu.classList.add('hidden')});
+if($('#quickLogout')) $('#quickLogout').onclick=()=>{profileMenu?.classList.add('hidden');$('#logoutModal')?.classList.remove('hidden')};
+if($('#cancelLogout')) $('#cancelLogout').onclick=()=>$('#logoutModal')?.classList.add('hidden');
+if($('#confirmLogout')) $('#confirmLogout').onclick=async()=>{const b=$('#confirmLogout');b.disabled=true;b.textContent='Keluar...';await logoutNow();$('#logoutModal')?.classList.add('hidden');b.disabled=false;b.textContent='Keluar'};
 $('#menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('open');
 
 async function refreshCore(){
@@ -327,17 +334,24 @@ function classRecord(c){ return state.recordsToday.find(r=>r.classId===c); }
 
 function renderShell(){
   if(!state.profile){
+    $('#bootView')?.classList.add('hidden');
     $('#loginView').classList.remove('hidden');
     $('#appView').classList.add('hidden');
     return;
   }
+  $('#bootView')?.classList.add('hidden');
   showLoginError(''); $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden');
   const chipRole=state.profile.role==='admin'
     ? 'Administrator'
     : (state.profile.isHomeroom
         ? `Wali Kelas • ${esc(state.profile.homeroomClass||'-')}`
         : 'Guru');
-  $('#userChip').innerHTML=`<b>${esc(state.profile.name)}</b><br><span class="role-label">${chipRole}</span>`;
+  const displayName=state.profile.name||state.profile.loginId||'Pengguna';
+  const initials=displayName.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase()||'PK';
+  $('#userChip').innerHTML=`<b>${esc(displayName)}</b><span class="role-label">${chipRole}</span>`;
+  if($('#profileAvatar')) $('#profileAvatar').textContent=initials;
+  if($('#profileMenuName')) $('#profileMenuName').textContent=displayName;
+  if($('#profileMenuRole')) $('#profileMenuRole').textContent=chipRole;
   $('#nav').innerHTML=navItems().map(([k,l])=>`<button class="nav-btn ${state.page===k?'active':''}" data-page="${k}">${l}</button>`).join('');
   document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;state.selectedClass=null;renderShell();document.querySelector('.sidebar').classList.remove('open')});
   renderPage();
@@ -1000,19 +1014,44 @@ window.startPakKomApp = async function(core){
   }
 
   // Pulihkan sesi secara diam-diam setelah refresh. Tidak ada splash "memeriksa sesi".
+  var bootResolved=false;
+  var bootTimer=setTimeout(function(){
+    if(bootResolved) return;
+    bootResolved=true;
+    qs('#bootView')?.classList.add('hidden');
+    if(!auth.currentUser){
+      qs('#loginView').classList.remove('hidden');
+      qs('#appView').classList.add('hidden');
+    }
+  },1800);
+
   auth.onAuthStateChanged(function(user){
     if(window.PAKKOM_COMPAT_CORE.intentionalLogout){
       window.PAKKOM_COMPAT_CORE.intentionalLogout=false;
+      bootResolved=true; clearTimeout(bootTimer);
+      qs('#bootView')?.classList.add('hidden');
+      qs('#loginView').classList.remove('hidden');
+      qs('#appView').classList.add('hidden');
       return;
     }
     if(user && window.PAKKOM_COMPAT_CORE.startedUid!==user.uid){
-      startAuthenticatedUser(user).catch(function(err){
+      startAuthenticatedUser(user).then(function(){
+        bootResolved=true; clearTimeout(bootTimer);
+        qs('#bootView')?.classList.add('hidden');
+      }).catch(function(err){
+        bootResolved=true; clearTimeout(bootTimer);
         console.error('SESSION RESTORE',err);
         auth.signOut().catch(function(){});
+        qs('#bootView')?.classList.add('hidden');
         qs('#loginView').classList.remove('hidden');
         qs('#appView').classList.add('hidden');
         showError(authMessage(err));
       });
+    } else if(!user){
+      bootResolved=true; clearTimeout(bootTimer);
+      qs('#bootView')?.classList.add('hidden');
+      qs('#loginView').classList.remove('hidden');
+      qs('#appView').classList.add('hidden');
     }
   });
 
