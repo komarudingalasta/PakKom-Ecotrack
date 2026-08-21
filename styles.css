@@ -83,3 +83,56 @@
 .core-loading-note{padding:10px 12px;border-radius:12px;background:#f8fafc;color:#64748b;font-size:12px}
 
 /* v3.2 Auth Core Rebuild */
+
+
+/* v3.3.5 — Wadah & Tumbler usability */
+.top-logout{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.logout-side{font-weight:700}
+.attendance-card{overflow:visible}
+.wadah-sticky-tools{position:sticky;top:0;z-index:8;background:rgba(255,255,255,.97);padding:10px 0 12px;border-bottom:1px solid #e8eef0;backdrop-filter:blur(8px)}
+.wadah-bulk{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.wadah-summary,.save-summary{font-size:13px;color:#61706b;font-weight:600}
+.student-card-list{display:grid;gap:10px;margin-top:12px}
+.student-entry{border:1px solid #e3ebe7;border-radius:16px;padding:13px;background:#fff;transition:.18s ease}
+.student-entry.complete{border-color:#b9dfc8;background:#f7fcf9}
+.student-entry.absent{background:#fafafa;opacity:.82}
+.student-entry-head{display:flex;align-items:center;gap:10px;margin-bottom:11px}
+.student-number{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:#edf5f0;font-weight:800;color:#315d49;flex:0 0 auto}
+.student-identity{min-width:0;display:flex;flex-direction:column;gap:2px;flex:1}
+.student-identity b{font-size:15px;white-space:normal}
+.student-identity small{color:#74817c}
+.complete-badge{font-size:11px;font-weight:800;color:#267047;background:#e7f6ed;padding:5px 8px;border-radius:999px}
+.student-controls{display:grid;grid-template-columns:minmax(130px,1.35fr) repeat(2,minmax(105px,1fr));gap:8px;align-items:stretch}
+.presence-control{display:flex;flex-direction:column;gap:5px;margin:0}
+.presence-control span{font-size:11px;font-weight:800;color:#66736e;text-transform:uppercase;letter-spacing:.04em}
+.presence-control select{width:100%;min-height:46px}
+.carry-choice{border:1px solid #dce6e1;background:#f7f9f8;border-radius:12px;min-height:58px;padding:7px 8px;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:6px;align-items:center;text-align:left;cursor:pointer}
+.carry-choice>span{grid-row:1/3;font-size:20px}
+.carry-choice b{font-size:12px}
+.carry-choice small{font-size:11px;color:#77827e}
+.carry-choice.active{border-color:#72b88f;background:#eaf7ef}
+.carry-choice.active small{color:#267047;font-weight:700}
+.carry-choice:disabled{cursor:not-allowed;opacity:.55}
+.wadah-save-bar{position:sticky;bottom:0;z-index:9;margin:16px -2px -2px;padding:11px 2px 2px;background:linear-gradient(to top,#fff 75%,rgba(255,255,255,0));display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wadah-save-bar .btn{min-width:170px}
+
+@media(max-width:700px){
+  .top-logout span{display:inline}
+  .top-logout{font-size:12px;padding:8px 10px}
+  .wadah-sticky-tools{top:0}
+  .wadah-bulk{display:grid;grid-template-columns:1fr 1fr}
+  .wadah-bulk .btn:first-child{grid-column:1/-1}
+  .wadah-bulk .btn{font-size:12px;padding:9px 7px}
+  .student-controls{grid-template-columns:1fr 1fr}
+  .presence-control{grid-column:1/-1}
+  .carry-choice{min-width:0}
+  .wadah-save-bar{margin-left:-8px;margin-right:-8px;padding:10px 8px}
+  .save-summary{font-size:11px;line-height:1.3}
+  .wadah-save-bar .btn{min-width:130px}
+}
+@media(max-width:390px){
+  .complete-badge{display:none}
+  .student-entry{padding:11px}
+  .student-controls{gap:6px}
+  .carry-choice{padding:6px}
+}

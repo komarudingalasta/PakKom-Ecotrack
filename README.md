@@ -1,13 +1,12 @@
-# PakKom Eco Track v3.3.4 — Firebase Load Order Fix
+# PakKom Eco Track v3.3.5 — UI Usability
 
-Perbaikan kritis:
-- Firebase SDK Compat sekarang dimuat sebelum `firebase-config.js` dan `main.js`.
-- Urutan script:
-  1. firebase-app-compat.js
-  2. firebase-auth-compat.js
-  3. firebase-firestore-compat.js
-  4. firebase-config.js
-  5. main.js
-- Mengatasi pesan **Firebase SDK gagal dimuat**.
-
-Struktur aplikasi tetap menggunakan satu `main.js`.
+Perubahan:
+- Istilah **ID Guru** diganti menjadi **NIP Guru** pada login, pendaftaran, kelola akun, import, dan pesan antarmuka.
+- Tombol keluar sekarang memakai ikon 🚪 dan tulisan **Keluar**.
+- Form Wadah & Tumbler diubah menjadi kartu siswa responsif sehingga HP tidak perlu scroll horizontal.
+- Kehadiran, Wadah, dan Tumbler langsung terlihat pada setiap kartu.
+- Siswa tidak hadir otomatis menonaktifkan pilihan Wadah/Tumbler.
+- Tombol aksi massal berada di bagian atas dan sticky.
+- Ringkasan jumlah hadir/wadah/tumbler tampil selama pengisian.
+- Tombol Simpan sticky di bawah pada pengisian panjang.
+- Siswa yang lengkap diberi penanda visual ringan.

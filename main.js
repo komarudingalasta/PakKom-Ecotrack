@@ -1,8 +1,8 @@
-/* PakKom Eco Track v3.3.4 — Unified Core
+/* PakKom Eco Track v3.3.5 — Unified Core
    Application Core + Authentication Core dalam satu file klasik.
 */
 
-/* PakKom Eco Track v3.3.4 — Compat Application Core
+/* PakKom Eco Track v3.3.5 — Compat Application Core
    Seluruh Authentication + Firestore memakai Firebase Compat yang sama. */
 (function(){
 'use strict';
@@ -150,7 +150,7 @@ function toast(msg, ms=4200){ const t=$('#toast'); t.textContent=msg; t.classLis
 function authErrorMessage(e){
   const code=e?.code||'';
   const map={
-    'auth/invalid-credential':'Email/ID atau password tidak cocok dengan Firebase Authentication.',
+    'auth/invalid-credential':'Email/NIP Guru/ADMIN atau password tidak cocok dengan Firebase Authentication.',
     'auth/wrong-password':'Password tidak cocok.',
     'auth/user-not-found':'Akun tidak ditemukan di Firebase Authentication.',
     'auth/user-disabled':'Akun Firebase dinonaktifkan.',
@@ -243,8 +243,8 @@ $('#regType').onchange=()=>$('#regClassWrap').classList.toggle('hidden',$('#regT
 $('#registerSubmit').onclick=async()=>{
   const loginId=$('#regLoginId').value.trim().toUpperCase(), name=$('#regName').value.trim(), type=$('#regType').value;
   const homeroomClass=type==='wali'?$('#regClass').value:''; const password=$('#regPassword').value, password2=$('#regPassword2').value;
-  if(!loginId||loginId==='ADMIN'||!name)return toast('ID Guru dan nama wajib diisi.');
-  if(!/^[A-Z0-9._-]{2,30}$/.test(loginId))return toast('ID Guru hanya boleh berisi huruf, angka, titik, garis bawah, atau tanda hubung.');
+  if(!loginId||loginId==='ADMIN'||!name)return toast('NIP Guru dan nama wajib diisi.');
+  if(!/^[A-Z0-9._-]{2,30}$/.test(loginId))return toast('NIP Guru hanya boleh berisi huruf, angka, titik, garis bawah, atau tanda hubung.');
   if(password.length<6)return toast('Password minimal 6 karakter.');
   if(password!==password2)return toast('Ulangi password belum sama.');
   const btn=$('#registerSubmit'); btn.disabled=true; btn.textContent='Mengirim...';
@@ -260,7 +260,7 @@ $('#registerSubmit').onclick=async()=>{
     });
     await signOut(secondaryAuth).catch(()=>{}); closeRegisterModal();
     toast('Pendaftaran berhasil dikirim. Tunggu persetujuan Admin sebelum login.',7000);
-  }catch(e){console.error(e);toast(e.code==='auth/email-already-in-use'?'ID Guru sudah pernah didaftarkan.':(e.message||'Pendaftaran gagal.'),6500);}
+  }catch(e){console.error(e);toast(e.code==='auth/email-already-in-use'?'NIP Guru sudah pernah didaftarkan.':(e.message||'Pendaftaran gagal.'),6500);}
   finally{btn.disabled=false;btn.textContent='Kirim Pendaftaran';if(secondary)await deleteApp(secondary).catch(()=>{});}
 };
 
@@ -377,9 +377,14 @@ function renderClassForm(c){
   const existing=window.originalRecord;
   content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Kelas ${c}</h3><small>${existing?`Sudah didata oleh ${esc(existing.createdByName||'Guru')} • ${esc(existing.timeLabel||'-')}`:'Belum pernah disimpan hari ini'}</small></div><button class="btn ghost" id="backClasses">← Pilih kelas lain</button></div>
   ${window.formLocked?'<div class="notice">Data dibuat guru lain. Saat ini hanya ditampilkan. Gunakan “Koreksi Data” jika memang perlu mengubahnya.</div>':''}${window.rosterChanged?'<div class="notice">Daftar siswa aktif kelas ini berubah sejak pendataan terakhir. Form sudah disesuaikan dengan master siswa terbaru tanpa menghapus status siswa yang masih terdaftar.</div>':''}
-  <div class="card"><div class="toolbar"><button class="btn secondary bulk" data-bulk="presence">Semua Hadir</button><button class="btn secondary bulk" data-bulk="food">Semua Bawa Wadah</button><button class="btn secondary bulk" data-bulk="tumbler">Semua Bawa Tumbler</button>${window.formLocked?'<button id="unlockBtn" class="btn ghost">Koreksi Data</button>':''}</div>
-  <div class="table-wrap"><table><thead><tr><th>No</th><th>NIS</th><th>Nama Siswa</th><th>Kehadiran</th><th>Wadah</th><th>Tumbler</th></tr></thead><tbody id="studentRows"></tbody></table></div>
-  <div style="display:flex;justify-content:flex-end;margin-top:16px"><button id="saveBtn" class="btn primary" ${window.formLocked?'disabled':''}>Simpan Data ${c}</button></div></div>`;
+  <div class="card attendance-card">
+    <div class="wadah-sticky-tools">
+      <div class="toolbar wadah-bulk"><button class="btn secondary bulk" data-bulk="presence">✓ Semua Hadir</button><button class="btn secondary bulk" data-bulk="food">🥡 Semua Bawa Wadah</button><button class="btn secondary bulk" data-bulk="tumbler">💧 Semua Bawa Tumbler</button>${window.formLocked?'<button id="unlockBtn" class="btn ghost">Koreksi Data</button>':''}</div>
+      <div id="wadahSummary" class="wadah-summary"></div>
+    </div>
+    <div id="studentRows" class="student-card-list"></div>
+    <div class="wadah-save-bar"><div id="wadahSaveSummary" class="save-summary"></div><button id="saveBtn" class="btn primary" ${window.formLocked?'disabled':''}>Simpan Data ${c}</button></div>
+  </div>`;
   $('#backClasses').onclick=()=>{state.selectedClass=null;renderPage()};
   if($('#unlockBtn')) $('#unlockBtn').onclick=()=>{window.formLocked=false;$('#saveBtn').disabled=false;$('#unlockBtn').disabled=true;renderStudentRows();toast('Mode koreksi aktif')};
   document.querySelectorAll('.bulk').forEach(b=>b.onclick=()=>setAll(b.dataset.bulk));
@@ -388,9 +393,45 @@ function renderClassForm(c){
 function setAll(field){ if(window.formLocked)return; window.formItems.forEach(i=>{if(field==='presence')i.presence='hadir';else if(i.presence==='hadir')i[field]=true}); renderStudentRows(); }
 function renderStudentRows(){
   const rows=$('#studentRows'); if(!rows)return;
-  rows.innerHTML=window.formItems.map((i,idx)=>`<tr><td>${idx+1}</td><td>${esc(i.nis)}</td><td><b>${esc(i.name)}</b></td><td><select ${window.formLocked?'disabled':''} data-presence="${idx}"><option value="hadir" ${i.presence==='hadir'?'selected':''}>Hadir</option><option value="izin" ${i.presence==='izin'?'selected':''}>Izin</option><option value="sakit" ${i.presence==='sakit'?'selected':''}>Sakit</option><option value="alpa" ${i.presence==='alpa'?'selected':''}>Alpa</option></select></td><td><div class="switch ${i.food&&i.presence==='hadir'?'on':''}" data-toggle="food" data-index="${idx}"></div></td><td><div class="switch ${i.tumbler&&i.presence==='hadir'?'on':''}" data-toggle="tumbler" data-index="${idx}"></div></td></tr>`).join('');
-  document.querySelectorAll('[data-presence]').forEach(s=>s.onchange=()=>{if(window.formLocked)return;const i=window.formItems[+s.dataset.presence];i.presence=s.value;if(s.value!=='hadir'){i.food=false;i.tumbler=false}renderStudentRows()});
-  document.querySelectorAll('[data-toggle]').forEach(t=>t.onclick=()=>{if(window.formLocked)return;const i=window.formItems[+t.dataset.index];if(i.presence!=='hadir')return;i[t.dataset.toggle]=!i[t.dataset.toggle];renderStudentRows()});
+  const items=window.formItems||[];
+  rows.innerHTML=items.map((i,idx)=>{
+    const hadir=i.presence==='hadir';
+    const complete=hadir && i.food && i.tumbler;
+    return `<article class="student-entry ${complete?'complete':''} ${!hadir?'absent':''}">
+      <div class="student-entry-head">
+        <span class="student-number">${idx+1}</span>
+        <div class="student-identity"><b>${esc(i.name)}</b><small>NIS ${esc(i.nis)}</small></div>
+        ${complete?'<span class="complete-badge">✓ Lengkap</span>':''}
+      </div>
+      <div class="student-controls">
+        <label class="presence-control"><span>Kehadiran</span><select ${window.formLocked?'disabled':''} data-presence="${idx}"><option value="hadir" ${i.presence==='hadir'?'selected':''}>Hadir</option><option value="izin" ${i.presence==='izin'?'selected':''}>Izin</option><option value="sakit" ${i.presence==='sakit'?'selected':''}>Sakit</option><option value="alpa" ${i.presence==='alpa'?'selected':''}>Alpa</option></select></label>
+        <button type="button" class="carry-choice ${i.food&&hadir?'active':''}" data-toggle="food" data-index="${idx}" ${(!hadir||window.formLocked)?'disabled':''}><span>🥡</span><b>Wadah</b><small>${i.food&&hadir?'Membawa':'Tidak'}</small></button>
+        <button type="button" class="carry-choice ${i.tumbler&&hadir?'active':''}" data-toggle="tumbler" data-index="${idx}" ${(!hadir||window.formLocked)?'disabled':''}><span>💧</span><b>Tumbler</b><small>${i.tumbler&&hadir?'Membawa':'Tidak'}</small></button>
+      </div>
+    </article>`;
+  }).join('');
+
+  const hadir=items.filter(i=>i.presence==='hadir');
+  const food=hadir.filter(i=>i.food).length;
+  const tumbler=hadir.filter(i=>i.tumbler).length;
+  const summary=`${items.length} siswa • ${hadir.length} hadir • ${food} wadah • ${tumbler} tumbler`;
+  if($('#wadahSummary')) $('#wadahSummary').textContent=summary;
+  if($('#wadahSaveSummary')) $('#wadahSaveSummary').textContent=summary;
+
+  document.querySelectorAll('[data-presence]').forEach(el=>el.onchange=()=>{
+    if(window.formLocked)return;
+    const i=window.formItems[+el.dataset.presence];
+    i.presence=el.value;
+    if(el.value!=='hadir'){i.food=false;i.tumbler=false}
+    renderStudentRows();
+  });
+  document.querySelectorAll('[data-toggle]').forEach(el=>el.onclick=()=>{
+    if(window.formLocked)return;
+    const i=window.formItems[+el.dataset.index];
+    if(i.presence!=='hadir')return;
+    i[el.dataset.toggle]=!i[el.dataset.toggle];
+    renderStudentRows();
+  });
 }
 async function saveClass(c){
   if(!window.formItems?.length){toast('Belum ada siswa di kelas ini');return;}
@@ -531,7 +572,7 @@ function renderMasterTab(){
   }
   if(state.masterTab==='teachers'){
     target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Akun Guru & Wali Kelas</h3><small>Akun hasil pendaftaran baru harus disetujui Admin.</small></div><div class="row-actions"><button id="importTeachers" class="btn ghost">Upload Akun Guru</button><button id="addTeacher" class="btn primary">+ Guru</button></div></div><div id="pendingApprovals"></div>
-    <div class="notice">Format: <b>ID Guru | Nama | Password Awal | Jenis | Kelas Wali | Status</b>. Jenis: Guru atau Wali Kelas.</div>
+    <div class="notice">Format: <b>NIP Guru | Nama | Password Awal | Jenis | Kelas Wali | Status</b>. Jenis: Guru atau Wali Kelas.</div>
     <div class="master-tools"><input id="teacherSearch" class="input-inline" placeholder="Cari ID atau nama guru"><select id="teacherTypeFilter" class="input-inline"><option value="">Semua jenis</option><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select><select id="teacherStatusFilter" class="input-inline"><option value="">Semua status</option><option value="aktif">Aktif</option><option value="nonaktif">Nonaktif</option></select></div><div id="teacherTable"></div></div>`;
     $('#importTeachers').onclick=()=>$('#teacherImport').click(); $('#addTeacher').onclick=addTeacherPrompt;
     $('#teacherSearch').oninput=renderTeacherMasterTable; $('#teacherTypeFilter').onchange=renderTeacherMasterTable; $('#teacherStatusFilter').onchange=renderTeacherMasterTable;
@@ -599,7 +640,7 @@ function renderTeacherMasterTable(){
   const target=$('#teacherTable'); if(!target)return;
   const q=String($('#teacherSearch')?.value||'').trim().toLowerCase(), type=$('#teacherTypeFilter')?.value||'', status=$('#teacherStatusFilter')?.value||'';
   const rows=(window.masterUsers||[]).filter(u=>u.role==='guru'&&u.approved!==false).filter(u=>(!q||String(u.loginId||'').toLowerCase().includes(q)||String(u.name||'').toLowerCase().includes(q))&&(!type||(type==='wali'?u.isHomeroom===true:u.isHomeroom!==true))&&(!status||(status==='aktif'?u.active!==false:u.active===false))).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  target.innerHTML=`<div class="table-wrap"><table class="student-master"><thead><tr><th>ID Guru</th><th>Nama</th><th>Jenis</th><th>Kelas Wali</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.isHomeroom?'ok':'neutral'}">${u.isHomeroom?'Wali Kelas':'Guru'}</span></td><td>${u.isHomeroom?esc(u.homeroomClass||'-'):'-'}</td><td><span class="badge ${u.active===false?'warn':'ok'}">${u.active===false?'Nonaktif':'Aktif'}</span></td><td><button class="btn-mini edit" data-edit-teacher="${esc(u.uid)}">Edit</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Belum ada akun guru.</div></td></tr>'}</tbody></table></div>`;
+  target.innerHTML=`<div class="table-wrap"><table class="student-master"><thead><tr><th>NIP Guru</th><th>Nama</th><th>Jenis</th><th>Kelas Wali</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.map(u=>`<tr><td><b>${esc(u.loginId||'-')}</b></td><td>${esc(u.name||'-')}</td><td><span class="badge ${u.isHomeroom?'ok':'neutral'}">${u.isHomeroom?'Wali Kelas':'Guru'}</span></td><td>${u.isHomeroom?esc(u.homeroomClass||'-'):'-'}</td><td><span class="badge ${u.active===false?'warn':'ok'}">${u.active===false?'Nonaktif':'Aktif'}</span></td><td><button class="btn-mini edit" data-edit-teacher="${esc(u.uid)}">Edit</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Belum ada akun guru.</div></td></tr>'}</tbody></table></div>`;
   document.querySelectorAll('[data-edit-teacher]').forEach(b=>b.onclick=()=>editTeacherProfile(b.dataset.editTeacher));
 }
 
@@ -734,10 +775,10 @@ $('#teacherImport').addEventListener('change',async e=>{
   try{
     const buf=await f.arrayBuffer(), wb=XLSX.read(buf), sheet=wb.Sheets['Guru']||wb.Sheets[wb.SheetNames[0]], rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
     let skipped=0;
-    const normalized=rows.map(r=>{const loginId=String(r['ID Guru']||r.ID||r.loginId||'').trim().toUpperCase(),name=String(r.Nama||r.nama||'').trim(),password=String(r['Password Awal']||r.Password||r.password||'123456').trim()||'123456',jenis=String(r.Jenis||r.jenis||'Guru').trim().toLowerCase(),homeroomClass=String(r['Kelas Wali']||r.KelasWali||r.homeroomClass||'').trim().toUpperCase(),active=!['nonaktif','tidak aktif','0','false'].includes(String(r.Status||r.status||'Aktif').trim().toLowerCase());return {loginId,name,password,isHomeroom:jenis.includes('wali'),homeroomClass,active};}).filter(r=>{const ok=r.loginId&&r.name&&r.loginId!=='ADMIN'&&r.password.length>=6&&(!r.isHomeroom||r.homeroomClass);if(!ok)skipped++;return ok;});
+    const normalized=rows.map(r=>{const loginId=String(r['NIP Guru']||r.ID||r.loginId||'').trim().toUpperCase(),name=String(r.Nama||r.nama||'').trim(),password=String(r['Password Awal']||r.Password||r.password||'123456').trim()||'123456',jenis=String(r.Jenis||r.jenis||'Guru').trim().toLowerCase(),homeroomClass=String(r['Kelas Wali']||r.KelasWali||r.homeroomClass||'').trim().toUpperCase(),active=!['nonaktif','tidak aktif','0','false'].includes(String(r.Status||r.status||'Aktif').trim().toLowerCase());return {loginId,name,password,isHomeroom:jenis.includes('wali'),homeroomClass,active};}).filter(r=>{const ok=r.loginId&&r.name&&r.loginId!=='ADMIN'&&r.password.length>=6&&(!r.isHomeroom||r.homeroomClass);if(!ok)skipped++;return ok;});
     if(!normalized.length)throw new Error('Tidak ada akun guru valid');
     window.pendingTeacherImport=normalized;
-    openImportPreview('Preview Import Akun Guru',normalized.map(x=>[x.loginId,x.name,x.isHomeroom?'Wali Kelas':'Guru',x.isHomeroom?x.homeroomClass:'-',x.active?'Aktif':'Nonaktif']),['ID Guru','Nama','Jenis','Kelas Wali','Status'],skipped,()=>commitTeacherImport(e));
+    openImportPreview('Preview Import Akun Guru',normalized.map(x=>[x.loginId,x.name,x.isHomeroom?'Wali Kelas':'Guru',x.isHomeroom?x.homeroomClass:'-',x.active?'Aktif':'Nonaktif']),['NIP Guru','Nama','Jenis','Kelas Wali','Status'],skipped,()=>commitTeacherImport(e));
   }catch(err){console.error(err);toast(err.message||'Upload akun guru gagal.');e.target.value='';}
 });
 async function commitTeacherImport(e){
@@ -789,7 +830,7 @@ async function seedClasses(){
   }catch(e){console.error(e);toast('Gagal menyinkronkan kelas')}
 }
 async function addTeacherPrompt(){
-  const loginId=prompt('ID Guru (contoh G001):'); if(!loginId)return;
+  const loginId=prompt('NIP Guru (contoh G001):'); if(!loginId)return;
   const name=prompt('Nama Guru:'); if(!name)return;
   const isHomeroom=confirm('Apakah guru ini WALI KELAS? Klik OK untuk Wali Kelas, Batal untuk Guru.');
   let homeroomClass='';
@@ -801,7 +842,7 @@ async function addTeacherPrompt(){
     const cred=await createUserWithEmailAndPassword(secondaryAuth,loginEmail(loginId),password);
     await setDoc(doc(db,'users',cred.user.uid),{loginId:loginId.trim().toUpperCase(),name:name.trim(),role:'guru',approved:true,active:true,rejected:false,isHomeroom,homeroomClass:isHomeroom?homeroomClass:'',createdAt:new Date().toISOString()});
     await signOut(secondaryAuth); toast(`Akun ${loginId.toUpperCase()} berhasil dibuat`); master();
-  }catch(e){console.error(e);toast(e.code==='auth/email-already-in-use'?'ID Guru sudah digunakan':'Gagal membuat akun guru');}
+  }catch(e){console.error(e);toast(e.code==='auth/email-already-in-use'?'NIP Guru sudah digunakan':'Gagal membuat akun guru');}
   finally{if(secondary)await deleteApp(secondary).catch(()=>{})}
 }
 
@@ -809,7 +850,7 @@ async function addTeacherPrompt(){
 
 window.startPakKomApp = async function(core){
   try{
-    console.log('PakKom Application Core v3.3.4 starting');
+    console.log('PakKom Application Core v3.3.5 starting');
     app=core.app;
     auth=core.auth;
     db=core.db;
@@ -854,7 +895,7 @@ window.startPakKomApp = async function(core){
   function authMessage(err){
     var code=err && err.code ? err.code : '';
     var map={
-      'auth/invalid-credential':'ID atau password salah.',
+      'auth/invalid-credential':'NIP Guru/ADMIN atau password salah.',
       'auth/wrong-password':'Password salah.',
       'auth/user-not-found':'Akun tidak ditemukan.',
       'auth/user-disabled':'Akun dinonaktifkan.',

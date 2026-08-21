@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#0f766e" />
-  <title>PakKom Eco Track v3.3.4</title>
-  <link rel="stylesheet" href="styles.css?v=3.3.4" />
+  <title>PakKom Eco Track v3.3.5</title>
+  <link rel="stylesheet" href="styles.css?v=3.3.5" />
 
   <script>
     window.pakkomTogglePassword = function(inputId, button) {
@@ -35,7 +35,7 @@
       <div class="login-brand"><div class="brand-mark">🌿</div><div><h1>PakKom Eco Track</h1><p>Sistem Monitoring Lingkungan Sekolah</p></div></div>
       <form id="loginForm" class="form-card login-form">
         <div class="login-heading"><h2>Selamat Datang</h2><p>Silakan masuk untuk melanjutkan.</p></div>
-        <label>ID Guru / Admin<input id="loginId" autocomplete="username" placeholder="Contoh: G001" required /></label>
+        <label>NIP Guru / Admin<input id="loginId" autocomplete="username" placeholder="Contoh: 198701012010011001" required /></label>
         <label>Password<div class="password-wrap"><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" required /><button id="togglePassword" type="button" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('loginPassword', this)">👁</button></div></label>
         <button id="loginBtn" class="btn primary full login-submit" type="submit">MASUK</button>
         <p id="loginError" class="login-error hidden"></p>
@@ -50,20 +50,20 @@
     <aside class="sidebar">
       <div class="side-brand"><span>🌿</span><div><strong>PakKom</strong><small>Eco Track</small></div></div>
       <nav id="nav"></nav>
-      <button id="logoutBtn" class="btn ghost full logout-side">Keluar</button>
+      <button id="logoutBtn" class="btn ghost full logout-side">🚪 Keluar</button>
     </aside>
     <main class="main">
       <header class="topbar">
         <button id="menuBtn" class="menu-btn">☰</button>
         <div><h2 id="pageTitle">Beranda</h2><p id="pageSubtitle"></p></div>
         <div id="userChip" class="user-chip"></div>
-        <button id="quickLogout" class="top-logout" title="Keluar">↪</button>
+        <button id="quickLogout" class="top-logout" title="Keluar" aria-label="Keluar">🚪 <span>Keluar</span></button>
       </header>
       <section id="content" class="content"></section>
     </main>
   </div>
 
-  <div id="registerModal" class="modal hidden"><div class="modal-card register-card"><div class="modal-head"><div><h3>Daftar Akun Guru</h3><small>Akun baru harus disetujui Admin sebelum dapat digunakan.</small></div><button id="registerClose" class="modal-x">×</button></div><div class="modal-body"><div class="register-grid"><label>ID Guru<input id="regLoginId" placeholder="Contoh: G001"></label><label>Nama Lengkap<input id="regName" placeholder="Nama guru"></label><label>Jenis<select id="regType"><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select></label><label id="regClassWrap" class="hidden">Kelas Wali<select id="regClass"></select></label><label>Password<div class="password-wrap"><input id="regPassword" type="password" placeholder="Minimal 6 karakter"><button class="password-toggle" type="button" data-toggle-target="regPassword" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('regPassword', this)">👁</button></div></label>
+  <div id="registerModal" class="modal hidden"><div class="modal-card register-card"><div class="modal-head"><div><h3>Daftar Akun Guru</h3><small>Akun baru harus disetujui Admin sebelum dapat digunakan.</small></div><button id="registerClose" class="modal-x">×</button></div><div class="modal-body"><div class="register-grid"><label>NIP Guru<input id="regLoginId" placeholder="Contoh: 198701012010011001"></label><label>Nama Lengkap<input id="regName" placeholder="Nama guru"></label><label>Jenis<select id="regType"><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select></label><label id="regClassWrap" class="hidden">Kelas Wali<select id="regClass"></select></label><label>Password<div class="password-wrap"><input id="regPassword" type="password" placeholder="Minimal 6 karakter"><button class="password-toggle" type="button" data-toggle-target="regPassword" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('regPassword', this)">👁</button></div></label>
 <label>Ulangi Password<div class="password-wrap"><input id="regPassword2" type="password" placeholder="Ulangi password"><button class="password-toggle" type="button" data-toggle-target="regPassword2" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('regPassword2', this)">👁</button></div></label></div><div class="notice">Pendaftaran tidak langsung memberikan akses. Admin akan memeriksa dan menyetujui akun terlebih dahulu.</div></div><div class="modal-actions"><button id="registerCancel" class="btn ghost">Batal</button><button id="registerSubmit" class="btn primary">Kirim Pendaftaran</button></div></div></div>
 
   <div id="editModal" class="modal hidden"><div class="modal-card"><div class="modal-head"><h3 id="editModalTitle">Edit Data</h3><button id="editModalClose" class="modal-x">×</button></div><div id="editModalBody" class="modal-body"></div><div class="modal-actions"><button id="editModalCancel" class="btn ghost">Batal</button><button id="editModalSave" class="btn primary">Simpan</button></div></div></div>
@@ -76,6 +76,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="main.js?v=3.3.4"></script>
+  <script src="main.js?v=3.3.5"></script>
 </body>
 </html>
