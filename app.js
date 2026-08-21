@@ -1,5 +1,5 @@
 import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, writeBatch, serverTimestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 const cfg = window.PAKKOM_FIREBASE_CONFIG || {};
@@ -16,6 +16,8 @@ const loginEmail = id => {
   return `${normalized.toLowerCase().replace(/[^a-z0-9._-]/g,'')}@pakkom-ecotrack.app`;
 };
 let app, auth, db;
+let authResolved = false;
+let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[] };
 
 function toast(msg, ms=4200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.classList.remove('show'),ms); }
@@ -35,45 +37,87 @@ function authErrorMessage(e){
 function esc(v=''){ return String(v).replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m])); }
 function pageMeta(title,sub=''){ $('#pageTitle').textContent=title; $('#pageSubtitle').textContent=sub; }
 function navItems(){
-  const base=[['home','🏠 Beranda'],['input','🥤 Wadah & Tumbler'],['clean','🧹 Kebersihan Kelas'],['recap','📊 Rekap'],['account','👤 Akun']];
-  if(state.profile?.role==='admin') base.splice(4,0,['master','⚙️ Kelola']);
-  return base;
+  if(state.profile?.role==='admin') return [['home','🏠 Beranda'],['input','🥤 Wadah'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['master','⚙️ Kelola']];
+  return [['home','🏠 Beranda'],['input','🥤 Wadah'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['account','👤 Akun']];
+}
+
+function showAuthLoading(show=true){
+  $('#authLoading').classList.toggle('hidden',!show);
+  if(show){ $('#loginView').classList.add('hidden'); $('#appView').classList.add('hidden'); }
+}
+function showLoginError(msg=''){
+  const el=$('#loginError'); if(!el)return;
+  el.textContent=msg; el.classList.toggle('hidden',!msg);
+}
+async function loadProfileForUser(user){
+  const snap=await getDoc(doc(db,'users',user.uid));
+  if(!snap.exists()) throw new Error(`Profil users/${user.uid} tidak ditemukan.`);
+  const profile={uid:user.uid,...snap.data()};
+  if(profile.active===false) throw new Error('Akun dinonaktifkan administrator.');
+  if(!['admin','guru'].includes(profile.role)) throw new Error('Role akun tidak dikenali.');
+  return profile;
+}
+async function finishSignedIn(user){
+  try{
+    const profile=await loadProfileForUser(user);
+    state.user=user; state.profile=profile;
+    if(profile.role==='admin') await ensureDefaultClasses();
+    await refreshCore();
+    showAuthLoading(false); renderShell();
+  }catch(e){
+    console.error(e); await signOut(auth).catch(()=>{});
+    state.user=null; state.profile=null; showAuthLoading(false); renderShell();
+    showLoginError(e.message||'Profil akun tidak dapat dibaca.');
+  }
 }
 
 if(!configured){
+  authResolved=true; showAuthLoading(false);
   $('#loginHint').innerHTML='Firebase belum dikonfigurasi. Isi <b>firebase-config.js</b> terlebih dahulu.';
-  $('#loginBtn').disabled=true;
-  $('#loginBtn').textContent='Firebase belum aktif';
+  $('#loginBtn').disabled=true; $('#loginBtn').textContent='Firebase belum aktif';
+  renderShell();
 } else {
   app=initializeApp(cfg); auth=getAuth(app); db=getFirestore(app);
-  onAuthStateChanged(auth, async user=>{
-    if(!user){ state.user=null; state.profile=null; renderShell(); return; }
-    try{
-      const snap=await getDoc(doc(db,'users',user.uid));
-      if(!snap.exists()){ await signOut(auth); toast(`Authentication berhasil, tetapi profil users/${user.uid} tidak ditemukan.`,6500); return; }
-      if(snap.data().active===false){ await signOut(auth); toast('Akun ditemukan tetapi status active = false.',6500); return; }
-      state.user=user; state.profile={uid:user.uid,...snap.data()};
-      if(state.profile.role==='admin') await ensureDefaultClasses();
-      await refreshCore(); renderShell();
-    }catch(e){ console.error(e); toast(`Authentication berhasil, tetapi Firestore gagal membaca profil: ${e.code||e.message||'unknown error'}`,7000); }
+  setPersistence(auth,browserLocalPersistence).catch(console.error).finally(()=>{
+    onAuthStateChanged(auth, async user=>{
+      authResolved=true;
+      if(loginInProgress) return;
+      if(!user){ state.user=null; state.profile=null; showAuthLoading(false); renderShell(); return; }
+      showAuthLoading(true); await finishSignedIn(user);
+    });
   });
 }
 
+$('#togglePassword').onclick=()=>{
+  const i=$('#loginPassword'); i.type=i.type==='password'?'text':'password';
+};
 $('#loginForm').addEventListener('submit',async e=>{
-  e.preventDefault(); if(!configured)return;
+  e.preventDefault(); if(!configured||loginInProgress)return;
   const id=$('#loginId').value.trim(); const password=$('#loginPassword').value;
-  $('#loginBtn').disabled=true; $('#loginBtn').textContent='Memeriksa...';
+  if(!id||!password)return;
+  loginInProgress=true; showLoginError('');
+  $('#loginBtn').disabled=true; $('#loginBtn').textContent='MEMERIKSA...';
   try{
+    // Pastikan percobaan login baru tidak memakai sesi lama yang masih tersimpan.
+    if(auth.currentUser) await signOut(auth);
     const email=loginEmail(id);
     const cred=await signInWithEmailAndPassword(auth,email,password);
-    if(id.trim().toUpperCase()==='ADMIN' && cred.user.email?.toLowerCase()!==ADMIN_LOGIN_EMAIL.toLowerCase()){
-      await signOut(auth); throw new Error('Admin login terhubung ke email yang tidak sesuai.');
-    }
+    if(id.toUpperCase()==='ADMIN' && cred.user.email?.toLowerCase()!==ADMIN_LOGIN_EMAIL.toLowerCase()) throw new Error('Akun ADMIN tidak sesuai konfigurasi.');
+    const profile=await loadProfileForUser(cred.user);
+    state.user=cred.user; state.profile=profile;
+    if(profile.role==='admin') await ensureDefaultClasses();
+    await refreshCore();
+    authResolved=true; renderShell();
+  }catch(e){
+    console.error(e); await signOut(auth).catch(()=>{});
+    state.user=null; state.profile=null; renderShell();
+    const msg=e?.code?authErrorMessage(e):(e.message||'Login gagal.');
+    showLoginError(msg); toast(msg,6000);
+  }finally{
+    loginInProgress=false; $('#loginBtn').disabled=false; $('#loginBtn').textContent='MASUK';
   }
-  catch(e){ console.error(e); toast(authErrorMessage(e),6500); }
-  finally{ $('#loginBtn').disabled=false; $('#loginBtn').textContent='Masuk'; }
 });
-$('#logoutBtn').onclick=()=>signOut(auth);
+$('#logoutBtn').onclick=()=>signOut(auth); if($('#quickLogout')) $('#quickLogout').onclick=()=>signOut(auth);
 $('#menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('open');
 
 async function refreshCore(){
@@ -90,8 +134,10 @@ async function refreshCore(){
 function classRecord(c){ return state.recordsToday.find(r=>r.classId===c); }
 
 function renderShell(){
+  if(!authResolved){ showAuthLoading(true); return; }
+  $('#authLoading').classList.add('hidden');
   if(!state.profile){ $('#loginView').classList.remove('hidden'); $('#appView').classList.add('hidden'); return; }
-  $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden');
+  showLoginError(''); $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden');
   const chipRole=state.profile.role==='admin'?'Admin':(state.profile.isHomeroom?`Wali Kelas${state.profile.homeroomClass?' • '+esc(state.profile.homeroomClass):''}`:'Guru');
   $('#userChip').innerHTML=`<b>${esc(state.profile.name)}</b><br>${chipRole}`;
   $('#nav').innerHTML=navItems().map(([k,l])=>`<button class="nav-btn ${state.page===k?'active':''}" data-page="${k}">${l}</button>`).join('');
@@ -123,7 +169,7 @@ function home(){
 function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;renderShell()}); }
 
 function inputPage(){
-  pageMeta('Pendataan','Pilih kelas lalu tandai kondisi siswa');
+  pageMeta('Wadah & Tumbler','Pilih kelas lalu tandai kondisi siswa');
   if(!state.selectedClass){ content.innerHTML=`<div class="card"><h3>Pilih Kelas</h3><div class="grid class-grid">${state.classes.map(c=>{const r=classRecord(c);return `<button class="class-btn ${r?'done':'pending'}" data-class="${c}"><b>${c}</b><small>${r?'Sudah didata':'Belum didata'}</small></button>`}).join('')}</div></div>`; bindClassButtons(); return; }
   loadClassForm(state.selectedClass);
 }
@@ -223,28 +269,38 @@ function renderCleanForm(){
 }
 
 function recap(){
-  pageMeta('Rekap','Filter tanggal dan kelas');
-  content.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap Pendataan</h3><small>Pilih tanggal untuk melihat histori pendataan.</small></div><div class="row-actions"><input id="recapDate" class="input-inline" type="date" value="${todayKey()}"><select id="recapClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div><div id="recapBody"><div class="empty">Memuat rekap...</div></div></div>`;
+  pageMeta('Rekap','Pilih modul rekap yang ingin dilihat');
+  content.innerHTML=`<div class="recap-switch"><button class="recap-module active" data-recap="wadah">🥤<b>Wadah & Tumbler</b><small>Rekap pendataan siswa</small></button><button class="recap-module" data-recap="clean">🧹<b>Kebersihan Kelas</b><small>Riwayat pemeriksaan</small></button></div><div id="recapPanel"></div>`;
+  document.querySelectorAll('.recap-module').forEach(b=>b.onclick=()=>{document.querySelectorAll('.recap-module').forEach(x=>x.classList.toggle('active',x===b)); b.dataset.recap==='clean'?renderCleanRecap():renderWadahRecap();});
+  renderWadahRecap();
+}
+function renderWadahRecap(){
+  const panel=$('#recapPanel'); panel.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap Wadah & Tumbler</h3><small>Pilih tanggal dan kelas.</small></div><div class="row-actions"><input id="recapDate" class="input-inline" type="date" value="${todayKey()}"><select id="recapClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div><div id="recapBody"><div class="empty">Memuat...</div></div></div>`;
   $('#recapDate').onchange=loadRecapDate; $('#recapClass').onchange=loadRecapDate; loadRecapDate();
 }
 async function loadRecapDate(){
   const target=$('#recapBody'); if(!target)return;
   const date=$('#recapDate').value||todayKey(), cls=$('#recapClass').value||'';
-  target.innerHTML='<div class="empty">Memuat...</div>';
   try{
     const snap=await getDocs(query(collection(db,'records'),where('date','==',date)));
-    const records=snap.docs.map(d=>({id:d.id,...d.data()}));
-    const classes=cls?[cls]:state.classes;
+    const records=snap.docs.map(d=>({id:d.id,...d.data()})); const classes=cls?[cls]:state.classes;
     const cards=classes.map(c=>{const r=records.find(x=>x.classId===c);if(!r)return {c,status:'Belum',hadir:0,food:0,tumb:0,both:0,by:'-'};const hadir=(r.items||[]).filter(i=>i.presence==='hadir');const pct=f=>hadir.length?Math.round(hadir.filter(f).length/hadir.length*100):0;return {c,status:'Selesai',hadir:hadir.length,food:pct(i=>i.food),tumb:pct(i=>i.tumbler),both:pct(i=>i.food&&i.tumbler),by:r.lastEditedByName||r.createdByName||'Guru'};});
-    target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th></tr></thead><tbody>${cards.map(x=>`<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'warn'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td></tr>`).join('')}</tbody></table></div>`;
-  }catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap tanggal tersebut.</div>';}
+    target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th></tr></thead><tbody>${cards.map(x=>`<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'neutral'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td></tr>`).join('')}</tbody></table></div>`;
+  }catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap.</div>';}
+}
+function renderCleanRecap(){
+  const panel=$('#recapPanel'); panel.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap Kebersihan Kelas</h3><small>Hanya pemeriksaan yang sudah dilakukan yang ditampilkan.</small></div><div class="row-actions"><input id="cleanRecapDate" class="input-inline" type="date" value="${todayKey()}"><select id="cleanRecapClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div><div id="cleanRecapBody"><div class="empty">Memuat...</div></div></div>`; $('#cleanRecapDate').onchange=loadCleanRecap;$('#cleanRecapClass').onchange=loadCleanRecap;loadCleanRecap();
+}
+async function loadCleanRecap(){
+  const target=$('#cleanRecapBody'); if(!target)return; const date=$('#cleanRecapDate').value||todayKey(),cls=$('#cleanRecapClass').value||'';
+  try{const snap=await getDocs(query(collection(db,'cleanliness'),where('date','==',date)));let rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));if(cls)rows=rows.filter(r=>r.classId===cls);target.innerHTML=rows.length?`<div class="clean-list">${rows.map(cleanCard).join('')}</div>`:'<div class="empty">Belum ada pemeriksaan kebersihan pada pilihan ini.</div>';}catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap kebersihan. Pastikan Firestore Rules v2.7.1 sudah dipublish.</div>';}
 }
 
 function account(){ pageMeta('Akun','Informasi pengguna'); const type=state.profile.role==='admin'?'Administrator':(state.profile.isHomeroom?'Wali Kelas':'Guru'); const wali=state.profile.isHomeroom&&state.profile.homeroomClass?`<p><b>Kelas Wali:</b> ${esc(state.profile.homeroomClass)}</p>`:''; content.innerHTML=`<div class="card" style="max-width:600px"><h3>${esc(state.profile.name)}</h3><p><b>ID:</b> ${esc(state.profile.loginId||'-')}</p><p><b>Peran:</b> ${type}</p>${wali}<p><b>Status:</b> ${state.profile.active!==false?'Aktif':'Nonaktif'}</p><div class="notice">Guru dan wali kelas memiliki akses pendataan yang sama. Penanda wali kelas digunakan sebagai informasi tanggung jawab kelas.</div></div>`; }
 
 async function master(){
   if(state.profile.role!=='admin'){state.page='home';return renderShell()}
-  pageMeta('Kelola Data','Khusus Administrator • v2.7');
+  pageMeta('Kelola Data','Khusus Administrator • v2.7.1');
   content.innerHTML='<div class="card"><div class="empty">Memuat data master...</div></div>';
   const [stuSnap,userSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users'))]);
   state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));

@@ -1,25 +1,18 @@
-# PakKom Eco Track v2.7 — UI & Cleanliness Module
+# PakKom Eco Track v2.7.1 — Authentication & Cleanliness Fix
 
-## Modul utama
-- **Wadah & Tumbler** — pendataan siswa per kelas, satu record kelas per hari.
-- **Kebersihan Kelas** — pemeriksaan per kelas dan JP, boleh berkali-kali dalam sehari.
-- **Rekap** — data wadah/tumbler dan fondasi rekap kebersihan.
-- **Kelola** (Admin) — siswa, guru/wali kelas, kelas, import, dan riwayat.
+Perbaikan penting:
+- Login salah tidak dapat memakai sesi login lama.
+- Firebase Auth memakai local persistence secara eksplisit.
+- Saat refresh aplikasi menampilkan splash “Memeriksa sesi”, bukan halaman login sementara.
+- UI login dibuat ulang mengikuti rancangan modern PakKom Eco Track.
+- Bottom navigation HP disederhanakan menjadi tepat 5 menu.
+- Menu Kebersihan tampil sebagai modul utama.
+- Kebersihan dapat diperiksa berkali-kali per hari berdasarkan kelas + JP.
+- Hanya pemeriksaan yang sudah tersimpan yang ditampilkan.
+- Rekap mempunyai tab Wadah & Tumbler dan Kebersihan Kelas.
 
-## Kebersihan
-Empat aspek:
-1. Lantai
-2. Meja & Kursi
-3. Tempat Sampah
-4. Perlengkapan Kelas
+## WAJIB sebelum uji Kebersihan
+Paste dan Publish `firestore.rules` dari paket ini di Firebase Console.
 
-Masing-masing memakai tiga kategori: **Baik / Cukup / Perlu**.
-Guru memilih kelas dan JP. Hanya pemeriksaan yang sudah dilakukan yang ditampilkan; JP yang belum diperiksa tidak ditampilkan sebagai kekurangan.
-
-## Branding
-Nama antarmuka telah diubah menjadi **PakKom Eco Track**.
-
-## Firebase
-Publish `firestore.rules` versi ini sebelum memakai modul kebersihan karena terdapat collection baru `cleanliness`.
-
-Konfigurasi project tetap berada di `firebase-config.js`.
+## Catatan cache GitHub Pages
+`styles.css` dan `app.js` dipanggil dengan versi `?v=2.7.1` untuk mengurangi risiko browser memakai file versi lama.
