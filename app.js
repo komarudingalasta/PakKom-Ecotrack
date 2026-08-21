@@ -16,7 +16,7 @@ const loginEmail = id => {
   return `${normalized.toLowerCase().replace(/[^a-z0-9._-]/g,'')}@pakkom-ecotrack.app`;
 };
 let app, auth, db;
-let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[] };
+let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[] };
 
 function toast(msg, ms=4200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>t.classList.remove('show'),ms); }
 function authErrorMessage(e){
@@ -34,7 +34,11 @@ function authErrorMessage(e){
 }
 function esc(v=''){ return String(v).replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m])); }
 function pageMeta(title,sub=''){ $('#pageTitle').textContent=title; $('#pageSubtitle').textContent=sub; }
-function navItems(){ const base=[['home','🏠 Beranda'],['input','📝 Pendataan'],['recap','📊 Rekap'],['account','👤 Akun']]; if(state.profile?.role==='admin') base.splice(3,0,['master','⚙️ Kelola Data']); return base; }
+function navItems(){
+  const base=[['home','🏠 Beranda'],['input','🥤 Wadah & Tumbler'],['clean','🧹 Kebersihan Kelas'],['recap','📊 Rekap'],['account','👤 Akun']];
+  if(state.profile?.role==='admin') base.splice(4,0,['master','⚙️ Kelola']);
+  return base;
+}
 
 if(!configured){
   $('#loginHint').innerHTML='Firebase belum dikonfigurasi. Isi <b>firebase-config.js</b> terlebih dahulu.';
@@ -73,13 +77,15 @@ $('#logoutBtn').onclick=()=>signOut(auth);
 $('#menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('open');
 
 async function refreshCore(){
-  const [classSnap, recordSnap] = await Promise.all([
+  const [classSnap, recordSnap, cleanSnap] = await Promise.all([
     getDocs(query(collection(db,'classes'),orderBy('name'))).catch(()=>null),
-    getDocs(query(collection(db,'records'),where('date','==',todayKey()))).catch(()=>null)
+    getDocs(query(collection(db,'records'),where('date','==',todayKey()))).catch(()=>null),
+    getDocs(query(collection(db,'cleanliness'),where('date','==',todayKey()))).catch(()=>null)
   ]);
   state.classDocs = classSnap && !classSnap.empty ? classSnap.docs.map(d=>({id:d.id,...d.data()})) : classesDefault.map(id=>({id,name:id,active:true}));
   state.classes = state.classDocs.filter(c=>c.active!==false).map(c=>c.id);
   state.recordsToday = recordSnap ? recordSnap.docs.map(d=>({id:d.id,...d.data()})) : [];
+  state.cleanlinessToday = cleanSnap ? cleanSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')) : [];
 }
 function classRecord(c){ return state.recordsToday.find(r=>r.classId===c); }
 
@@ -92,7 +98,7 @@ function renderShell(){
   document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;state.selectedClass=null;renderShell();document.querySelector('.sidebar').classList.remove('open')});
   renderPage();
 }
-function renderPage(){ if(state.page==='home')return home(); if(state.page==='input')return inputPage(); if(state.page==='recap')return recap(); if(state.page==='account')return account(); if(state.page==='master')return master(); }
+function renderPage(){ if(state.page==='home')return home(); if(state.page==='input')return inputPage(); if(state.page==='clean')return cleanlinessPage(); if(state.page==='recap')return recap(); if(state.page==='account')return account(); if(state.page==='master')return master(); }
 
 function home(){
   pageMeta('Beranda',dateID());
@@ -100,19 +106,19 @@ function home(){
   const items=state.recordsToday.flatMap(r=>(r.items||[]).filter(i=>i.presence==='hadir'));
   const food=items.length?Math.round(items.filter(i=>i.food).length/items.length*100):0;
   const tumb=items.length?Math.round(items.filter(i=>i.tumbler).length/items.length*100):0;
-  const both=items.length?Math.round(items.filter(i=>i.food&&i.tumbler).length/items.length*100):0;
+  const lastClean=state.cleanlinessToday[0];
   const waliClass=state.profile?.isHomeroom?state.profile.homeroomClass:'';
   const waliRec=waliClass?classRecord(waliClass):null;
-  let waliHtml='';
-  if(waliClass){
-    const hadir=(waliRec?.items||[]).filter(i=>i.presence==='hadir');
-    const wp=hadir.length?Math.round(hadir.filter(i=>i.food&&i.tumbler).length/hadir.length*100):0;
-    waliHtml=`<div class="card homeroom-card"><div class="section-head"><div><span class="badge ok">Wali Kelas</span><h3 style="margin:8px 0 0">Kelas Saya • ${esc(waliClass)}</h3></div><button class="btn secondary" data-class="${esc(waliClass)}">${waliRec?'Lihat / Koreksi':'Input Sekarang'}</button></div><p>${waliRec?`Pendataan hari ini selesai • kepatuhan keduanya <b>${wp}%</b>`:'Kelas binaan Anda belum didata hari ini.'}</p></div>`;
-  }
-  content.innerHTML=`<div class="grid stats"><div class="stat"><span>Kelas selesai</span><strong>${done.size}/${state.classes.length}</strong></div><div class="stat"><span>Belum didata</span><strong>${state.classes.length-done.size}</strong></div><div class="stat"><span>Membawa wadah</span><strong>${food}%</strong></div><div class="stat"><span>Membawa tumbler</span><strong>${tumb}%</strong></div></div>
-  ${waliHtml}
-  <div class="grid two-col" style="margin-top:16px"><div class="card"><div class="section-head"><h3>Status Pendataan Hari Ini</h3><button class="btn primary" id="startInput">Mulai Pendataan</button></div><div class="grid class-grid">${state.classes.map(c=>{const r=classRecord(c);return `<button class="class-btn ${r?'done':'pending'}" data-class="${c}"><b>${c}</b><small>${r?'✓ '+esc(r.lastEditedByName||r.createdByName||'Guru'):'Belum didata'}</small></button>`}).join('')}</div></div><div class="card"><h3>Ringkasan Sekolah</h3><p>Semua guru aktif dapat mendata kelas mana pun. Koreksi tetap mencatat pengguna dan waktu perubahan.</p><div class="notice">Kepatuhan membawa <b>wadah + tumbler ${both}%</b>. Hari ini masih ada <b>${state.classes.length-done.size}</b> kelas yang belum didata.</div></div></div>`;
-  $('#startInput').onclick=()=>{state.page='input';renderShell()}; bindClassButtons();
+  const waliClean=waliClass?state.cleanlinessToday.find(x=>x.classId===waliClass):null;
+  content.innerHTML=`<div class="welcome"><span>Selamat datang,</span><h2>${esc(state.profile.name)} 👋</h2></div>
+  <div class="module-grid">
+    <div class="module-card module-wadah"><div class="module-icon">🥤</div><div><span class="eyebrow">PENDATAAN HARI INI</span><h3>Wadah & Tumbler</h3><strong>${done.size} dari ${state.classes.length} kelas</strong><div class="progress"><i style="width:${state.classes.length?Math.round(done.size/state.classes.length*100):0}%"></i></div><p>Wadah ${food}% • Tumbler ${tumb}%</p></div><button class="btn primary module-go" data-go="input">Mulai Pendataan →</button></div>
+    <div class="module-card module-clean"><div class="module-icon">🧹</div><div><span class="eyebrow">PEMERIKSAAN HARI INI</span><h3>Kebersihan Kelas</h3><strong>${state.cleanlinessToday.length} pemeriksaan</strong><p>${lastClean?`Terakhir: ${esc(lastClean.classId)} • JP ${esc(lastClean.jp)} • ${esc(lastClean.timeLabel||'')}`:'Belum ada pemeriksaan hari ini'}</p></div><button class="btn clean-btn module-go" data-go="clean">+ Cek Kebersihan</button></div>
+  </div>
+  ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>🥤 ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div></div>`:''}
+  <div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah & Tumbler</h3><small>Hanya pendataan wadah & tumbler yang dihitung sekali per kelas per hari.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`;
+  document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;renderShell()});
+  document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';renderShell()});
 }
 function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;renderShell()}); }
 
@@ -170,6 +176,52 @@ async function saveClass(c){
   }catch(e){ console.error(e); toast('Gagal menyimpan data'); btn.disabled=false;btn.textContent=`Simpan Data ${c}`; }
 }
 
+function cleanlinessPage(){
+  pageMeta('Kebersihan Kelas','Pemeriksaan dapat dilakukan beberapa kali dalam sehari');
+  const list=state.cleanlinessToday;
+  content.innerHTML=`<div class="clean-hero card"><div><span class="eyebrow">🧹 MODUL KEBERSIHAN</span><h3>Pemeriksaan Kebersihan Kelas</h3><p>Catat hanya pemeriksaan yang dilakukan. Tidak ada daftar JP yang belum diperiksa.</p></div><button id="newClean" class="btn primary">+ Pemeriksaan Baru</button></div>
+  <div class="card"><div class="section-head"><div><h3 style="margin:0">Pemeriksaan Hari Ini</h3><small>${list.length} pemeriksaan tercatat</small></div></div>
+  <div class="clean-list">${list.length?list.map(cleanCard).join(''):'<div class="empty">Belum ada pemeriksaan kebersihan hari ini.</div>'}</div></div>`;
+  $('#newClean').onclick=renderCleanForm;
+}
+function cleanCard(r){
+  const status=cleanOverall(r);
+  return `<div class="clean-item"><div class="clean-class"><b>${esc(r.classId)}</b><small>JP ${esc(r.jp)}</small></div><div class="clean-status ${status.cls}"><span></span><b>${status.label}</b></div><div class="clean-meta">${esc(r.timeLabel||'')}<br><small>${esc(r.createdByName||'Guru')}</small></div></div>`;
+}
+function cleanOverall(r){
+  const vals=['floor','desks','bin','equipment'].map(k=>Number(r[k]||0));
+  const min=Math.min(...vals);
+  const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+  if(min===1 || avg<2) return {label:'Perlu Ditangani',cls:'bad'};
+  if(vals.every(v=>v===3)) return {label:'Baik',cls:'good'};
+  return {label:'Cukup',cls:'fair'};
+}
+function renderCleanForm(){
+  pageMeta('Pemeriksaan Kebersihan','Pilih kelas dan JP, lalu nilai 4 aspek');
+  const aspect=(key,label,icon)=>`<div class="aspect-row"><div class="aspect-name"><span>${icon}</span><b>${label}</b></div><div class="tri-choice" data-aspect="${key}"><button data-v="3" class="good active">Baik</button><button data-v="2" class="fair">Cukup</button><button data-v="1" class="bad">Perlu</button></div></div>`;
+  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Pemeriksaan Baru</h3><small>Hanya pemeriksaan yang disimpan akan muncul di riwayat.</small></div><button class="btn ghost" id="backClean">← Kembali</button></div>
+  <div class="card clean-form"><div class="form-grid"><label>Kelas<select id="cleanClass">${state.classes.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label><label>JP<select id="cleanJp">${Array.from({length:12},(_,i)=>`<option value="${i+1}">JP ${i+1}</option>`).join('')}</select></label></div>
+  <div class="aspect-list">${aspect('floor','Lantai','🧹')}${aspect('desks','Meja & Kursi','🪑')}${aspect('bin','Tempat Sampah','🗑️')}${aspect('equipment','Perlengkapan Kelas','📚')}</div>
+  <label>Catatan <small>(opsional)</small><textarea id="cleanNote" rows="3" placeholder="Contoh: tempat sampah hampir penuh"></textarea></label>
+  <div class="clean-actions"><button id="allGood" class="btn secondary">✓ Semua Baik</button><button id="saveClean" class="btn primary">Simpan Pemeriksaan</button></div></div>`;
+  const values={floor:3,desks:3,bin:3,equipment:3};
+  document.querySelectorAll('.tri-choice button').forEach(b=>b.onclick=()=>{
+    const wrap=b.parentElement; values[wrap.dataset.aspect]=Number(b.dataset.v);
+    wrap.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));
+  });
+  $('#allGood').onclick=()=>{Object.keys(values).forEach(k=>values[k]=3);document.querySelectorAll('.tri-choice').forEach(w=>w.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x.dataset.v==='3')));};
+  $('#backClean').onclick=cleanlinessPage;
+  $('#saveClean').onclick=async()=>{
+    const btn=$('#saveClean'); btn.disabled=true; btn.textContent='Menyimpan...';
+    try{
+      const now=new Date(), classId=$('#cleanClass').value, jp=Number($('#cleanJp').value);
+      const id=`${todayKey()}_${classId}_JP${jp}_${Date.now()}`;
+      await setDoc(doc(db,'cleanliness',id),{date:todayKey(),classId,jp,...values,note:$('#cleanNote').value.trim(),createdByUid:state.user.uid,createdByName:state.profile.name,createdAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})});
+      await refreshCore(); toast(`Pemeriksaan ${classId} • JP ${jp} tersimpan`); cleanlinessPage();
+    }catch(e){console.error(e);toast(`Gagal menyimpan pemeriksaan: ${e.code||e.message}`);btn.disabled=false;btn.textContent='Simpan Pemeriksaan';}
+  };
+}
+
 function recap(){
   pageMeta('Rekap','Filter tanggal dan kelas');
   content.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap Pendataan</h3><small>Pilih tanggal untuk melihat histori pendataan.</small></div><div class="row-actions"><input id="recapDate" class="input-inline" type="date" value="${todayKey()}"><select id="recapClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div><div id="recapBody"><div class="empty">Memuat rekap...</div></div></div>`;
@@ -192,7 +244,7 @@ function account(){ pageMeta('Akun','Informasi pengguna'); const type=state.prof
 
 async function master(){
   if(state.profile.role!=='admin'){state.page='home';return renderShell()}
-  pageMeta('Kelola Data','Khusus Administrator • v2.6.1');
+  pageMeta('Kelola Data','Khusus Administrator • v2.7');
   content.innerHTML='<div class="card"><div class="empty">Memuat data master...</div></div>';
   const [stuSnap,userSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users'))]);
   state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));

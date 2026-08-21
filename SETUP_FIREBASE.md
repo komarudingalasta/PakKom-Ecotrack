@@ -1,4 +1,4 @@
-# Setup Firebase Pak Kom Eco Track v2.6.1
+# Setup Firebase PakKom Eco Track v2.7
 
 1. Authentication: aktifkan Email/Password.
 2. Firestore: gunakan firestore.rules pada paket ini.
