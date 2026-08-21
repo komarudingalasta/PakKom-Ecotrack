@@ -14,15 +14,34 @@ async function loadNationalHolidays(year){
   const cacheKey=`pakkom_holidays_${year}`;
   try{
     const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');
-    if(cached && cached.savedAt && Date.now()-cached.savedAt<7*86400000){ state.holidays=cached.items||{}; return; }
-  }catch(_){ }
+    if(cached?.items) state.holidays=cached.items;
+    if(cached?.savedAt && Date.now()-cached.savedAt<7*86400000) return state.holidays;
+  }catch(_){}
+
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),2500);
   try{
-    const r=await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/ID`,{cache:'no-cache'});
+    const r=await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/ID`,{
+      cache:'no-cache',signal:controller.signal
+    });
     if(!r.ok) throw new Error('holiday-api');
     const arr=await r.json();
     state.holidays=Object.fromEntries(arr.map(h=>[h.date,h.localName||h.name||'Libur Nasional']));
     localStorage.setItem(cacheKey,JSON.stringify({savedAt:Date.now(),items:state.holidays}));
-  }catch(e){ console.warn('Gagal memuat kalender libur nasional',e); state.holidays=state.holidays||{}; }
+    return state.holidays;
+  }catch(e){
+    console.warn('Kalender libur nasional memakai cache/fallback',e);
+    state.holidays=state.holidays||{};
+    return state.holidays;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+function syncNationalHolidaysInBackground(){
+  loadNationalHolidays(new Date().getFullYear()).then(()=>{
+    // Segarkan halaman aktif tanpa mengganggu proses login.
+    if(state.profile && state.page==='home') renderPage();
+  }).catch(()=>{});
 }
 function operationalInfo(dateKey=todayKey()){
   const override=state.calendarSettings?.overrides?.[dateKey];
@@ -100,7 +119,7 @@ async function finishSignedIn(user){
     const profile=await loadProfileForUser(user);
     state.user=user; state.profile=profile;
     await refreshCore();
-    showAuthLoading(false); renderShell();
+    showAuthLoading(false); renderShell(); syncNationalHolidaysInBackground();
   }catch(e){
     console.error(e); await signOut(auth).catch(()=>{});
     state.user=null; state.profile=null; showAuthLoading(false); renderShell();
@@ -232,7 +251,7 @@ $('#loginForm').addEventListener('submit',async e=>{
     const profile=await loadProfileForUser(cred.user);
     state.user=cred.user; state.profile=profile;
     await refreshCore();
-    authResolved=true; showAuthLoading(false); renderShell();
+    authResolved=true; showAuthLoading(false); renderShell(); syncNationalHolidaysInBackground();
   }catch(e){
     console.error(e); await signOut(auth).catch(()=>{});
     state.user=null; state.profile=null; renderShell();
@@ -246,7 +265,6 @@ $('#logoutBtn').onclick=()=>signOut(auth); if($('#quickLogout')) $('#quickLogout
 $('#menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('open');
 
 async function refreshCore(){
-  await loadNationalHolidays(new Date().getFullYear());
   const [classSnap, recordSnap, cleanSnap, calendarSnap] = await Promise.all([
     getDocs(query(collection(db,'classes'),orderBy('name'))).catch(()=>null),
     getDocs(query(collection(db,'records'),where('date','==',todayKey()))).catch(()=>null),
