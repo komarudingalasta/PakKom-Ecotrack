@@ -166,8 +166,8 @@ const ICON_TUMBLER=`<svg class="eco-icon eco-icon-bottle" viewBox="0 0 48 48" ar
 function esc(v=''){ return String(v).replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m])); }
 function pageMeta(title,sub=''){ $('#pageTitle').textContent=title; $('#pageSubtitle').textContent=sub; }
 function navItems(){
-  if(state.profile?.role==='admin') return [['home','🏠 Beranda'],['input','${ICON_TUMBLER} Wadah'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['master','⚙️ Kelola']];
-  return [['home','🏠 Beranda'],['input','${ICON_TUMBLER} Wadah'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['account','👤 Akun']];
+  if(state.profile?.role==='admin') return [['home','🏠 Beranda'],['input',ICON_TUMBLER+'<span>Wadah</span>'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['master','⚙️ Kelola']];
+  return [['home','🏠 Beranda'],['input',ICON_TUMBLER+'<span>Wadah</span>'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['account','👤 Akun']];
 }
 
 function showAuthLoading(show=true){
