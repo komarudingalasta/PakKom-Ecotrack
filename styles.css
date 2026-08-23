@@ -504,3 +504,72 @@ body{overflow-anchor:none}
   .classdata-summary-grid,.analysis-overview-grid,.student-history-summary{grid-template-columns:1fr 1fr}
   .student-daily-row{padding:10px 9px}
 }
+
+/* =========================================================
+   EcoTrack Modern 2026 — unified visual system
+   ========================================================= */
+:root{
+  --modern-green:#145a3d;--modern-green-2:#237c55;--modern-mint:#eaf7ef;
+  --modern-bg:#f5f8f6;--modern-line:#e2e9e5;--modern-text:#183b2d;
+  --modern-muted:#75827c;--modern-danger:#c95647;--modern-radius:18px;
+}
+body{background:var(--modern-bg)}
+.card,.module-card,.more-card,.account-card{border-radius:var(--modern-radius)!important;border:1px solid var(--modern-line)!important;box-shadow:0 8px 24px rgba(24,59,45,.055)!important}
+.btn{min-height:44px;border-radius:11px!important;font-weight:800;letter-spacing:-.01em}
+.btn.primary{background:linear-gradient(135deg,var(--modern-green-2),var(--modern-green))!important;box-shadow:0 5px 14px rgba(20,90,61,.14)}
+input,select,textarea{font-family:inherit}
+input:not([type=checkbox]):not([type=radio]),select,textarea{min-height:44px;border-radius:11px!important;border-color:#dbe5e0!important}
+.eyebrow{letter-spacing:.07em;font-weight:850}
+.badge{border-radius:999px!important}
+.section-head h3{letter-spacing:-.025em}
+
+/* Home */
+.modern-welcome{padding:4px 2px 15px}
+.modern-welcome>span{font-size:11px;font-weight:800;color:#658074}
+.modern-welcome h2{margin:3px 0 2px;font-size:27px;letter-spacing:-.04em;color:var(--modern-text)}
+.modern-welcome small{font-size:11px;color:#8a9690}
+.modern-dashboard .module-card{overflow:hidden;position:relative}
+.modern-dashboard .module-card:before{content:"";position:absolute;inset:0 auto auto 0;width:100%;height:3px;background:linear-gradient(90deg,#2c8b5d,#83c89f);opacity:.75}
+.modern-dashboard .module-wadah{background:linear-gradient(145deg,#f8fffa,#edf9f2)}
+.modern-dashboard .module-clean{background:linear-gradient(145deg,#fffdf8,#fff8e9)}
+.homeroom-card{background:linear-gradient(145deg,#fff,#f6fbf8)!important}
+.home-chat-card{transition:transform .18s ease,border-color .18s ease}.home-chat-card:hover{transform:translateY(-2px);border-color:#bfdccb!important}
+
+/* Account */
+.account-card{max-width:760px;margin-inline:auto}
+.account-name{letter-spacing:-.035em}
+.account-row{min-height:58px}
+.account-security{border-radius:15px!important;background:#f3f9f6!important;border:1px solid #e1eee7}
+
+/* Password */
+.password-page{display:flex;justify-content:center;padding:12px 0 30px}
+.password-card{width:min(100%,540px);background:#fff;border:1px solid var(--modern-line);border-radius:22px;padding:28px;box-shadow:0 16px 45px rgba(24,59,45,.08)}
+.password-hero-icon{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;margin:0 auto 10px;background:#e7f5eb;font-size:25px}
+.password-card>h3{text-align:center;margin:0;color:#173d2d;font-size:23px;letter-spacing:-.035em}
+.password-subtitle{text-align:center;margin:6px auto 24px;color:#78847e;font-size:12px;max-width:330px}
+.modern-field{margin-bottom:14px}.modern-field>label{display:block;margin:0 0 6px;font-size:11px;font-weight:800;color:#334c41}
+.password-wrap{position:relative;display:block;width:100%}
+.password-wrap input{width:100%;height:48px!important;padding:0 48px 0 40px!important;border:1px solid #dce5e0!important;border-radius:12px!important;background:#fff!important;box-sizing:border-box;outline:none;transition:.15s}
+.password-wrap input:focus{border-color:#68a986!important;box-shadow:0 0 0 3px rgba(72,142,103,.10)}
+.field-lock{position:absolute;left:13px;top:50%;transform:translateY(-50%);z-index:2;font-size:13px;opacity:.55;pointer-events:none}
+.pw-eye{position:absolute!important;right:7px!important;top:50%!important;transform:translateY(-50%)!important;width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;padding:0!important;margin:0!important;border:0!important;border-radius:9px!important;background:transparent!important;display:grid!important;place-items:center!important;color:#718078!important;font-size:16px!important;line-height:1!important;cursor:pointer}
+.pw-eye:hover{background:#eef5f1!important;color:#2c7652!important}
+.password-strength{display:flex;flex-direction:column;gap:5px;margin:18px 0;padding:13px 14px;border:1px solid #dcebe3;border-radius:13px;background:#f5fbf7}.password-strength b{font-size:11px;color:#355b48;margin-bottom:2px}.password-strength span{font-size:10px;color:#7c8882}.password-strength span.pass{color:#2a8256;font-weight:700}
+.password-actions{display:grid;grid-template-columns:1fr 1.4fr;gap:10px;margin-top:18px}
+
+/* Harmonize status */
+.badge.ok,.badge.good{background:#eaf8ef!important;color:#26744e!important}
+.badge.fair{background:#fff7e7!important;color:#9a6a18!important}
+.badge.bad{background:#fff0ed!important;color:#ad4d3e!important}
+.badge.neutral{background:#f0f3f2!important;color:#68756f!important}
+
+/* Mobile consistency */
+@media(max-width:720px){
+  main,#content{padding-left:14px!important;padding-right:14px!important}
+  .card,.module-card,.more-card{border-radius:17px!important}
+  .modern-welcome h2{font-size:23px}
+  .password-page{padding-top:0}.password-card{border-radius:18px;padding:20px 16px;box-shadow:0 8px 24px rgba(24,59,45,.06)}
+  .password-actions{grid-template-columns:1fr}.password-actions .primary{order:-1}
+  .account-row{min-height:54px}
+  .section-head{gap:8px}
+}

@@ -292,10 +292,61 @@ async function changeOwnPassword(oldPassword,newPassword){
   await user.updatePassword(newPassword);
 }
 function passwordPanel(){
-  pageMeta('Ubah Password','Kelola keamanan akun Anda');
-  content.innerHTML=`<div class="card"><h3>Ubah Password</h3><label>Password Lama<div class="password-wrap"><input id="pwOld" type="password"><button class="pw-eye" data-eye="pwOld">👁</button></div></label><label>Password Baru<div class="password-wrap"><input id="pwNew" type="password"><button class="pw-eye" data-eye="pwNew">👁</button></div></label><label>Ulangi Password Baru<div class="password-wrap"><input id="pwNew2" type="password"><button class="pw-eye" data-eye="pwNew2">👁</button></div></label><button id="savePassword" class="btn primary">Ubah Password</button></div>`;
-  document.querySelectorAll('[data-eye]').forEach(b=>b.onclick=()=>{const x=$('#'+b.dataset.eye);x.type=x.type==='password'?'text':'password'});
-  $('#savePassword').onclick=async()=>{try{const a=$('#pwOld').value,b=$('#pwNew').value,c=$('#pwNew2').value;if(b.length<6)throw new Error('Password baru minimal 6 karakter');if(b!==c)throw new Error('Konfirmasi password tidak sama');await changeOwnPassword(a,b);toast('Password berhasil diubah. Silakan login kembali.');await signOut(auth)}catch(e){toast(e.message||'Gagal mengubah password')}};
+  pageMeta('Ubah Password','Keamanan akun');
+  content.innerHTML=`<div class="password-page">
+    <div class="password-card">
+      <div class="password-hero-icon">🛡</div>
+      <h3>Ubah Password</h3>
+      <p class="password-subtitle">Jaga kerahasiaan akun Anda dengan password yang kuat.</p>
+
+      <div class="modern-field">
+        <label for="pwOld">Password Saat Ini</label>
+        <div class="password-wrap"><span class="field-lock">🔒</span><input id="pwOld" type="password" autocomplete="current-password" placeholder="Masukkan password saat ini"><button type="button" class="pw-eye" data-eye="pwOld" aria-label="Tampilkan password">◉</button></div>
+      </div>
+      <div class="modern-field">
+        <label for="pwNew">Password Baru</label>
+        <div class="password-wrap"><span class="field-lock">🔒</span><input id="pwNew" type="password" autocomplete="new-password" placeholder="Masukkan password baru"><button type="button" class="pw-eye" data-eye="pwNew" aria-label="Tampilkan password">◉</button></div>
+      </div>
+      <div class="modern-field">
+        <label for="pwNew2">Konfirmasi Password Baru</label>
+        <div class="password-wrap"><span class="field-lock">🔒</span><input id="pwNew2" type="password" autocomplete="new-password" placeholder="Ulangi password baru"><button type="button" class="pw-eye" data-eye="pwNew2" aria-label="Tampilkan password">◉</button></div>
+      </div>
+
+      <div class="password-strength" id="passwordStrength">
+        <b>Password yang kuat:</b>
+        <span data-rule="length">○ Minimal 8 karakter</span>
+        <span data-rule="case">○ Mengandung huruf besar & kecil</span>
+        <span data-rule="number">○ Mengandung angka</span>
+      </div>
+      <div class="password-actions">
+        <button id="cancelPassword" class="btn secondary">Batal</button>
+        <button id="savePassword" class="btn primary">🔒 Simpan Password</button>
+      </div>
+    </div>
+  </div>`;
+
+  const updateStrength=()=>{
+    const v=$('#pwNew').value||'';
+    const checks={length:v.length>=8,case:/[a-z]/.test(v)&&/[A-Z]/.test(v),number:/\d/.test(v)};
+    Object.entries(checks).forEach(([k,ok])=>{
+      const el=document.querySelector(`[data-rule="${k}"]`);if(el){el.classList.toggle('pass',ok);el.textContent=(ok?'✓ ':'○ ')+el.textContent.replace(/^[✓○]\s*/,'')}
+    });
+  };
+  document.querySelectorAll('[data-eye]').forEach(b=>b.onclick=()=>{
+    const x=$('#'+b.dataset.eye),show=x.type==='password';
+    x.type=show?'text':'password';b.textContent=show?'⊘':'◉';b.setAttribute('aria-label',show?'Sembunyikan password':'Tampilkan password');
+  });
+  $('#pwNew').addEventListener('input',updateStrength);
+  $('#cancelPassword').onclick=()=>{state.page='account';renderShell()};
+  $('#savePassword').onclick=async()=>{
+    try{
+      const a=$('#pwOld').value,b=$('#pwNew').value,c=$('#pwNew2').value;
+      if(b.length<8)throw new Error('Password baru minimal 8 karakter');
+      if(!/[a-z]/.test(b)||!/[A-Z]/.test(b)||!/\d/.test(b))throw new Error('Gunakan huruf besar, huruf kecil, dan angka');
+      if(b!==c)throw new Error('Konfirmasi password tidak sama');
+      await changeOwnPassword(a,b);toast('Password berhasil diubah. Silakan login kembali.');await signOut(auth);
+    }catch(e){toast(e.message||'Gagal mengubah password')}
+  };
 }
 async function logoutNow(){
   state.user=null;
@@ -439,9 +490,9 @@ function home(){
   const waliRec=waliClass?classRecord(waliClass):null;
   const waliClean=waliClass?state.cleanlinessToday.find(x=>x.classId===waliClass):null;
   const op=operationalInfo();
-  content.innerHTML=`<div class="welcome"><span>Selamat datang,</span><h2>${esc(state.profile.name)} 👋</h2></div>
+  content.innerHTML=`<div class="welcome modern-welcome"><span>${state.profile.isHomeroom?'Wali Kelas '+esc(state.profile.homeroomClass||''):'PakKom EcoTrack'}</span><h2>Selamat datang, ${esc(state.profile.name)} 👋</h2><small>${dateID()}</small></div>
   ${!op.active?`<div class="holiday-banner"><div>🏖️</div><div><b>Hari Tidak Aktif</b><span>${esc(op.label)} • Pendataan harian dan pemeriksaan kebersihan dinonaktifkan.</span></div></div>`:''}
-  <div class="module-grid ${!op.active?'modules-off':''}">
+  <div class="module-grid modern-dashboard ${!op.active?'modules-off':''}">
     <div class="module-card module-wadah"><div class="module-icon">${ICON_TUMBLER}</div><div><span class="eyebrow">PENDATAAN HARI INI</span><h3>Wadah Makan & Tumbler</h3><strong>${done.size} dari ${state.classes.length} kelas</strong><div class="progress"><i style="width:${state.classes.length?Math.round(done.size/state.classes.length*100):0}%"></i></div><p>Wadah ${food}% • Tumbler ${tumb}%</p></div><button class="btn primary module-go" data-go="input" ${!op.active?'disabled':''}>${op.active?'Mulai Pendataan →':'Hari Libur'}</button></div>
     <div class="module-card module-clean"><div class="module-icon">🧹</div><div><span class="eyebrow">PEMERIKSAAN HARI INI</span><h3>Kebersihan Kelas</h3><strong>${state.cleanlinessToday.length} pemeriksaan</strong><p>${lastClean?`Terakhir: ${esc(lastClean.classId)} • JP ${esc(lastClean.jp)} • ${esc(lastClean.timeLabel||'')}`:'Belum ada pemeriksaan hari ini'}</p></div><button class="btn clean-btn module-go" data-go="clean" ${!op.active?'disabled':''}>${op.active?'+ Cek Kebersihan':'Hari Libur'}</button></div>
   </div>
