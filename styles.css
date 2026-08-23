@@ -895,3 +895,36 @@ html.ecochat-keyboard-open[data-layout="mobile"] #nav{
 html.ecochat-input-focused[data-layout="mobile"] .chat-room-head{
   flex:0 0 auto;
 }
+
+/* =========================================================
+   EcoChat v3 — Stable Input Final Fix
+   ========================================================= */
+
+/* Do not resize/rebuild the chat DOM while the keyboard is active. */
+html.ecochat-input-focused[data-layout="mobile"] .chat-room.mobile-chat-open,
+html.ecochat-input-focused[data-layout="tablet"] .chat-room{
+  overflow:hidden!important;
+}
+html.ecochat-input-focused .chat-composer-wrap{
+  position:sticky!important;
+  bottom:0!important;
+  z-index:30!important;
+  background:#fff!important;
+}
+html.ecochat-input-focused .chat-composer textarea{
+  touch-action:manipulation;
+  -webkit-user-select:text;
+  user-select:text;
+}
+html.ecochat-input-focused[data-layout="mobile"] #nav,
+html.ecochat-keyboard-open[data-layout="mobile"] #nav{
+  display:none!important;
+}
+
+/* When EcoChat has no selected group, always show the group list. */
+html[data-layout="mobile"] .ecochat-shell .chat-groups:not(.mobile-hidden-when-chat){
+  display:block!important;
+}
+html[data-layout="mobile"] .ecochat-shell .chat-room:not(.mobile-chat-open){
+  display:none!important;
+}

@@ -453,8 +453,15 @@ if(!window.__pakkomResponsiveBound){
     clearTimeout(__responsiveTimer);
     __responsiveTimer=setTimeout(()=>{
       const before=document.documentElement.getAttribute('data-layout');
+      const active=document.activeElement;
+      const typing=!!active && (
+        active.tagName==='INPUT'
+        || active.tagName==='TEXTAREA'
+        || active.isContentEditable
+      );
       const after=applyResponsiveMode();
-      if(state?.profile && before!==after) renderShell();
+      // Jangan pernah bongkar DOM ketika keyboard/input sedang aktif.
+      if(state?.profile && before!==after && !typing) renderShell();
     },160);
   });
 }
@@ -482,6 +489,14 @@ function renderShell(){
   $('#nav').innerHTML=navItems().map(([k,l])=>`<button class="nav-btn ${state.page===k?'active':''}" data-page="${k}">${l}</button>`).join('');
   document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
     state.page=b.dataset.page;
+    if(state.page==='chat'){
+      state.chatGroup=null;
+      window.ecoChatReply=null;
+      window.ecoChatEdit=null;
+      if(state.chatUnsub){state.chatUnsub();state.chatUnsub=null}
+      if(state.chatReactionUnsub){state.chatReactionUnsub();state.chatReactionUnsub=null}
+      if(window.ecoBotTimer){clearInterval(window.ecoBotTimer);window.ecoBotTimer=null}
+    }
     state.selectedClass=null;
     window.scrollTo({top:0,left:0,behavior:'instant'});
     document.documentElement.scrollTop=0;
@@ -871,32 +886,10 @@ function morePage(){
   document.querySelectorAll('[data-more-go]').forEach(b=>b.onclick=()=>{state.page=b.dataset.moreGo;renderShell()});
   $('#moreLogout').onclick=()=>$('#logoutModal')?.classList.remove('hidden');
 }
-if(!window.__ecoChatResizeBound){
-  window.__ecoChatResizeBound=true;
-  let __ecoChatResizeTimer=null;
-  let __ecoChatLastWidth=window.innerWidth;
-  let __ecoChatLastOrientation=(screen.orientation?.type||'');
-  window.addEventListener('resize',()=>{
-    clearTimeout(__ecoChatResizeTimer);
-    __ecoChatResizeTimer=setTimeout(()=>{
-      const w=window.innerWidth;
-      const orientation=(screen.orientation?.type||'');
-      const active=document.activeElement;
-      const typing=!!active && (active.id==='chatText' || active.matches?.('.chat-composer textarea,.chat-composer input'));
+// EcoChat tidak dirender ulang dari event resize.
+ // Keyboard virtual Android/iOS juga memicu resize viewport dan sebelumnya
+ // menyebabkan textarea kehilangan fokus.
 
-      // Keyboard virtual di Android/iOS biasanya hanya mengubah TINGGI viewport.
-      // Jangan render ulang EcoChat saat pengguna sedang mengetik.
-      const widthChanged=Math.abs(w-__ecoChatLastWidth)>40;
-      const orientationChanged=orientation && orientation!==__ecoChatLastOrientation;
-      __ecoChatLastWidth=w;
-      __ecoChatLastOrientation=orientation;
-
-      if(state?.page==='chat' && !typing && (widthChanged||orientationChanged)){
-        ecoChatPage();
-      }
-    },220);
-  });
-}
 
 if(!window.__ecoChatViewportBound && window.visualViewport){
   window.__ecoChatViewportBound=true;
@@ -916,12 +909,10 @@ function ecoChatPage(){
   const groups=availableChatGroups();
   const mobile=(document.documentElement.getAttribute('data-layout')==='mobile');
 
-  // Mobile selalu mulai dari daftar grup jika belum memilih grup.
-  // Desktop/tablet boleh otomatis membuka grup pertama.
-  if(!mobile && (!state.chatGroup || !chatGroupById(state.chatGroup))){
-    state.chatGroup=groups[0]?.id||null;
-  }
-  if(mobile && state.chatGroup && !chatGroupById(state.chatGroup)){
+  // EcoChat selalu menghormati state.chatGroup.
+  // Saat menu EcoChat ditekan, state.chatGroup direset sehingga halaman
+  // kembali ke daftar seluruh grup pada Mobile, Tablet, maupun Desktop.
+  if(state.chatGroup && !chatGroupById(state.chatGroup)){
     state.chatGroup=null;
   }
 
@@ -1160,9 +1151,10 @@ function openEcoChatGroup(groupId){
     $('#chatText').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendEcoChatMessage(groupId)}};
     $('#chatText').onfocus=()=>{
       document.documentElement.classList.add('ecochat-input-focused');
-      setTimeout(()=>$('#chatText')?.scrollIntoView({block:'nearest',behavior:'smooth'}),120);
     };
-    $('#chatText').onblur=()=>document.documentElement.classList.remove('ecochat-input-focused');
+    $('#chatText').onblur=()=>{
+      document.documentElement.classList.remove('ecochat-input-focused');
+    };
   }
   if($('#runEcoBot'))$('#runEcoBot').onclick=async()=>{await ensureEcoBotMessages(groupId);toast('EcoBot memperbarui ringkasan jika belum dibuat hari ini.')};
 
