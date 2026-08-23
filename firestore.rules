@@ -27,6 +27,47 @@ service cloud.firestore {
       return isTeacher() && userDoc().data.isHomeroom == true;
     }
 
+    function chatGroupAllowed(groupId) {
+      return activeUser() && (
+        groupId == 'announcements'
+        || groupId == 'all-teachers'
+        || (
+          groupId == 'homerooms'
+          && (isAdmin() || isHomeroom())
+        )
+        || (
+          groupId == 'grade-7'
+          && (
+            isAdmin()
+            || (
+              isHomeroom()
+              && userDoc().data.homeroomClass.matches('^7.*')
+            )
+          )
+        )
+        || (
+          groupId == 'grade-8'
+          && (
+            isAdmin()
+            || (
+              isHomeroom()
+              && userDoc().data.homeroomClass.matches('^8.*')
+            )
+          )
+        )
+        || (
+          groupId == 'grade-9'
+          && (
+            isAdmin()
+            || (
+              isHomeroom()
+              && userDoc().data.homeroomClass.matches('^9.*')
+            )
+          )
+        )
+      );
+    }
+
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
 
@@ -166,6 +207,77 @@ service cloud.firestore {
     match /cleanlinessResetArchive/{archiveId} {
       allow read, create: if isAdmin();
       allow update, delete: if false;
+    }
+
+
+    // =====================================================
+    // ECOCHAT
+    // =====================================================
+
+    // Pesan grup. Query aplikasi selalu memakai where(groupId == ...).
+    match /chatMessages/{messageId} {
+      allow read: if chatGroupAllowed(resource.data.groupId);
+
+      allow create: if activeUser()
+        && request.resource.data.senderUid == request.auth.uid
+        && chatGroupAllowed(request.resource.data.groupId)
+        && (
+          request.resource.data.groupId != 'announcements'
+          || isAdmin()
+        );
+
+      // Core v1 belum menyediakan edit pesan.
+      allow update: if false;
+
+      // Admin dapat moderasi; pengirim dapat menghapus pesan sendiri.
+      allow delete: if isAdmin()
+        || (
+          activeUser()
+          && resource.data.senderUid == request.auth.uid
+        );
+    }
+
+    // Reaksi 👍 ✅ 👀 disimpan terpisah agar pesan asli tidak dapat
+    // dimodifikasi pengguna lain.
+    match /chatReactions/{reactionId} {
+      allow read: if chatGroupAllowed(resource.data.groupId);
+
+      allow create: if activeUser()
+        && request.resource.data.uid == request.auth.uid
+        && chatGroupAllowed(request.resource.data.groupId);
+
+      allow update: if false;
+
+      allow delete: if isAdmin()
+        || (
+          activeUser()
+          && resource.data.uid == request.auth.uid
+        );
+    }
+
+    // Status baca milik pengguna sendiri.
+    match /chatReads/{readId} {
+      allow read: if activeUser()
+        && (
+          resource.data.uid == request.auth.uid
+          || isAdmin()
+        );
+
+      allow create: if activeUser()
+        && request.resource.data.uid == request.auth.uid
+        && chatGroupAllowed(request.resource.data.groupId);
+
+      allow update: if activeUser()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.groupId == resource.data.groupId
+        && chatGroupAllowed(request.resource.data.groupId);
+
+      allow delete: if isAdmin()
+        || (
+          activeUser()
+          && resource.data.uid == request.auth.uid
+        );
     }
 
     match /{document=**} {

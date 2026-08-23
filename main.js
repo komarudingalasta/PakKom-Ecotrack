@@ -54,6 +54,12 @@ function wrapQuerySnapshot(snap){
 }
 async function getDoc(ref){ return wrapDocSnapshot(await ref.get()); }
 async function getDocs(ref){ return wrapQuerySnapshot(await ref.get()); }
+function onSnapshot(ref,next,error){
+  return ref.onSnapshot(snap=>{
+    if(snap && Array.isArray(snap.docs)) next(wrapQuerySnapshot(snap));
+    else next(wrapDocSnapshot(snap));
+  },error);
+}
 function setDoc(ref,data,options){
   if(options && options.merge) return ref.set(data,{merge:true});
   return ref.set(data);
@@ -133,7 +139,7 @@ const loginEmail = id => {
 let app, auth, db;
 let authResolved = true;
 let loginInProgress = false;
-let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null };
+let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null, chatUnread:0, chatGroup:null, chatUnsub:null, chatReactionUnsub:null };
 
 const APP_VERSION='3.3.7';
 function withTimeout(promise, ms=5000, label='Proses'){
@@ -144,7 +150,7 @@ function withTimeout(promise, ms=5000, label='Proses'){
 }
 function resetCoreState(){
   state.classDocs=[]; state.classes=[]; state.recordsToday=[]; state.cleanlinessToday=[];
-  state.students=[]; state.calendarSettings={overrides:{}}; state.accessSettings={homeroomCleanlinessEnabled:false}; state.operationalSettings=null;
+  state.students=[]; state.calendarSettings={overrides:{}}; state.accessSettings={homeroomCleanlinessEnabled:false}; state.operationalSettings=null; state.chatUnread=0; if(state.chatUnsub){state.chatUnsub();state.chatUnsub=null;} if(state.chatReactionUnsub){state.chatReactionUnsub();state.chatReactionUnsub=null;}
 }
 
 
@@ -168,8 +174,14 @@ const ICON_TUMBLER=`<svg class="eco-icon eco-icon-bottle" viewBox="0 0 48 48" ar
 function esc(v=''){ return String(v).replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m])); }
 function pageMeta(title,sub=''){ $('#pageTitle').textContent=title; $('#pageSubtitle').textContent=sub; }
 function navItems(){
-  if(state.profile?.role==='admin') return [['home','🏠 Beranda'],['input',ICON_TUMBLER+'<span>Wadah</span>'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['master','⚙️ Kelola']];
-  return [['home','🏠 Beranda'],['input',ICON_TUMBLER+'<span>Wadah</span>'],['clean','🧹 Kebersihan'],['recap','📊 Rekap'],['account','👤 Akun']];
+  const badge=state.chatUnread>0?`<span class="nav-unread">${state.chatUnread>99?'99+':state.chatUnread}</span>`:'';
+  return [
+    ['home','⌂<span>Beranda</span>'],
+    ['input',ICON_WADAH_MAKAN+'<span>Wadah</span>'],
+    ['clean','✦<span>Kebersihan</span>'],
+    ['chat',`💬<span>EcoChat</span>${badge}`],
+    ['more','☰<span>Lainnya</span>']
+  ];
 }
 
 function showAuthLoading(show=true){
@@ -199,6 +211,7 @@ async function loadCoreDataInBackground(){
   try{
     await refreshCore();
     if(state.profile) renderShell();
+    refreshChatUnread().catch(()=>{});
   }catch(e){
     console.error('Core data background error',e);
     toast('Sebagian data belum dapat dimuat. Coba refresh menu jika diperlukan.',5000);
@@ -410,6 +423,8 @@ function renderPage(){
   if(state.page==='recap')return recap();
   if(state.page==='account')return account();
   if(state.page==='master')return master();
+  if(state.page==='chat')return ecoChatPage();
+  if(state.page==='more')return morePage();
 }
 
 function home(){
@@ -431,11 +446,178 @@ function home(){
   </div>
   ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>${ICON_TUMBLER} ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div></div>`:''}
   ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah Makan & Tumbler</h3><small>Kelas yang belum melakukan pendataan hari ini.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
+  if(content && state.chatUnread>0) content.insertAdjacentHTML('beforeend',`<button class="card home-chat-card" data-go-chat="1"><div class="home-chat-icon">💬</div><div><b>EcoChat</b><span>${state.chatUnread} pesan belum dibaca</span></div><strong>Buka →</strong></button>`);
   document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;window.scrollTo(0,0);renderShell()});
   document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';window.scrollTo(0,0);renderShell()});
 }
 function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;window.scrollTo(0,0);renderShell()}); }
 
+
+function availableChatGroups(){
+  const p=state.profile||{}, groups=[
+    {id:'announcements',icon:'📢',name:'Pengumuman Sekolah',desc:'Informasi resmi dari Administrator'},
+    {id:'all-teachers',icon:'👥',name:'Semua Guru',desc:'Koordinasi seluruh guru'},
+  ];
+  if(p.role==='admin'||p.isHomeroom===true) groups.push({id:'homerooms',icon:'🎓',name:'Wali Kelas',desc:'Koordinasi khusus wali kelas'});
+  if(p.role==='admin'){
+    groups.push(
+      {id:'grade-7',icon:'7',name:'Jenjang 7',desc:'Koordinasi wali kelas jenjang 7'},
+      {id:'grade-8',icon:'8',name:'Jenjang 8',desc:'Koordinasi wali kelas jenjang 8'},
+      {id:'grade-9',icon:'9',name:'Jenjang 9',desc:'Koordinasi wali kelas jenjang 9'}
+    );
+  }else if(p.isHomeroom){
+    const g=String(p.homeroomClass||'').charAt(0);
+    if(['7','8','9'].includes(g))groups.push({id:`grade-${g}`,icon:g,name:`Jenjang ${g}`,desc:`Koordinasi wali kelas jenjang ${g}`});
+  }
+  return groups;
+}
+function chatGroupById(id){return availableChatGroups().find(g=>g.id===id)}
+function chatCanSend(groupId){
+  if(groupId==='announcements')return state.profile.role==='admin';
+  return !!chatGroupById(groupId);
+}
+async function getChatRead(groupId){
+  try{
+    const x=await getDoc(doc(db,'chatReads',`${groupId}_${state.user.uid}`));
+    return x.exists()?String(x.data().lastReadAt||''):'';
+  }catch(_){return ''}
+}
+async function markChatRead(groupId){
+  try{
+    await setDoc(doc(db,'chatReads',`${groupId}_${state.user.uid}`),{
+      groupId,uid:state.user.uid,lastReadAt:new Date().toISOString()
+    },{merge:true});
+  }catch(e){console.warn('read marker',e)}
+}
+async function refreshChatUnread(){
+  if(!state.user||!state.profile)return;
+  let total=0;
+  for(const g of availableChatGroups()){
+    try{
+      const [snap,last]=await Promise.all([
+        getDocs(query(collection(db,'chatMessages'),where('groupId','==',g.id))),
+        getChatRead(g.id)
+      ]);
+      total+=snap.docs.map(d=>d.data()).filter(m=>m.senderUid!==state.user.uid && String(m.createdAt||'')>last).length;
+    }catch(_){}
+  }
+  state.chatUnread=total;
+  if(state.profile && state.page!=='chat'){
+    const nav=$('#nav');
+    if(nav){
+      const btn=nav.querySelector('[data-page="chat"]');
+      if(btn){
+        const old=btn.querySelector('.nav-unread');if(old)old.remove();
+        if(total){const b=document.createElement('span');b.className='nav-unread';b.textContent=total>99?'99+':String(total);btn.appendChild(b);}
+      }
+    }
+  }
+}
+function morePage(){
+  pageMeta('Lainnya','Menu PakKom EcoTrack');
+  const admin=state.profile.role==='admin';
+  content.innerHTML=`<div class="more-grid">
+    <button class="more-card" data-more-go="recap"><span>📊</span><div><b>Rekap & Analisis</b><small>Rekap Wadah, Kebersihan, analisis dan apresiasi</small></div><strong>›</strong></button>
+    ${admin?`<button class="more-card" data-more-go="master"><span>⚙️</span><div><b>Kelola Data</b><small>Siswa, guru, kelas, periode dan operasional</small></div><strong>›</strong></button>`:''}
+    <button class="more-card" data-more-go="account"><span>👤</span><div><b>Akun</b><small>Profil dan keamanan akun</small></div><strong>›</strong></button>
+    <button class="more-card danger-card" id="moreLogout"><span>↪</span><div><b>Keluar</b><small>Keluar dari PakKom EcoTrack</small></div><strong>›</strong></button>
+  </div>`;
+  document.querySelectorAll('[data-more-go]').forEach(b=>b.onclick=()=>{state.page=b.dataset.moreGo;renderShell()});
+  $('#moreLogout').onclick=()=>$('#logoutModal')?.classList.remove('hidden');
+}
+function ecoChatPage(){
+  pageMeta('EcoChat','Komunikasi & koordinasi EcoTrack');
+  const groups=availableChatGroups();
+  if(!state.chatGroup||!chatGroupById(state.chatGroup))state.chatGroup=groups[0]?.id||null;
+  content.innerHTML=`<div class="ecochat-shell">
+    <section class="chat-groups ${state.chatGroup?'mobile-hidden-when-chat':''}">
+      <div class="chat-list-head"><div><h3>💬 EcoChat</h3><small>Pesan & pengumuman</small></div></div>
+      <div id="chatGroupList">${groups.map(g=>`<button class="chat-group-item ${state.chatGroup===g.id?'active':''}" data-chat-group="${g.id}">
+        <span class="chat-group-icon">${g.icon}</span><div><b>${esc(g.name)}</b><small>${esc(g.desc)}</small></div><span class="group-unread" data-unread-group="${g.id}"></span>
+      </button>`).join('')}</div>
+    </section>
+    <section class="chat-room ${state.chatGroup?'mobile-chat-open':''}">
+      <div id="chatRoomBody"></div>
+    </section>
+  </div>`;
+  document.querySelectorAll('[data-chat-group]').forEach(b=>b.onclick=()=>{state.chatGroup=b.dataset.chatGroup;ecoChatPage()});
+  loadGroupUnreadBadges();
+  if(state.chatGroup)openEcoChatGroup(state.chatGroup);
+}
+async function loadGroupUnreadBadges(){
+  for(const g of availableChatGroups()){
+    try{
+      const [snap,last]=await Promise.all([getDocs(query(collection(db,'chatMessages'),where('groupId','==',g.id))),getChatRead(g.id)]);
+      const n=snap.docs.map(d=>d.data()).filter(m=>m.senderUid!==state.user.uid&&String(m.createdAt||'')>last).length;
+      const el=document.querySelector(`[data-unread-group="${g.id}"]`);
+      if(el){el.textContent=n?String(n):'';el.classList.toggle('show',n>0)}
+    }catch(_){}
+  }
+}
+function openEcoChatGroup(groupId){
+  const g=chatGroupById(groupId),target=$('#chatRoomBody');if(!g||!target)return;
+  if(state.chatUnsub){state.chatUnsub();state.chatUnsub=null}
+  if(state.chatReactionUnsub){state.chatReactionUnsub();state.chatReactionUnsub=null}
+  target.innerHTML=`<div class="chat-room-head"><button class="chat-mobile-back" id="chatMobileBack">←</button><span class="chat-group-icon">${g.icon}</span><div><b>${esc(g.name)}</b><small>${esc(g.desc)}</small></div></div>
+    <div id="chatMessages" class="chat-messages"><div class="empty">Memuat pesan...</div></div>
+    ${chatCanSend(groupId)?`<div class="chat-composer"><textarea id="chatText" rows="1" maxlength="1500" placeholder="${groupId==='announcements'?'Tulis pengumuman resmi...':'Tulis pesan...'}"></textarea><button id="sendChat" class="chat-send">➤</button></div>`:`<div class="chat-readonly">📢 Hanya Administrator yang dapat mengirim pengumuman.</div>`}`;
+  if($('#chatMobileBack'))$('#chatMobileBack').onclick=()=>{state.chatGroup=null;ecoChatPage()};
+  if($('#sendChat'))$('#sendChat').onclick=()=>sendEcoChatMessage(groupId);
+  if($('#chatText'))$('#chatText').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendEcoChatMessage(groupId)}};
+  let messages=[],reactions=[];
+  const draw=()=>renderEcoMessages(groupId,messages,reactions);
+  state.chatUnsub=onSnapshot(query(collection(db,'chatMessages'),where('groupId','==',groupId)),snap=>{
+    messages=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||''))).slice(-150);
+    draw();markChatRead(groupId).then(()=>{state.chatUnread=0;refreshChatUnread()});
+  },e=>{$('#chatMessages').innerHTML='<div class="empty">Pesan belum dapat dimuat. Pastikan Firestore Rules EcoChat sudah dipublish.</div>';console.error(e)});
+  state.chatReactionUnsub=onSnapshot(query(collection(db,'chatReactions'),where('groupId','==',groupId)),snap=>{
+    reactions=snap.docs.map(d=>({id:d.id,...d.data()}));draw();
+  },()=>{});
+}
+function renderEcoMessages(groupId,messages,reactions){
+  const target=$('#chatMessages');if(!target)return;
+  if(!messages.length){target.innerHTML='<div class="chat-empty"><span>💬</span><b>Belum ada pesan</b><small>Mulai komunikasi EcoTrack di grup ini.</small></div>';return;}
+  const rx=messageId=>{
+    const r=reactions.filter(x=>x.messageId===messageId),map={};
+    r.forEach(x=>map[x.type]=(map[x.type]||0)+1);
+    return Object.entries(map).map(([k,n])=>`<button class="reaction-chip" data-react-msg="${messageId}" data-react="${k}">${k} ${n}</button>`).join('');
+  };
+  target.innerHTML=messages.map(m=>{
+    const mine=m.senderUid===state.user.uid,announcement=m.type==='announcement';
+    return `<article class="chat-message ${mine?'mine':''} ${announcement?'announcement-message':''}">
+      ${!mine?`<div class="message-avatar">${esc((m.senderName||'?').charAt(0).toUpperCase())}</div>`:''}
+      <div class="message-body"><div class="message-meta"><b>${esc(m.senderName||'Pengguna')}</b><span>${esc(m.senderLabel||'')}</span><time>${m.createdAt?new Date(m.createdAt).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}):''}</time></div>
+      ${announcement?'<span class="announcement-label">📢 PENGUMUMAN</span>':''}<div class="message-bubble">${esc(m.text||'').replace(/\n/g,'<br>')}</div>
+      <div class="message-reactions">${rx(m.id)}<button class="reaction-add" data-react-msg="${m.id}" data-react="👍">👍</button><button class="reaction-add" data-react-msg="${m.id}" data-react="✅">✅</button><button class="reaction-add" data-react-msg="${m.id}" data-react="👀">👀</button></div></div>
+    </article>`;
+  }).join('');
+  target.querySelectorAll('[data-react-msg]').forEach(b=>b.onclick=()=>toggleChatReaction(groupId,b.dataset.reactMsg,b.dataset.react));
+  target.scrollTop=target.scrollHeight;
+}
+async function sendEcoChatMessage(groupId){
+  const input=$('#chatText'),text=String(input?.value||'').trim();if(!text)return;
+  if(!chatCanSend(groupId))return toast('Anda tidak memiliki akses mengirim di grup ini');
+  const btn=$('#sendChat');if(btn)btn.disabled=true;
+  try{
+    const now=new Date(),id=`${now.getTime()}_${state.user.uid}_${Math.random().toString(36).slice(2,7)}`;
+    const label=state.profile.role==='admin'?'Admin':state.profile.isHomeroom?`Wali Kelas ${state.profile.homeroomClass||''}`:'Guru';
+    await setDoc(doc(db,'chatMessages',id),{
+      groupId,type:groupId==='announcements'?'announcement':'text',text,
+      senderUid:state.user.uid,senderName:state.profile.name||state.profile.loginId||'Pengguna',senderLabel:label,
+      createdAt:now.toISOString()
+    });
+    input.value='';
+  }catch(e){console.error(e);toast('Pesan gagal dikirim. Periksa Firestore Rules.')}
+  if(btn)btn.disabled=false;
+}
+async function toggleChatReaction(groupId,messageId,type){
+  const id=`${messageId}_${state.user.uid}_${encodeURIComponent(type)}`;
+  try{
+    const ref=doc(db,'chatReactions',id),snap=await getDoc(ref);
+    if(snap.exists())await deleteDoc(ref);
+    else await setDoc(ref,{groupId,messageId,type,uid:state.user.uid,name:state.profile.name||'',createdAt:new Date().toISOString()});
+  }catch(e){console.error(e);toast('Reaksi belum dapat disimpan')}
+}
 function teacherWadahLocked(){
   if(state.profile?.role==='admin') return false;
   const op=operationalInfo();
