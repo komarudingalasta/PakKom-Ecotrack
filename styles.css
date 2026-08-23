@@ -416,3 +416,50 @@ body{overflow-anchor:none}
   .message-actions{margin-left:auto}.message-actions button{width:28px;height:28px}
   .chat-bot-btn{font-size:10px;padding:6px 8px}
 }
+
+/* =========================================================
+   EcoChat v2 — Mobile Polish
+   ========================================================= */
+.chat-mobile-info{display:none}
+.chat-group-copy{min-width:0}
+.chat-group-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.chat-group-preview{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-group-chevron{font-size:24px;color:#9aa6a0;font-weight:400}
+.chat-desktop-placeholder{height:100%;min-height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#7f8b85}
+.chat-desktop-placeholder span{font-size:42px}
+.chat-desktop-placeholder b{color:#40564c;font-size:16px}
+
+@media(max-width:720px){
+  .ecochat-shell.is-mobile{display:block;background:#f8fbf9}
+  .chat-groups{display:block;background:#fff}
+  .chat-groups.mobile-hidden-when-chat{display:none!important}
+  .chat-room{display:none}
+  .chat-room.mobile-chat-open{display:flex!important;flex-direction:column;min-height:calc(100vh - 180px)}
+
+  .chat-list-head{padding:18px 16px 12px;border-bottom:0}
+  .chat-list-head h3{font-size:22px}
+  .chat-mobile-info{display:flex;flex-direction:column;gap:2px;margin:0 12px 10px;padding:11px 12px;border-radius:13px;background:#f2f8f5;color:#476257}
+  .chat-mobile-info span{font-size:12px;font-weight:800}
+  .chat-mobile-info small{font-size:10px;color:#77857e}
+
+  #chatGroupList{padding:0 8px 14px}
+  .chat-group-item{
+    grid-template-columns:46px 1fr 18px;
+    gap:11px;
+    margin:0 0 6px;
+    border:1px solid #edf1ef;
+    border-radius:15px;
+    padding:13px 12px;
+    background:#fff;
+  }
+  .chat-group-item.active{background:#edf8f2;border-color:#cfe7d9}
+  .chat-group-icon{width:46px;height:46px;border-radius:14px}
+  .chat-group-title b{font-size:13px}
+  .chat-group-preview{font-size:10px!important;color:#7b8882!important}
+  .chat-group-chevron{display:block}
+
+  .group-unread.show{display:grid;position:static;flex:0 0 auto}
+  .chat-room-head{position:sticky;top:0;z-index:5;background:#fff}
+  .chat-mobile-back{display:grid!important;place-items:center;font-size:17px}
+  .chat-desktop-placeholder{display:none}
+}

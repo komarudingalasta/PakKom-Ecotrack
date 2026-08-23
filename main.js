@@ -525,25 +525,99 @@ function morePage(){
   document.querySelectorAll('[data-more-go]').forEach(b=>b.onclick=()=>{state.page=b.dataset.moreGo;renderShell()});
   $('#moreLogout').onclick=()=>$('#logoutModal')?.classList.remove('hidden');
 }
+if(!window.__ecoChatResizeBound){
+  window.__ecoChatResizeBound=true;
+  let __ecoChatResizeTimer=null;
+  window.addEventListener('resize',()=>{
+    clearTimeout(__ecoChatResizeTimer);
+    __ecoChatResizeTimer=setTimeout(()=>{
+      if(state?.page==='chat') ecoChatPage();
+    },180);
+  });
+}
+
 function ecoChatPage(){
   pageMeta('EcoChat','Komunikasi & koordinasi EcoTrack');
   const groups=availableChatGroups();
-  if(!state.chatGroup||!chatGroupById(state.chatGroup))state.chatGroup=groups[0]?.id||null;
-  content.innerHTML=`<div class="ecochat-shell">
-    <section class="chat-groups ${state.chatGroup?'mobile-hidden-when-chat':''}">
-      <div class="chat-list-head"><div><h3>💬 EcoChat</h3><small>Pesan & pengumuman</small></div></div>
-      <div id="chatGroupList">${groups.map(g=>`<button class="chat-group-item ${state.chatGroup===g.id?'active':''}" data-chat-group="${g.id}">
-        <span class="chat-group-icon">${g.icon}</span><div><b>${esc(g.name)}</b><small>${esc(g.desc)}</small></div><span class="group-unread" data-unread-group="${g.id}"></span>
-      </button>`).join('')}</div>
+  const mobile=window.matchMedia('(max-width: 720px)').matches;
+
+  // Mobile selalu mulai dari daftar grup jika belum memilih grup.
+  // Desktop/tablet boleh otomatis membuka grup pertama.
+  if(!mobile && (!state.chatGroup || !chatGroupById(state.chatGroup))){
+    state.chatGroup=groups[0]?.id||null;
+  }
+  if(mobile && state.chatGroup && !chatGroupById(state.chatGroup)){
+    state.chatGroup=null;
+  }
+
+  content.innerHTML=`<div class="ecochat-shell ${mobile?'is-mobile':''}">
+    <section class="chat-groups ${mobile&&state.chatGroup?'mobile-hidden-when-chat':''}">
+      <div class="chat-list-head">
+        <div>
+          <h3>💬 EcoChat</h3>
+          <small>${groups.length} grup tersedia</small>
+        </div>
+      </div>
+
+      <div class="chat-mobile-info">
+        <span>Komunikasi internal PakKom EcoTrack</span>
+        <small>Pilih grup untuk membuka percakapan</small>
+      </div>
+
+      <div id="chatGroupList">
+        ${groups.map(g=>`
+          <button class="chat-group-item ${state.chatGroup===g.id?'active':''}" data-chat-group="${g.id}">
+            <span class="chat-group-icon">${g.icon}</span>
+            <div class="chat-group-copy">
+              <div class="chat-group-title">
+                <b>${esc(g.name)}</b>
+                <span class="group-unread" data-unread-group="${g.id}"></span>
+              </div>
+              <small class="chat-group-preview" data-group-preview="${g.id}">${esc(g.desc)}</small>
+            </div>
+            <span class="chat-group-chevron">›</span>
+          </button>
+        `).join('')}
+      </div>
     </section>
-    <section class="chat-room ${state.chatGroup?'mobile-chat-open':''}">
-      <div id="chatRoomBody"></div>
+
+    <section class="chat-room ${mobile&&state.chatGroup?'mobile-chat-open':''}">
+      <div id="chatRoomBody">${!state.chatGroup?'<div class="chat-desktop-placeholder"><span>💬</span><b>Pilih grup EcoChat</b><small>Percakapan akan tampil di sini.</small></div>':''}</div>
     </section>
   </div>`;
-  document.querySelectorAll('[data-chat-group]').forEach(b=>b.onclick=()=>{state.chatGroup=b.dataset.chatGroup;ecoChatPage()});
+
+  document.querySelectorAll('[data-chat-group]').forEach(b=>b.onclick=()=>{
+    state.chatGroup=b.dataset.chatGroup;
+    ecoChatPage();
+  });
+
   loadGroupUnreadBadges();
-  if(state.chatGroup)openEcoChatGroup(state.chatGroup);
+  loadChatGroupPreviews();
+
+  if(state.chatGroup){
+    openEcoChatGroup(state.chatGroup);
+  }
 }
+
+async function loadChatGroupPreviews(){
+  for(const g of availableChatGroups()){
+    const el=document.querySelector(`[data-group-preview="${g.id}"]`);
+    if(!el)continue;
+    try{
+      const snap=await getDocs(query(collection(db,'chatMessages'),where('groupId','==',g.id)));
+      const rows=snap.docs.map(d=>({id:d.id,...d.data()}))
+        .filter(m=>!m.deletedAt)
+        .sort((a,b)=>String(b.createdAtISO||b.createdAt||'').localeCompare(String(a.createdAtISO||a.createdAt||'')));
+      const last=rows[0];
+      if(last){
+        const who=last.type==='bot'?'EcoBot':(last.senderName||'Pesan');
+        const txt=String(last.text||'').replace(/\s+/g,' ').trim();
+        el.textContent=`${who}: ${txt.slice(0,70)}${txt.length>70?'…':''}`;
+      }
+    }catch(_){}
+  }
+}
+
 async function loadGroupUnreadBadges(){
   for(const g of availableChatGroups()){
     try{
@@ -646,7 +720,10 @@ function openEcoChatGroup(groupId){
     <div id="chatMessages" class="chat-messages"><div class="empty">Memuat pesan...</div></div>
     ${chatCanSend(groupId)?`<div class="chat-composer-wrap"><div id="chatComposerState"></div><div class="chat-composer"><textarea id="chatText" rows="1" maxlength="1500" placeholder="${groupId==='announcements'?'Tulis pengumuman resmi...':'Tulis pesan... gunakan @nama untuk mention'}"></textarea><button id="sendChat" class="chat-send">➤</button></div></div>`:`<div class="chat-readonly">📢 Hanya Administrator yang dapat mengirim pengumuman.</div>`}`;
 
-  if($('#chatMobileBack'))$('#chatMobileBack').onclick=()=>{state.chatGroup=null;ecoChatPage()};
+  if($('#chatMobileBack'))$('#chatMobileBack').onclick=()=>{
+    state.chatGroup=null;
+    ecoChatPage();
+  };
   if($('#sendChat'))$('#sendChat').onclick=()=>sendEcoChatMessage(groupId);
   if($('#chatText'))$('#chatText').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendEcoChatMessage(groupId)}};
   if($('#runEcoBot'))$('#runEcoBot').onclick=async()=>{await ensureEcoBotMessages(groupId);toast('EcoBot memperbarui ringkasan jika belum dibuat hari ini.')};
