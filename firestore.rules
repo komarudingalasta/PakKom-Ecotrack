@@ -238,12 +238,29 @@ service cloud.firestore {
           )
         );
 
-      // Hanya Admin boleh mengedit, menyematkan, atau melakukan tombstone
-      // pada pesan yang sudah terkirim. Identitas pesan tidak boleh dipindah grup
-      // dan pemilik asli tidak boleh diganti.
-      allow update: if isAdmin()
+      // Admin boleh moderasi/edit/pin semua pesan yang dapat diakses.
+      // Pengirim pesan teks juga boleh mengubah isi atau melakukan soft-delete
+      // pada pesannya sendiri. Identitas, grup, tipe, dan waktu awal tidak boleh diubah.
+      // Batas edit 15 menit diterapkan di UI karena createdAtISO tersimpan sebagai string;
+      // Rules tetap membatasi field yang dapat disentuh pengguna.
+      allow update: if (
+        isAdmin()
         && request.resource.data.groupId == resource.data.groupId
-        && request.resource.data.senderUid == resource.data.senderUid;
+        && request.resource.data.senderUid == resource.data.senderUid
+      ) || (
+        activeUser()
+        && resource.data.senderUid == request.auth.uid
+        && resource.data.type == 'text'
+        && request.resource.data.senderUid == resource.data.senderUid
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.createdAtISO == resource.data.createdAtISO
+        && request.resource.data.createdAtMs == resource.data.createdAtMs
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'text','editedAt','editedByUid','editedByName',
+          'deletedAt','deletedByUid','deletedByName','deletedByRole'
+        ])
+      );
 
       // Pengguna dapat menghapus pesan miliknya sendiri.
       // Admin tetap dapat menghapus untuk moderasi jika diperlukan.

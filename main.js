@@ -885,7 +885,7 @@ if(!window.__ecoChatResizeBound){
 function ecoChatPage(){
   pageMeta('EcoChat','Komunikasi & koordinasi EcoTrack');
   const groups=availableChatGroups();
-  const mobile=window.matchMedia('(max-width: 720px)').matches;
+  const mobile=(document.documentElement.getAttribute('data-layout')==='mobile');
 
   // Mobile selalu mulai dari daftar grup jika belum memilih grup.
   // Desktop/tablet boleh otomatis membuka grup pertama.
@@ -903,6 +903,7 @@ function ecoChatPage(){
           <h3>💬 EcoChat</h3>
           <small>${groups.length} grup tersedia</small>
         </div>
+        ${state.profile.role==='admin'?'<button id="chatActivityBtn" class="chat-activity-btn">Aktivitas</button>':''}
       </div>
 
       <div class="chat-mobile-info">
@@ -910,9 +911,14 @@ function ecoChatPage(){
         <small>Pilih grup untuk membuka percakapan</small>
       </div>
 
+      <div class="chat-list-tools">
+        <label class="chat-search"><span>⌕</span><input id="chatGroupSearch" type="search" placeholder="Cari grup..." autocomplete="off"></label>
+        <button class="chat-filter-btn active" data-chat-list-filter="all">Semua</button>
+        <button class="chat-filter-btn" data-chat-list-filter="unread">Belum dibaca</button>
+      </div>
       <div id="chatGroupList">
         ${groups.map(g=>`
-          <button class="chat-group-item ${state.chatGroup===g.id?'active':''}" data-chat-group="${g.id}">
+          <button class="chat-group-item ${state.chatGroup===g.id?'active':''}" data-chat-group="${g.id}" data-chat-name="${esc(g.name.toLowerCase())}">
             <span class="chat-group-icon">${g.icon}</span>
             <div class="chat-group-copy">
               <div class="chat-group-title">
@@ -936,8 +942,24 @@ function ecoChatPage(){
     state.chatGroup=b.dataset.chatGroup;
     ecoChatPage();
   });
+  const applyGroupListFilter=()=>{
+    const q=String($('#chatGroupSearch')?.value||'').toLowerCase().trim();
+    const mode=window.ecoChatListFilter||'all';
+    document.querySelectorAll('.chat-group-item').forEach(el=>{
+      const name=String(el.dataset.chatName||'');
+      const unread=Number(el.dataset.unreadCount||0)>0;
+      el.hidden=!!q&&!name.includes(q) || (mode==='unread'&&!unread);
+    });
+  };
+  if($('#chatActivityBtn'))$('#chatActivityBtn').onclick=()=>renderEcoChatActivity();
+  if($('#chatGroupSearch'))$('#chatGroupSearch').oninput=applyGroupListFilter;
+  document.querySelectorAll('[data-chat-list-filter]').forEach(b=>b.onclick=()=>{
+    window.ecoChatListFilter=b.dataset.chatListFilter;
+    document.querySelectorAll('[data-chat-list-filter]').forEach(x=>x.classList.toggle('active',x===b));
+    applyGroupListFilter();
+  });
 
-  loadGroupUnreadBadges();
+  loadGroupUnreadBadges().then(applyGroupListFilter);
   loadChatGroupPreviews();
 
   if(state.chatGroup){
@@ -945,6 +967,33 @@ function ecoChatPage(){
   }
 }
 
+async function renderEcoChatActivity(){
+  if(state.profile.role!=='admin')return;
+  pageMeta('Aktivitas EcoChat','Ringkasan komunikasi & moderasi');
+  content.innerHTML='<div class="card"><div class="empty">Memuat aktivitas EcoChat...</div></div>';
+  try{
+    const snap=await getDocs(collection(db,'chatMessages'));
+    const rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const today=todayKey();
+    const todayRows=rows.filter(m=>String(m.createdAtISO||m.createdAt||'').slice(0,10)===today);
+    const announcements=rows.filter(m=>m.type==='announcement'&&!m.deletedAt);
+    const deleted=rows.filter(m=>m.deletedAt);
+    const bots=rows.filter(m=>m.type==='bot'&&String(m.createdAtISO||'').slice(0,10)===today);
+    const byGroup={};todayRows.forEach(m=>byGroup[m.groupId]=(byGroup[m.groupId]||0)+1);
+    const active=Object.entries(byGroup).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    content.innerHTML=`<div class="section-head"><div><h3>💬 Pusat Aktivitas EcoChat</h3><small>Pemantauan komunikasi internal hari ini</small></div><button id="backEcoChat" class="btn secondary">← EcoChat</button></div>
+      <div class="chat-activity-grid">
+        <div><span>Pesan Hari Ini</span><b>${todayRows.length}</b></div>
+        <div><span>Pengumuman Aktif</span><b>${announcements.length}</b></div>
+        <div><span>EcoBot Hari Ini</span><b>${bots.length}</b></div>
+        <div><span>Pesan Dimoderasi</span><b>${deleted.length}</b></div>
+      </div>
+      <div class="card"><h3>Grup Paling Aktif Hari Ini</h3><div class="activity-groups">${active.map(([id,n])=>`<button data-open-activity-group="${esc(id)}"><span>${esc(chatGroupById(id)?.name||id)}</span><b>${n} pesan</b></button>`).join('')||'<div class="empty">Belum ada aktivitas hari ini.</div>'}</div></div>
+      <div class="card privacy-note"><b>🔐 Privasi</b><p>EcoChat menampilkan ringkasan komunikasi. Data individual siswa tidak dibagikan otomatis ke grup.</p></div>`;
+    $('#backEcoChat').onclick=()=>{state.page='chat';state.chatGroup=null;renderShell()};
+    document.querySelectorAll('[data-open-activity-group]').forEach(b=>b.onclick=()=>{state.page='chat';state.chatGroup=b.dataset.openActivityGroup;renderShell()});
+  }catch(e){console.error(e);content.innerHTML='<div class="card"><div class="empty">Aktivitas belum dapat dimuat.</div></div>'}
+}
 async function loadChatGroupPreviews(){
   for(const g of availableChatGroups()){
     const el=document.querySelector(`[data-group-preview="${g.id}"]`);
@@ -970,7 +1019,7 @@ async function loadGroupUnreadBadges(){
       const [snap,last]=await Promise.all([getDocs(query(collection(db,'chatMessages'),where('groupId','==',g.id))),getChatRead(g.id)]);
       const n=snap.docs.map(d=>d.data()).filter(m=>m.senderUid!==state.user.uid&&String(m.createdAt||'')>last).length;
       const el=document.querySelector(`[data-unread-group="${g.id}"]`);
-      if(el){el.textContent=n?String(n):'';el.classList.toggle('show',n>0)}
+      if(el){el.textContent=n?String(n):'';el.classList.toggle('show',n>0);const row=el.closest('.chat-group-item');if(row)row.dataset.unreadCount=String(n)}
     }catch(_){}
   }
 }
@@ -984,6 +1033,13 @@ function chatDisplayTime(m){
 }
 function formatChatText(text=''){
   return esc(text).replace(/(^|\s)(@[A-Za-zÀ-ÿ0-9._-]+)/g,'$1<span class="chat-mention">$2</span>').replace(/\n/g,'<br>');
+}
+function chatMessageAgeMinutes(m){
+  const raw=m.createdAtISO||m.createdAt||'';
+  try{const d=raw?.toDate?raw.toDate():new Date(raw);return (Date.now()-d.getTime())/60000}catch(_){return 999999}
+}
+function chatMessageCanOwnEdit(m){
+  return m.senderUid===state.user.uid && m.type==='text' && !m.deletedAt && chatMessageAgeMinutes(m)<=15;
 }
 function chatMessageCanOwnDelete(m){
   return m.senderUid===state.user.uid && m.type!=='bot' && m.type!=='announcement';
@@ -1110,14 +1166,14 @@ function renderEcoMessages(groupId,messages,reactions){
     const menu=!deleted?`<div class="message-actions">
       ${chatCanSend(groupId)?`<button data-chat-reply="${m.id}" title="Balas">↩</button>`:''}
       ${admin?`<button data-chat-edit="${m.id}" title="Edit">✎</button><button data-chat-pin="${m.id}" title="${m.pinned?'Lepas pin':'Pin'}">${m.pinned?'📍':'📌'}</button><button data-chat-delete="${m.id}" title="Hapus">🗑</button>`:
-        chatMessageCanOwnDelete(m)?`<button data-chat-delete-own="${m.id}" title="Hapus pesan sendiri">🗑</button>`:''}
+        chatMessageCanOwnDelete(m)?`${chatMessageCanOwnEdit(m)?`<button data-chat-edit-own="${m.id}" title="Edit pesan (maks. 15 menit)">✎</button>`:''}<button data-chat-delete-own="${m.id}" title="Hapus pesan sendiri">🗑</button>`:''}
     </div>`:'';
     const reply=m.replyTo&&!deleted?`<button class="reply-quote" data-jump-msg="${esc(m.replyTo.id||'')}"><b>${esc(m.replyTo.senderName||'Pesan')}</b><span>${esc(String(m.replyTo.text||'').slice(0,120))}</span></button>`:'';
     return `<article id="msg-${esc(m.id)}" class="chat-message ${mine?'mine':''} ${announcement?'announcement-message':''} ${bot?'bot-message':''} ${deleted?'deleted-message':''}">
       ${!mine?`<div class="message-avatar">${bot?'🤖':esc((m.senderName||'?').charAt(0).toUpperCase())}</div>`:''}
       <div class="message-body"><div class="message-meta"><b>${esc(m.senderName||'Pengguna')}</b><span>${esc(m.senderLabel||'')}</span>${m.editedAt?'<em>diedit</em>':''}<time>${chatDisplayTime(m)}</time>${menu}</div>
       ${announcement?'<span class="announcement-label">📢 PENGUMUMAN</span>':''}${bot?'<span class="bot-label">🤖 ECOBOT • SISTEM</span>':''}
-      ${deleted?`<div class="message-bubble deleted-bubble">Pesan dihapus oleh Admin</div>`:`${reply}<div class="message-bubble">${formatChatText(m.text||'')}</div>
+      ${deleted?`<div class="message-bubble deleted-bubble">${m.deletedByRole==='self'?'Pesan telah dihapus':'Pesan dihapus oleh Admin'}</div>`:`${reply}<div class="message-bubble">${formatChatText(m.text||'')}</div>
       <div class="message-reactions">${rx(m.id)}<button class="reaction-add" data-react-msg="${m.id}" data-react="👍">👍</button><button class="reaction-add" data-react-msg="${m.id}" data-react="✅">✅</button><button class="reaction-add" data-react-msg="${m.id}" data-react="👀">👀</button></div>`}</div>
     </article>`;
   }).join('');
@@ -1125,11 +1181,29 @@ function renderEcoMessages(groupId,messages,reactions){
   target.querySelectorAll('[data-react-msg]').forEach(b=>b.onclick=()=>toggleChatReaction(groupId,b.dataset.reactMsg,b.dataset.react));
   target.querySelectorAll('[data-chat-reply]').forEach(b=>b.onclick=()=>{const m=messages.find(x=>x.id===b.dataset.chatReply);if(m)setChatReply(m)});
   target.querySelectorAll('[data-chat-edit]').forEach(b=>b.onclick=()=>{const m=messages.find(x=>x.id===b.dataset.chatEdit);if(m)beginAdminEditMessage(m)});
+  target.querySelectorAll('[data-chat-edit-own]').forEach(b=>b.onclick=()=>{const m=messages.find(x=>x.id===b.dataset.chatEditOwn);if(m)beginOwnEditMessage(m)});
   target.querySelectorAll('[data-chat-delete]').forEach(b=>b.onclick=()=>{const m=messages.find(x=>x.id===b.dataset.chatDelete);if(m)adminDeleteChatMessage(m)});
   target.querySelectorAll('[data-chat-delete-own]').forEach(b=>b.onclick=()=>{const m=messages.find(x=>x.id===b.dataset.chatDeleteOwn);if(m)deleteOwnChatMessage(m)});
   target.querySelectorAll('[data-chat-pin]').forEach(b=>b.onclick=()=>{const m=messages.find(x=>x.id===b.dataset.chatPin);if(m)adminTogglePinMessage(m)});
   target.querySelectorAll('[data-jump-msg]').forEach(b=>b.onclick=()=>{const el=document.getElementById(`msg-${b.dataset.jumpMsg}`);if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('message-flash');setTimeout(()=>el.classList.remove('message-flash'),1200)}});
   target.scrollTop=target.scrollHeight;
+}
+function beginOwnEditMessage(m){
+  if(!chatMessageCanOwnEdit(m))return toast('Batas waktu edit pesan adalah 15 menit');
+  window.ecoChatEdit={...m,ownEdit:true};
+  window.ecoChatReply=null;
+  const input=$('#chatText');if(input){input.value=m.text||'';input.focus()}
+  renderChatComposerState();
+}
+async function saveOwnEditMessage(groupId){
+  const e=window.ecoChatEdit,input=$('#chatText'),text=String(input?.value||'').trim();
+  if(!e?.ownEdit||!chatMessageCanOwnEdit(e)||!text)return toast('Pesan tidak dapat diedit');
+  try{
+    await setDoc(doc(db,'chatMessages',e.id),{
+      text,editedAt:new Date().toISOString(),editedByUid:state.user.uid,editedByName:state.profile.name
+    },{merge:true});
+    window.ecoChatEdit=null;input.value='';renderChatComposerState();toast('Pesan diperbarui');
+  }catch(err){console.error(err);toast('Gagal mengedit pesan')}
 }
 function beginAdminEditMessage(m){
   if(state.profile.role!=='admin'||m.deletedAt||m.type==='bot')return;
@@ -1163,8 +1237,14 @@ async function adminDeleteChatMessage(m){
 }
 async function deleteOwnChatMessage(m){
   if(!chatMessageCanOwnDelete(m))return;
-  if(!confirm('Hapus pesan Anda?'))return;
-  try{await deleteDoc(doc(db,'chatMessages',m.id));toast('Pesan dihapus')}catch(e){console.error(e);toast('Gagal menghapus pesan')}
+  if(!confirm('Hapus pesan Anda? Pesan akan ditandai sebagai telah dihapus.'))return;
+  try{
+    await setDoc(doc(db,'chatMessages',m.id),{
+      deletedAt:new Date().toISOString(),deletedByUid:state.user.uid,deletedByName:state.profile.name,
+      deletedByRole:'self',text:''
+    },{merge:true});
+    toast('Pesan telah dihapus');
+  }catch(e){console.error(e);toast('Gagal menghapus pesan')}
 }
 async function adminTogglePinMessage(m){
   if(state.profile.role!=='admin'||m.deletedAt)return;
@@ -1175,7 +1255,7 @@ async function adminTogglePinMessage(m){
   }catch(e){console.error(e);toast('Gagal mengubah pin')}
 }
 async function sendEcoChatMessage(groupId){
-  if(window.ecoChatEdit)return adminSaveEditMessage(groupId);
+  if(window.ecoChatEdit)return window.ecoChatEdit.ownEdit?saveOwnEditMessage(groupId):adminSaveEditMessage(groupId);
   const input=$('#chatText'),text=String(input?.value||'').trim();if(!text)return;
   if(!chatCanSend(groupId))return toast('Anda tidak memiliki akses mengirim di grup ini');
   const btn=$('#sendChat');if(btn)btn.disabled=true;

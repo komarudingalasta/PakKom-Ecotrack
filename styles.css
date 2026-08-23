@@ -842,3 +842,27 @@ html[data-layout="mobile"] .module-grid{grid-template-columns:1fr!important}
 @media (hover:none) and (pointer:coarse){
   html[data-layout="desktop"] .app{display:block!important}
 }
+
+/* =========================================================
+   EcoChat v3 — Stability + Productivity
+   ========================================================= */
+.chat-list-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.chat-activity-btn{border:1px solid #dce7e1;background:#fff;border-radius:10px;padding:7px 9px;font-size:10px;font-weight:850;color:#2a7050;cursor:pointer}
+.chat-list-tools{display:flex;gap:5px;align-items:center;padding:8px 10px;border-bottom:1px solid #edf1ef}
+.chat-search{position:relative;display:flex;align-items:center;flex:1;min-width:0}
+.chat-search>span{position:absolute;left:9px;color:#829089;font-size:15px}
+.chat-search input{width:100%;min-height:36px!important;height:36px!important;padding:0 9px 0 28px!important;border-radius:10px!important;font-size:10px!important;background:#f7faf8!important}
+.chat-filter-btn{border:1px solid #e0e8e4;background:#fff;border-radius:999px;padding:7px 8px;font-size:9px;font-weight:800;color:#748078;white-space:nowrap}
+.chat-filter-btn.active{background:#e8f6ef;border-color:#c5e2d2;color:#24724e}
+.chat-group-item[hidden]{display:none!important}
+.chat-activity-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.chat-activity-grid>div{background:#fff;border:1px solid #e1e9e5;border-radius:16px;padding:15px;display:flex;flex-direction:column;gap:5px}
+.chat-activity-grid span{font-size:10px;color:#748078;font-weight:750}.chat-activity-grid b{font-size:25px;color:#194733}
+.activity-groups{display:grid;gap:7px}.activity-groups button{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e4ebe7;background:#fafcfb;border-radius:12px;padding:11px 12px;text-align:left}.activity-groups button span{font-weight:800;color:#355346}.activity-groups button b{font-size:10px;color:#277450}
+.privacy-note{margin-top:12px;background:#f5faf7!important}.privacy-note p{margin:5px 0 0;color:#718078;font-size:11px}
+@media(max-width:720px){
+  .chat-list-tools{position:sticky;top:0;z-index:3;background:#fff;flex-wrap:wrap}
+  .chat-search{flex-basis:100%}
+  .chat-filter-btn{flex:1}
+  .chat-activity-grid{grid-template-columns:1fr 1fr}
+}
