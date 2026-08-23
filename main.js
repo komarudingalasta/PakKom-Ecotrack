@@ -874,12 +874,41 @@ function morePage(){
 if(!window.__ecoChatResizeBound){
   window.__ecoChatResizeBound=true;
   let __ecoChatResizeTimer=null;
+  let __ecoChatLastWidth=window.innerWidth;
+  let __ecoChatLastOrientation=(screen.orientation?.type||'');
   window.addEventListener('resize',()=>{
     clearTimeout(__ecoChatResizeTimer);
     __ecoChatResizeTimer=setTimeout(()=>{
-      if(state?.page==='chat') ecoChatPage();
-    },180);
+      const w=window.innerWidth;
+      const orientation=(screen.orientation?.type||'');
+      const active=document.activeElement;
+      const typing=!!active && (active.id==='chatText' || active.matches?.('.chat-composer textarea,.chat-composer input'));
+
+      // Keyboard virtual di Android/iOS biasanya hanya mengubah TINGGI viewport.
+      // Jangan render ulang EcoChat saat pengguna sedang mengetik.
+      const widthChanged=Math.abs(w-__ecoChatLastWidth)>40;
+      const orientationChanged=orientation && orientation!==__ecoChatLastOrientation;
+      __ecoChatLastWidth=w;
+      __ecoChatLastOrientation=orientation;
+
+      if(state?.page==='chat' && !typing && (widthChanged||orientationChanged)){
+        ecoChatPage();
+      }
+    },220);
   });
+}
+
+if(!window.__ecoChatViewportBound && window.visualViewport){
+  window.__ecoChatViewportBound=true;
+  const syncEcoChatViewport=()=>{
+    const vv=window.visualViewport;
+    document.documentElement.style.setProperty('--ecochat-vh',`${vv.height}px`);
+    const keyboardOpen=(window.innerHeight-vv.height)>120;
+    document.documentElement.classList.toggle('ecochat-keyboard-open',keyboardOpen);
+  };
+  window.visualViewport.addEventListener('resize',syncEcoChatViewport);
+  window.visualViewport.addEventListener('scroll',syncEcoChatViewport);
+  syncEcoChatViewport();
 }
 
 function ecoChatPage(){
@@ -1127,7 +1156,14 @@ function openEcoChatGroup(groupId){
     ecoChatPage();
   };
   if($('#sendChat'))$('#sendChat').onclick=()=>sendEcoChatMessage(groupId);
-  if($('#chatText'))$('#chatText').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendEcoChatMessage(groupId)}};
+  if($('#chatText')){
+    $('#chatText').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendEcoChatMessage(groupId)}};
+    $('#chatText').onfocus=()=>{
+      document.documentElement.classList.add('ecochat-input-focused');
+      setTimeout(()=>$('#chatText')?.scrollIntoView({block:'nearest',behavior:'smooth'}),120);
+    };
+    $('#chatText').onblur=()=>document.documentElement.classList.remove('ecochat-input-focused');
+  }
   if($('#runEcoBot'))$('#runEcoBot').onclick=async()=>{await ensureEcoBotMessages(groupId);toast('EcoBot memperbarui ringkasan jika belum dibuat hari ini.')};
 
   let messages=[],reactions=[];

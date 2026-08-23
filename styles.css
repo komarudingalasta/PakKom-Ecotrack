@@ -866,3 +866,32 @@ html[data-layout="mobile"] .module-grid{grid-template-columns:1fr!important}
   .chat-filter-btn{flex:1}
   .chat-activity-grid{grid-template-columns:1fr 1fr}
 }
+
+/* =========================================================
+   EcoChat v3 — Mobile Keyboard Fix
+   ========================================================= */
+html.ecochat-keyboard-open[data-layout="mobile"] .chat-room.mobile-chat-open{
+  min-height:var(--ecochat-vh,100dvh)!important;
+  height:var(--ecochat-vh,100dvh)!important;
+  overflow:hidden!important;
+}
+html.ecochat-keyboard-open[data-layout="mobile"] .chat-messages{
+  min-height:0!important;
+  height:auto!important;
+  flex:1 1 auto!important;
+  overflow-y:auto!important;
+  overscroll-behavior:contain;
+}
+html.ecochat-keyboard-open[data-layout="mobile"] .chat-composer-wrap{
+  flex:0 0 auto!important;
+  position:relative!important;
+  bottom:auto!important;
+  z-index:10!important;
+  padding-bottom:max(4px,env(safe-area-inset-bottom))!important;
+}
+html.ecochat-keyboard-open[data-layout="mobile"] #nav{
+  display:none!important;
+}
+html.ecochat-input-focused[data-layout="mobile"] .chat-room-head{
+  flex:0 0 auto;
+}
