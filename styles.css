@@ -928,3 +928,45 @@ html[data-layout="mobile"] .ecochat-shell .chat-groups:not(.mobile-hidden-when-c
 html[data-layout="mobile"] .ecochat-shell .chat-room:not(.mobile-chat-open){
   display:none!important;
 }
+
+/* =========================================================
+   EcoChat — Reactions / Notifications / Composer Position
+   ========================================================= */
+.chat-head-actions{display:flex;align-items:center;gap:6px}
+
+/* On mobile the composer always sits directly above the bottom app menu. */
+html[data-layout="mobile"] .chat-room.mobile-chat-open{
+  position:relative!important;
+  padding-bottom:0!important;
+}
+html[data-layout="mobile"] .chat-room.mobile-chat-open .chat-messages{
+  padding-bottom:158px!important;
+}
+html[data-layout="mobile"] .chat-room.mobile-chat-open .chat-composer-wrap{
+  position:fixed!important;
+  left:0!important;
+  right:0!important;
+  bottom:calc(76px + env(safe-area-inset-bottom))!important;
+  z-index:85!important;
+  background:#fff!important;
+  border-top:1px solid #e3eae6!important;
+  box-shadow:0 -6px 18px rgba(28,65,49,.07)!important;
+}
+
+/* When the keyboard is open the bottom menu is hidden, so composer drops to keyboard edge. */
+html.ecochat-input-focused[data-layout="mobile"] .chat-composer-wrap,
+html.ecochat-keyboard-open[data-layout="mobile"] .chat-composer-wrap{
+  bottom:0!important;
+}
+html.ecochat-input-focused[data-layout="mobile"] .chat-messages,
+html.ecochat-keyboard-open[data-layout="mobile"] .chat-messages{
+  padding-bottom:88px!important;
+}
+
+/* Tablet menu floats higher; keep composer clear of it. */
+html[data-layout="tablet"] .chat-composer-wrap{
+  position:sticky!important;
+  bottom:92px!important;
+  z-index:30!important;
+  background:#fff!important;
+}

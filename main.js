@@ -139,7 +139,7 @@ const loginEmail = id => {
 let app, auth, db;
 let authResolved = true;
 let loginInProgress = false;
-let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null, chatUnread:0, chatGroup:null, chatUnsub:null, chatReactionUnsub:null };
+let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null, chatUnread:0, chatGroup:null, chatUnsub:null, chatReactionUnsub:null, chatNotifyTimer:null, chatUnreadInitialized:false };
 
 const APP_VERSION='3.3.7';
 function withTimeout(promise, ms=5000, label='Proses'){
@@ -150,7 +150,7 @@ function withTimeout(promise, ms=5000, label='Proses'){
 }
 function resetCoreState(){
   state.classDocs=[]; state.classes=[]; state.recordsToday=[]; state.cleanlinessToday=[];
-  state.students=[]; state.calendarSettings={overrides:{}}; state.accessSettings={homeroomCleanlinessEnabled:false}; state.operationalSettings=null; state.chatUnread=0; if(state.chatUnsub){state.chatUnsub();state.chatUnsub=null;} if(state.chatReactionUnsub){state.chatReactionUnsub();state.chatReactionUnsub=null;}
+  state.students=[]; state.calendarSettings={overrides:{}}; state.accessSettings={homeroomCleanlinessEnabled:false}; state.operationalSettings=null; state.chatUnread=0; state.chatUnreadInitialized=false; if(state.chatUnsub){state.chatUnsub();state.chatUnsub=null;} if(state.chatReactionUnsub){state.chatReactionUnsub();state.chatReactionUnsub=null;} if(state.chatNotifyTimer){clearInterval(state.chatNotifyTimer);state.chatNotifyTimer=null;}
 }
 
 
@@ -211,7 +211,7 @@ async function loadCoreDataInBackground(){
   try{
     await refreshCore();
     if(state.profile) renderShell();
-    refreshChatUnread().catch(()=>{});
+    startChatNotificationPolling();
   }catch(e){
     console.error('Core data background error',e);
     toast('Sebagian data belum dapat dimuat. Coba refresh menu jika diperlukan.',5000);
@@ -490,12 +490,8 @@ function renderShell(){
   document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
     state.page=b.dataset.page;
     if(state.page==='chat'){
-      state.chatGroup=null;
-      window.ecoChatReply=null;
-      window.ecoChatEdit=null;
-      if(state.chatUnsub){state.chatUnsub();state.chatUnsub=null}
-      if(state.chatReactionUnsub){state.chatReactionUnsub();state.chatReactionUnsub=null}
-      if(window.ecoBotTimer){clearInterval(window.ecoBotTimer);window.ecoBotTimer=null}
+      state.selectedClass=null;
+      return openEcoChatRoot();
     }
     state.selectedClass=null;
     window.scrollTo({top:0,left:0,behavior:'instant'});
@@ -543,12 +539,24 @@ function home(){
   ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah Makan & Tumbler</h3><small>Kelas yang belum melakukan pendataan hari ini.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
   if(content && state.chatUnread>0) content.insertAdjacentHTML('beforeend',`<button class="card home-chat-card" data-go-chat="1"><div class="home-chat-icon">💬</div><div><b>EcoChat</b><span>${state.chatUnread} pesan belum dibaca</span></div><strong>Buka →</strong></button>`);
   document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;window.scrollTo(0,0);renderShell()});
+  document.querySelectorAll('[data-go-chat]').forEach(b=>b.onclick=()=>openEcoChatRoot());
   if($('#openMyClassData'))$('#openMyClassData').onclick=()=>{state.page='classdata';renderShell()};
   document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';window.scrollTo(0,0);renderShell()});
 }
 function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;window.scrollTo(0,0);renderShell()}); }
 
 
+function openEcoChatRoot(){
+  state.page='chat';
+  state.chatGroup=null;
+  window.ecoChatReply=null;
+  window.ecoChatEdit=null;
+  if(state.chatUnsub){state.chatUnsub();state.chatUnsub=null}
+  if(state.chatReactionUnsub){state.chatReactionUnsub();state.chatReactionUnsub=null}
+  if(window.ecoBotTimer){clearInterval(window.ecoBotTimer);window.ecoBotTimer=null}
+  window.scrollTo(0,0);
+  renderShell();
+}
 function availableChatGroups(){
   const p=state.profile||{}, groups=[
     {id:'announcements',icon:'📢',name:'Pengumuman Sekolah',desc:'Informasi resmi dari Administrator'},
@@ -587,28 +595,68 @@ async function markChatRead(groupId){
 }
 async function refreshChatUnread(){
   if(!state.user||!state.profile)return;
+  const previous=Number(state.chatUnread||0);
   let total=0;
+  const perGroup=[];
   for(const g of availableChatGroups()){
     try{
       const [snap,last]=await Promise.all([
         getDocs(query(collection(db,'chatMessages'),where('groupId','==',g.id))),
         getChatRead(g.id)
       ]);
-      total+=snap.docs.map(d=>d.data()).filter(m=>m.senderUid!==state.user.uid && String(m.createdAt||'')>last).length;
+      const rows=snap.docs.map(d=>d.data()).filter(m=>!m.deletedAt);
+      const n=rows.filter(m=>m.senderUid!==state.user.uid && String(m.createdAtISO||m.createdAt||'')>last).length;
+      total+=n;perGroup.push({g,n});
     }catch(_){}
   }
   state.chatUnread=total;
+
+  if(state.chatUnreadInitialized && total>previous){
+    const delta=total-previous;
+    const group=perGroup.sort((a,b)=>b.n-a.n)[0]?.g;
+    toast(`💬 ${delta} pesan baru EcoChat${group?` • ${group.name}`:''}`);
+    if('Notification' in window && Notification.permission==='granted'){
+      try{
+        new Notification('PakKom EcoTrack • EcoChat',{
+          body:`${delta} pesan baru${group?` di ${group.name}`:''}`,
+          tag:'pakkom-ecochat',
+          renotify:true
+        });
+      }catch(_){}
+    }
+  }
+  state.chatUnreadInitialized=true;
+
   if(state.profile && state.page!=='chat'){
     const nav=$('#nav');
     if(nav){
       const btn=nav.querySelector('[data-page="chat"]');
       if(btn){
         const old=btn.querySelector('.nav-unread');if(old)old.remove();
-        if(total){const b=document.createElement('span');b.className='nav-unread';b.textContent=total>99?'99+':String(total);btn.appendChild(b);}
+        if(total){
+          const b=document.createElement('span');
+          b.className='nav-unread';b.textContent=total>99?'99+':String(total);btn.appendChild(b);
+        }
       }
     }
   }
 }
+function startChatNotificationPolling(){
+  if(state.chatNotifyTimer)clearInterval(state.chatNotifyTimer);
+  refreshChatUnread().catch(()=>{});
+  state.chatNotifyTimer=setInterval(()=>refreshChatUnread().catch(()=>{}),20000);
+}
+async function requestChatNotifications(){
+  if(!('Notification' in window))return toast('Browser ini belum mendukung notifikasi web.');
+  if(Notification.permission==='granted')return toast('🔔 Notifikasi EcoChat sudah aktif.');
+  if(Notification.permission==='denied')return toast('Notifikasi diblokir browser. Aktifkan dari pengaturan situs.');
+  try{
+    const result=await Notification.requestPermission();
+    toast(result==='granted'?'🔔 Notifikasi EcoChat diaktifkan.':'Notifikasi belum diizinkan.');
+    if(state.page==='chat')ecoChatPage();
+  }catch(e){console.error(e);toast('Tidak dapat meminta izin notifikasi.')}
+}
+
 
 function classDataAllowed(){
   return state.profile?.role==='admin' || state.profile?.isHomeroom===true;
@@ -923,7 +971,7 @@ function ecoChatPage(){
           <h3>💬 EcoChat</h3>
           <small>${groups.length} grup tersedia</small>
         </div>
-        ${state.profile.role==='admin'?'<button id="chatActivityBtn" class="chat-activity-btn">Aktivitas</button>':''}
+        <div class="chat-head-actions">${('Notification' in window)?`<button id="chatNotifyBtn" class="chat-activity-btn">${Notification.permission==='granted'?'🔔 Aktif':'🔔 Notifikasi'}</button>`:''}${state.profile.role==='admin'?'<button id="chatActivityBtn" class="chat-activity-btn">Aktivitas</button>':''}</div>
       </div>
 
       <div class="chat-mobile-info">
@@ -971,6 +1019,7 @@ function ecoChatPage(){
       el.hidden=!!q&&!name.includes(q) || (mode==='unread'&&!unread);
     });
   };
+  if($('#chatNotifyBtn'))$('#chatNotifyBtn').onclick=requestChatNotifications;
   if($('#chatActivityBtn'))$('#chatActivityBtn').onclick=()=>renderEcoChatActivity();
   if($('#chatGroupSearch'))$('#chatGroupSearch').oninput=applyGroupListFilter;
   document.querySelectorAll('[data-chat-list-filter]').forEach(b=>b.onclick=()=>{
@@ -1301,12 +1350,29 @@ async function sendEcoChatMessage(groupId){
   if(btn)btn.disabled=false;
 }
 async function toggleChatReaction(groupId,messageId,type){
-  const id=`${messageId}_${state.user.uid}_${encodeURIComponent(type)}`;
   try{
-    const ref=doc(db,'chatReactions',id),snap=await getDoc(ref);
-    if(snap.exists())await deleteDoc(ref);
-    else await setDoc(ref,{groupId,messageId,type,uid:state.user.uid,name:state.profile.name||'',createdAt:new Date().toISOString()});
-  }catch(e){console.error(e);toast('Reaksi belum dapat disimpan')}
+    const safeType=type==='👍'?'like':type==='✅'?'done':type==='👀'?'seen':'react';
+    const id=`${messageId}_${state.user.uid}_${safeType}`;
+
+    // Penting: jangan GET dokumen reaksi yang belum ada.
+    // Rules read menggunakan resource.data.groupId; GET terhadap dokumen non-existent
+    // dapat menghasilkan permission-denied. Cari reaksi pengguna dari snapshot/query grup.
+    const snap=await getDocs(query(collection(db,'chatReactions'),where('groupId','==',groupId)));
+    const existing=snap.docs.map(d=>({id:d.id,...d.data()}))
+      .find(r=>r.messageId===messageId && r.uid===state.user.uid && r.type===type);
+
+    if(existing){
+      await deleteDoc(doc(db,'chatReactions',existing.id));
+    }else{
+      await setDoc(doc(db,'chatReactions',id),{
+        groupId,messageId,type,uid:state.user.uid,
+        name:state.profile.name||'',createdAt:new Date().toISOString()
+      });
+    }
+  }catch(e){
+    console.error('Reaction error',e);
+    toast('Reaksi belum dapat disimpan. Pastikan Rules terbaru sudah dipublish.');
+  }
 }
 function teacherWadahLocked(){
   if(state.profile?.role==='admin') return false;
@@ -1863,7 +1929,7 @@ async function renderEcoAwards(){return renderEcoAnalysis()}
 async function metricsForRange(startDate,endDate){const data=await fetchEcoPeriod({start:startDate,end:endDate});return state.classes.map(c=>classPeriodMetrics(c,data))}
 function buildAwards(ms){const eligible=ms.filter(m=>m.eligible),desc=(key,filter=()=>true)=>[...ms].filter(filter).sort((a,b)=>(b[key]??-1)-(a[key]??-1))[0]||null;return{bestEco:[...eligible].sort((a,b)=>b.eco-a.eco)[0]||null,bestFood:desc('foodPct',m=>m.foodPct!==null),bestTumb:desc('tumbPct',m=>m.tumbPct!==null),bestClean:desc('cleanPct',m=>m.cleanPct!==null&&m.checks>=2)}}
 async function renderAnalysisPeriods(){
- const target=$('#masterTabContent');target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Periode Analisis</h3><small>Periode berjalan otomatis sesuai tanggal. Setelah selesai, hasil disimpan lalu Admin menentukan kapan dibagikan.</small></div><button id="newPeriod" class="btn primary">+ Jadwalkan Periode</button></div><div id="periodList"><div class="empty">Memuat...</div></div></div>`;$('#newPeriod').onclick=()=>editAnalysisPeriod();
+ const target=$('#masterTabContent');target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Periode Analisis</h3><small>Admin dapat membuat periode masa depan, periode berjalan, maupun periode historis yang sudah terlewat. Hasil periode historis langsung dihitung dan tersimpan.</small></div><button id="newPeriod" class="btn primary">+ Jadwalkan Periode</button></div><div id="periodList"><div class="empty">Memuat...</div></div></div>`;$('#newPeriod').onclick=()=>editAnalysisPeriod();
  let periods=await listAnalysisPeriods();periods=await finalizeEndedPeriods(periods);
  $('#periodList').innerHTML=periods.length?`<div class="period-list">${periods.map(p=>{const st=analysisPeriodStatus(p),shared=p.sharedToHomeroom===true;return `<div class="period-card"><div><b>${esc(p.name||'Tanpa nama')}</b><small>${periodLabel(p)}</small></div><span class="badge ${st==='running'?'ok':st==='finished'?'info':st==='scheduled'?'warn':'neutral'}">${analysisStatusLabel(st)}</span><div class="period-access"><small>Hasil: <b>${p.snapshot?'Tersimpan':'Belum final'}</b><br>Wali kelas: <b>${shared?'Dibagikan':'Belum dibagikan'}</b></small></div><div class="row-actions"><button class="btn-mini edit" data-edit-period="${p.id}">Buka</button>${st==='finished'&&p.snapshot?`<button class="btn-mini ${shared?'danger':''}" data-share-period="${p.id}">${shared?'Tarik Akses':'📤 Bagikan Hasil'}</button>`:''}</div></div>`}).join('')}</div>`:'<div class="empty">Belum ada periode analisis.</div>';
  document.querySelectorAll('[data-edit-period]').forEach(b=>b.onclick=()=>editAnalysisPeriod(b.dataset.editPeriod));document.querySelectorAll('[data-share-period]').forEach(b=>b.onclick=()=>togglePeriodShare(b.dataset.sharePeriod));
@@ -1872,7 +1938,28 @@ async function editAnalysisPeriod(id=null){
  let p={name:'',startDate:todayKey(),endDate:todayKey(),sharedToHomeroom:false};if(id){const d=await getDoc(doc(db,'analysisPeriods',id));if(d.exists())p={id:d.id,...d.data()}}
  const st=id?analysisPeriodStatus(p):'scheduled',locked=id&&(st==='finished'||p.snapshot);
  const host=$('#masterTabContent');host.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>${id?'Detail':'Jadwalkan'} Periode Analisis</h3><small>${id?`Status: ${analysisStatusLabel(st)}`:'Tentukan tanggal mulai dan selesai.'}</small></div><button id="backPeriods" class="btn ghost">← Kembali</button></div><div class="period-form"><label>Nama Periode<input id="periodName" value="${esc(p.name||'')}" ${locked?'disabled':''}></label><label>Tanggal Mulai<input id="periodStart" type="date" value="${p.startDate}" ${locked?'disabled':''}></label><label>Tanggal Selesai<input id="periodEnd" type="date" value="${p.endDate}" ${locked?'disabled':''}></label></div><div class="row-actions period-actions">${!locked?'<button id="saveSchedule" class="btn primary">Simpan Jadwal</button>':''}${id&&st==='finished'&&p.snapshot?`<button id="shareHere" class="btn ${p.sharedToHomeroom?'danger':'primary'}" ${p.correctionOpen?'disabled':''}>${p.sharedToHomeroom?'Tarik Akses Wali Kelas':'📤 Bagikan Hasil ke Wali Kelas'}</button>${p.correctionOpen?'<button id="recalculatePeriod" class="btn primary">✓ Hitung Ulang & Kunci Hasil</button>':'<button id="openCorrection" class="btn secondary">✎ Buka Koreksi Hasil</button>'}`:''}</div><div id="periodPreview">${p.snapshot?renderPeriodSnapshotHtml(p.snapshot):`<div class="empty">${st==='running'?'Periode sedang berjalan. Hasil final dibuat setelah tanggal akhir.':st==='scheduled'?'Periode belum dimulai.':'Hasil final belum tersedia.'}</div>`}</div>`;
- $('#backPeriods').onclick=renderAnalysisPeriods;if($('#saveSchedule'))$('#saveSchedule').onclick=async()=>{const name=$('#periodName').value.trim(),startDate=$('#periodStart').value,endDate=$('#periodEnd').value;if(!name||!startDate||!endDate||startDate>endDate)return toast('Lengkapi jadwal periode dengan benar');const ref=id?doc(db,'analysisPeriods',id):doc(collection(db,'analysisPeriods'));await setDoc(ref,{name,startDate,endDate,sharedToHomeroom:p.sharedToHomeroom===true,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name,...(!id?{createdAt:new Date().toISOString()}: {})},{merge:true});toast('Jadwal periode tersimpan');renderAnalysisPeriods()};if($('#shareHere'))$('#shareHere').onclick=()=>togglePeriodShare(id);
+ $('#backPeriods').onclick=renderAnalysisPeriods;if($('#saveSchedule'))$('#saveSchedule').onclick=async()=>{
+   const name=$('#periodName').value.trim(),startDate=$('#periodStart').value,endDate=$('#periodEnd').value;
+   if(!name||!startDate||!endDate||startDate>endDate)return toast('Lengkapi jadwal periode dengan benar');
+   try{
+     const ref=id?doc(db,'analysisPeriods',id):doc(collection(db,'analysisPeriods'));
+     const now=new Date().toISOString();
+     const payload={name,startDate,endDate,sharedToHomeroom:p.sharedToHomeroom===true,updatedAt:now,updatedByUid:state.user.uid,updatedByName:state.profile.name,...(!id?{createdAt:now}: {})};
+
+     // Admin boleh membuat periode masa depan, sedang berjalan, maupun periode yang sudah lewat.
+     // Jika seluruh periode sudah lewat, snapshot langsung dihitung agar jadwal historis tetap berguna.
+     if(!id && endDate<todayKey()){
+       const classes=await metricsForRange(startDate,endDate);
+       payload.snapshot={classes,awards:buildAwards(classes),calculatedAt:now,final:true};
+       payload.finalizedAt=now;
+       payload.finalizedBy='admin-create-historical';
+     }
+     await setDoc(ref,payload,{merge:true});
+     await addAdminAudit('SAVE_ANALYSIS_SCHEDULE',{periodId:ref.id||id||'',name,startDate,endDate,status:endDate<todayKey()?'historical':startDate>todayKey()?'scheduled':'running'});
+     toast(endDate<todayKey()?'Periode historis tersimpan dan hasil langsung dihitung':'Jadwal periode tersimpan');
+     renderAnalysisPeriods();
+   }catch(e){console.error(e);toast('Gagal menyimpan jadwal periode')}
+ };if($('#shareHere'))$('#shareHere').onclick=()=>togglePeriodShare(id);
  if($('#openCorrection'))$('#openCorrection').onclick=async()=>{
    if(p.sharedToHomeroom)return toast('Tarik akses Wali Kelas terlebih dahulu.');
    if(!confirm('Buka mode koreksi hasil? Setelah koreksi data sumber selesai, gunakan Hitung Ulang & Kunci Hasil.'))return;
