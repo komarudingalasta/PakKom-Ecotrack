@@ -395,3 +395,24 @@ body{overflow-anchor:none}
   .chat-groups{border-right:0}.chat-group-item{padding:14px 18px}.chat-room{display:none}.chat-room.mobile-chat-open{display:flex}.mobile-hidden-when-chat{display:none}.chat-mobile-back{display:grid;place-items:center}.chat-room-head{height:66px;padding:0 12px}
   .chat-messages{height:calc(100vh - 290px);min-height:360px;padding:16px 12px}.chat-message{max-width:90%}.announcement-message{max-width:96%}.chat-composer{padding:10px 12px}
 }
+
+/* =========================================================
+   EcoChat v2 — Smart Coordination
+   ========================================================= */
+.chat-room-head{position:relative}
+.chat-bot-btn{margin-left:auto}
+.chat-pinned{display:grid;grid-template-columns:28px 1fr;gap:9px;align-items:center;padding:9px 14px;border-bottom:1px solid #e3ece7;background:#f4fbf7;color:#315f49}
+.chat-pinned.hidden{display:none}.chat-pinned span{font-size:16px}.chat-pinned div{display:flex;flex-direction:column;min-width:0}.chat-pinned b{font-size:11px}.chat-pinned small{font-size:10px;color:#6f7d76;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-composer-wrap{border-top:1px solid #e9efec;background:#fff}.chat-composer-wrap .chat-composer{border-top:0}
+.composer-context{margin:8px 14px 0;padding:8px 10px;border-left:3px solid #55a77d;background:#f4f8f6;border-radius:9px;display:grid;grid-template-columns:1fr 28px;gap:8px;align-items:center}.composer-context div{display:flex;flex-direction:column;min-width:0}.composer-context b{font-size:11px;color:#2b6448}.composer-context small{font-size:10px;color:#76827c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.composer-context button{border:0;background:transparent;font-size:20px;color:#79857f}
+.message-meta{position:relative}.message-meta em{font-style:normal;font-size:9px;color:#8b9691}
+.message-actions{display:flex;gap:2px;margin-left:4px}.message-actions button{width:24px;height:24px;border:0;border-radius:7px;background:transparent;color:#7b8781;font-size:12px;cursor:pointer}.message-actions button:hover{background:#edf4f0;color:#2f7653}
+.reply-quote{display:flex;flex-direction:column;width:100%;border:0;border-left:3px solid #79b696;background:rgba(255,255,255,.65);padding:7px 9px;margin-bottom:5px;border-radius:8px;text-align:left;cursor:pointer}.reply-quote b{font-size:10px;color:#2e704e}.reply-quote span{font-size:10px;color:#6e7a74;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-mention{font-weight:800;color:#267650;background:#e7f5ed;border-radius:5px;padding:1px 3px}
+.bot-message{max-width:88%}.bot-message .message-avatar{background:#e8f4ff}.bot-message .message-bubble{background:#eef8f2;border:1px solid #d7eadf}.bot-label{display:inline-block;font-size:9px;font-weight:900;letter-spacing:.05em;color:#23724b;margin:0 0 5px}
+.deleted-message{opacity:.72}.deleted-bubble{font-style:italic;color:#7e8984;background:#f3f5f4!important;border:1px dashed #d9dfdc}
+.message-flash .message-bubble{animation:msgFlash 1.2s ease}@keyframes msgFlash{0%,100%{box-shadow:none}35%{box-shadow:0 0 0 4px rgba(72,171,116,.22)}}
+@media(max-width:720px){
+  .message-actions{margin-left:auto}.message-actions button{width:28px;height:28px}
+  .chat-bot-btn{font-size:10px;padding:6px 8px}
+}

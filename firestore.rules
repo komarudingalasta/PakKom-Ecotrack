@@ -218,18 +218,35 @@ service cloud.firestore {
     match /chatMessages/{messageId} {
       allow read: if chatGroupAllowed(resource.data.groupId);
 
+      // Pesan biasa memakai UID pengirim.
+      // Pesan EcoBot hanya dapat dibuat oleh Admin dan memakai senderUid='ecobot'.
       allow create: if activeUser()
-        && request.resource.data.senderUid == request.auth.uid
         && chatGroupAllowed(request.resource.data.groupId)
         && (
-          request.resource.data.groupId != 'announcements'
-          || isAdmin()
+          (
+            request.resource.data.type == 'bot'
+            && isAdmin()
+            && request.resource.data.senderUid == 'ecobot'
+          )
+          || (
+            request.resource.data.type != 'bot'
+            && request.resource.data.senderUid == request.auth.uid
+            && (
+              request.resource.data.groupId != 'announcements'
+              || isAdmin()
+            )
+          )
         );
 
-      // Core v1 belum menyediakan edit pesan.
-      allow update: if false;
+      // Hanya Admin boleh mengedit, menyematkan, atau melakukan tombstone
+      // pada pesan yang sudah terkirim. Identitas pesan tidak boleh dipindah grup
+      // dan pemilik asli tidak boleh diganti.
+      allow update: if isAdmin()
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.senderUid == resource.data.senderUid;
 
-      // Admin dapat moderasi; pengirim dapat menghapus pesan sendiri.
+      // Pengguna dapat menghapus pesan miliknya sendiri.
+      // Admin tetap dapat menghapus untuk moderasi jika diperlukan.
       allow delete: if isAdmin()
         || (
           activeUser()
