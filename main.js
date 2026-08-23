@@ -425,6 +425,7 @@ function renderPage(){
   if(state.page==='master')return master();
   if(state.page==='chat')return ecoChatPage();
   if(state.page==='more')return morePage();
+  if(state.page==='classdata')return homeroomStudentDataPage();
 }
 
 function home(){
@@ -444,10 +445,11 @@ function home(){
     <div class="module-card module-wadah"><div class="module-icon">${ICON_TUMBLER}</div><div><span class="eyebrow">PENDATAAN HARI INI</span><h3>Wadah Makan & Tumbler</h3><strong>${done.size} dari ${state.classes.length} kelas</strong><div class="progress"><i style="width:${state.classes.length?Math.round(done.size/state.classes.length*100):0}%"></i></div><p>Wadah ${food}% • Tumbler ${tumb}%</p></div><button class="btn primary module-go" data-go="input" ${!op.active?'disabled':''}>${op.active?'Mulai Pendataan →':'Hari Libur'}</button></div>
     <div class="module-card module-clean"><div class="module-icon">🧹</div><div><span class="eyebrow">PEMERIKSAAN HARI INI</span><h3>Kebersihan Kelas</h3><strong>${state.cleanlinessToday.length} pemeriksaan</strong><p>${lastClean?`Terakhir: ${esc(lastClean.classId)} • JP ${esc(lastClean.jp)} • ${esc(lastClean.timeLabel||'')}`:'Belum ada pemeriksaan hari ini'}</p></div><button class="btn clean-btn module-go" data-go="clean" ${!op.active?'disabled':''}>${op.active?'+ Cek Kebersihan':'Hari Libur'}</button></div>
   </div>
-  ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>${ICON_TUMBLER} ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div></div>`:''}
+  ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>${ICON_TUMBLER} ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div><button class="btn secondary" id="openMyClassData">Lihat Data Siswa & Analisis →</button></div>`:''}
   ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah Makan & Tumbler</h3><small>Kelas yang belum melakukan pendataan hari ini.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
   if(content && state.chatUnread>0) content.insertAdjacentHTML('beforeend',`<button class="card home-chat-card" data-go-chat="1"><div class="home-chat-icon">💬</div><div><b>EcoChat</b><span>${state.chatUnread} pesan belum dibaca</span></div><strong>Buka →</strong></button>`);
   document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;window.scrollTo(0,0);renderShell()});
+  if($('#openMyClassData'))$('#openMyClassData').onclick=()=>{state.page='classdata';renderShell()};
   document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';window.scrollTo(0,0);renderShell()});
 }
 function bindClassButtons(){ document.querySelectorAll('[data-class]').forEach(b=>b.onclick=()=>{state.page='input';state.selectedClass=b.dataset.class;window.scrollTo(0,0);renderShell()}); }
@@ -513,10 +515,275 @@ async function refreshChatUnread(){
     }
   }
 }
+
+function classDataAllowed(){
+  return state.profile?.role==='admin' || state.profile?.isHomeroom===true;
+}
+function classDataTargetClass(){
+  if(state.profile?.role==='admin') return window.classDataAdminClass || state.classes[0] || '';
+  return String(state.profile?.homeroomClass||'');
+}
+function isoShift(dateKey,days){
+  const [y,m,d]=String(dateKey).split('-').map(Number);
+  const x=new Date(y,m-1,d);x.setDate(x.getDate()+days);
+  return x.toLocaleDateString('en-CA');
+}
+function idDateShort(key){
+  if(!key)return '-';
+  const [y,m,d]=String(key).split('-').map(Number);
+  return new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric'}).format(new Date(y,m-1,d));
+}
+async function fetchClassStudents(classId){
+  const snap=await getDocs(query(collection(db,'students'),where('classId','==',classId)));
+  return snap.docs.map(d=>({id:d.id,...d.data()}))
+    .filter(x=>x.active!==false)
+    .sort((a,b)=>(a.name||'').localeCompare(b.name||'','id',{sensitivity:'base'}));
+}
+async function fetchClassRecordsAll(classId){
+  const snap=await getDocs(query(collection(db,'records'),where('classId','==',classId)));
+  return snap.docs.map(d=>({id:d.id,...d.data()}))
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+}
+function itemForStudent(record,student){
+  if(!record)return null;
+  const sid=String(student.id||''),nis=String(student.nis||student.id||'');
+  return (record.items||[]).find(i=>
+    String(i.studentId||'')===sid
+    || String(i.nis||'')===nis
+  )||null;
+}
+function carryStatus(item){
+  if(!item)return {key:'nodata',label:'Belum Ada Data',cls:'neutral'};
+  if(item.presence!=='hadir')return {key:'absent',label:item.presence==='izin'?'Izin':item.presence==='sakit'?'Sakit':item.presence==='alpa'?'Alpa':'Tidak Hadir',cls:'neutral'};
+  if(item.food&&item.tumbler)return {key:'both',label:'Wadah + Tumbler',cls:'good'};
+  if(item.food&&!item.tumbler)return {key:'food',label:'Hanya Wadah',cls:'fair'};
+  if(!item.food&&item.tumbler)return {key:'tumbler',label:'Hanya Tumbler',cls:'fair'};
+  return {key:'none',label:'Tidak Membawa Keduanya',cls:'bad'};
+}
+function studentPeriodMetric(student,records){
+  let present=0,food=0,tumbler=0,both=0,none=0;
+  const history=[];
+  records.forEach(r=>{
+    const i=itemForStudent(r,student); if(!i)return;
+    const st=carryStatus(i);
+    history.push({date:r.date,item:i,status:st});
+    if(i.presence==='hadir'){
+      present++;
+      if(i.food)food++;
+      if(i.tumbler)tumbler++;
+      if(i.food&&i.tumbler)both++;
+      if(!i.food&&!i.tumbler)none++;
+    }
+  });
+  const pct=n=>present?Math.round(n/present*100):0;
+  return {student,present,food,tumbler,both,none,foodPct:pct(food),tumblerPct:pct(tumbler),bothPct:pct(both),history};
+}
+function trendForMetrics(records,students){
+  if(records.length<2)return {label:'Belum cukup data',dir:'flat',delta:0,first:0,last:0};
+  const mid=Math.ceil(records.length/2),a=records.slice(0,mid),b=records.slice(mid);
+  const score=rs=>{
+    let present=0,both=0;
+    students.forEach(st=>rs.forEach(r=>{
+      const i=itemForStudent(r,st);
+      if(i?.presence==='hadir'){present++;if(i.food&&i.tumbler)both++}
+    }));
+    return present?Math.round(both/present*100):0;
+  };
+  const first=score(a),last=score(b),delta=last-first;
+  return {label:delta>2?`Meningkat +${delta}%`:delta<-2?`Menurun ${delta}%`:'Relatif stabil',dir:delta>2?'up':delta<-2?'down':'flat',delta,first,last};
+}
+function analysisLabel(metric){
+  if(metric.present===0)return {label:'Belum Ada Data',cls:'neutral'};
+  if(metric.bothPct>=90)return {label:'Sangat Konsisten',cls:'good'};
+  if(metric.bothPct>=75)return {label:'Konsisten',cls:'good'};
+  if(metric.bothPct>=50)return {label:'Mulai Konsisten',cls:'fair'};
+  return {label:'Perlu Diingatkan',cls:'bad'};
+}
+function homeroomStudentDataPage(){
+  if(!classDataAllowed()){state.page='home';return renderShell()}
+  const classId=classDataTargetClass();
+  pageMeta(state.profile.role==='admin'?'Data Siswa per Kelas':'Data Kelas Saya',classId?`Kelas ${classId}`:'');
+  content.innerHTML=`<div class="card classdata-loading"><div class="empty">Memuat data kelas...</div></div>`;
+  loadHomeroomStudentData(classId);
+}
+async function loadHomeroomStudentData(classId){
+  if(!classId){content.innerHTML='<div class="card"><div class="empty">Belum ada kelas yang dapat ditampilkan.</div></div>';return}
+  try{
+    const [students,records]=await Promise.all([fetchClassStudents(classId),fetchClassRecordsAll(classId)]);
+    window.classDataStudents=students;
+    window.classDataRecords=records;
+    window.classDataClassId=classId;
+    window.classDataTab=window.classDataTab||'daily';
+    const dates=[...new Set(records.map(r=>r.date).filter(Boolean))].sort();
+    window.classDataDailyDate=window.classDataDailyDate||dates.at(-1)||todayKey();
+    window.classDataStart=window.classDataStart||isoShift(todayKey(),-13);
+    window.classDataEnd=window.classDataEnd||todayKey();
+    renderHomeroomStudentDataShell();
+  }catch(e){
+    console.error(e);
+    content.innerHTML='<div class="card"><div class="empty">Data kelas belum dapat dimuat. Periksa koneksi dan Firestore Rules.</div></div>';
+  }
+}
+function renderHomeroomStudentDataShell(){
+  const classId=window.classDataClassId,students=window.classDataStudents||[],records=window.classDataRecords||[];
+  const admin=state.profile.role==='admin';
+  const tab=window.classDataTab||'daily';
+  const selected=records.find(r=>r.date===window.classDataDailyDate);
+  const todayPresent=selected?(selected.items||[]).filter(i=>i.presence==='hadir').length:0;
+  const todayFood=selected?(selected.items||[]).filter(i=>i.presence==='hadir'&&i.food).length:0;
+  const todayTumb=selected?(selected.items||[]).filter(i=>i.presence==='hadir'&&i.tumbler).length:0;
+  const pct=(n,d)=>d?Math.round(n/d*100):0;
+  content.innerHTML=`
+    <div class="classdata-hero card">
+      <div>
+        <span class="eyebrow">👨‍🎓 DATA SISWA</span>
+        <h3>${admin?'Data Wadah & Tumbler Siswa':`Kelas Saya • ${esc(classId)}`}</h3>
+        <p>Lihat data harian, konsistensi, dan riwayat siswa. Halaman ini hanya untuk pemantauan.</p>
+      </div>
+      ${admin?`<label class="classdata-class-select">Kelas<select id="classDataClassSelect">${state.classes.map(c=>`<option value="${esc(c)}" ${c===classId?'selected':''}>${esc(c)}</option>`).join('')}</select></label>`:''}
+    </div>
+
+    <div class="classdata-mini-stats">
+      <div><span>Siswa Aktif</span><b>${students.length}</b></div>
+      <div><span>Wadah ${idDateShort(window.classDataDailyDate)}</span><b>${selected?pct(todayFood,todayPresent)+'%':'-'}</b></div>
+      <div><span>Tumbler</span><b>${selected?pct(todayTumb,todayPresent)+'%':'-'}</b></div>
+    </div>
+
+    <div class="classdata-tabs">
+      <button class="${tab==='daily'?'active':''}" data-classdata-tab="daily">📅 Harian</button>
+      <button class="${tab==='analysis'?'active':''}" data-classdata-tab="analysis">📈 Analisis</button>
+    </div>
+    <div id="classDataBody"></div>`;
+
+  if($('#classDataClassSelect'))$('#classDataClassSelect').onchange=async e=>{
+    window.classDataAdminClass=e.target.value;
+    window.classDataDailyDate=null;window.classDataStart=null;window.classDataEnd=null;
+    content.innerHTML='<div class="card"><div class="empty">Memuat kelas...</div></div>';
+    await loadHomeroomStudentData(e.target.value);
+  };
+  document.querySelectorAll('[data-classdata-tab]').forEach(b=>b.onclick=()=>{
+    window.classDataTab=b.dataset.classdataTab;
+    renderHomeroomStudentDataShell();
+  });
+  if(tab==='daily')renderClassDataDaily();else renderClassDataAnalysis();
+}
+function renderClassDataDaily(){
+  const target=$('#classDataBody'),students=window.classDataStudents||[],records=window.classDataRecords||[];
+  const dates=[...new Set(records.map(r=>r.date).filter(Boolean))].sort().reverse();
+  const selected=records.find(r=>r.date===window.classDataDailyDate);
+  window.classDataDailyFilter=window.classDataDailyFilter||'all';
+  const rows=students.map(st=>({student:st,item:itemForStudent(selected,st)})).map(x=>({...x,status:carryStatus(x.item)}));
+  const filtered=rows.filter(x=>{
+    const f=window.classDataDailyFilter;
+    if(f==='all')return true;
+    if(f==='food-miss')return x.item?.presence==='hadir'&&!x.item.food;
+    if(f==='tumb-miss')return x.item?.presence==='hadir'&&!x.item.tumbler;
+    if(f==='none')return x.status.key==='none';
+    if(f==='complete')return x.status.key==='both';
+    return true;
+  });
+  const hadir=rows.filter(x=>x.item?.presence==='hadir').length;
+  const food=rows.filter(x=>x.item?.presence==='hadir'&&x.item.food).length;
+  const tumb=rows.filter(x=>x.item?.presence==='hadir'&&x.item.tumbler).length;
+  const both=rows.filter(x=>x.status.key==='both').length;
+  const none=rows.filter(x=>x.status.key==='none').length;
+  const pct=n=>hadir?Math.round(n/hadir*100):0;
+  target.innerHTML=`
+    <div class="card classdata-controls">
+      <label>Tanggal
+        <select id="classDataDate">${dates.map(d=>`<option value="${d}" ${d===window.classDataDailyDate?'selected':''}>${idDateShort(d)}</option>`).join('')||`<option value="${todayKey()}">${idDateShort(todayKey())}</option>`}</select>
+      </label>
+      <div class="classdata-filterchips">
+        ${[['all','Semua'],['complete','Lengkap'],['food-miss','Tidak Bawa Wadah'],['tumb-miss','Tidak Bawa Tumbler'],['none','Tidak Bawa Keduanya']].map(([k,l])=>`<button class="${window.classDataDailyFilter===k?'active':''}" data-daily-filter="${k}">${l}</button>`).join('')}
+      </div>
+    </div>
+    ${selected?`<div class="classdata-summary-grid">
+      <div class="summary-good"><span>✓ Wadah + Tumbler</span><b>${both}</b><small>${pct(both)}% siswa hadir</small></div>
+      <div><span>🍱 Membawa Wadah</span><b>${food}</b><small>${pct(food)}%</small></div>
+      <div><span>💧 Membawa Tumbler</span><b>${tumb}</b><small>${pct(tumb)}%</small></div>
+      <div class="${none?'summary-bad':''}"><span>Perlu Diingatkan</span><b>${none}</b><small>Tidak membawa keduanya</small></div>
+    </div>`:`<div class="card"><div class="empty">Belum ada pendataan kelas pada tanggal ini.</div></div>`}
+    <div class="student-daily-list">
+      ${filtered.map(({student,item,status},i)=>`<button class="student-daily-row" data-student-history="${esc(student.id)}">
+        <span class="student-index">${i+1}</span>
+        <div class="student-daily-name"><b>${esc(student.name||'-')}</b><small>NIS ${esc(student.nis||student.id||'-')}</small></div>
+        <div class="daily-icons">
+          <span class="${item?.presence==='hadir'&&item.food?'yes':'no'}" title="Wadah">${item?.presence==='hadir'&&item.food?'✓':'×'} 🍱</span>
+          <span class="${item?.presence==='hadir'&&item.tumbler?'yes':'no'}" title="Tumbler">${item?.presence==='hadir'&&item.tumbler?'✓':'×'} 💧</span>
+        </div>
+        <span class="badge ${status.cls}">${esc(status.label)}</span>
+        <strong>›</strong>
+      </button>`).join('')||'<div class="card"><div class="empty">Tidak ada siswa pada filter ini.</div></div>'}
+    </div>`;
+  if($('#classDataDate'))$('#classDataDate').onchange=e=>{window.classDataDailyDate=e.target.value;renderHomeroomStudentDataShell()};
+  document.querySelectorAll('[data-daily-filter]').forEach(b=>b.onclick=()=>{window.classDataDailyFilter=b.dataset.dailyFilter;renderClassDataDaily()});
+  document.querySelectorAll('[data-student-history]').forEach(b=>b.onclick=()=>renderStudentCarryHistory(b.dataset.studentHistory));
+}
+function renderClassDataAnalysis(){
+  const target=$('#classDataBody'),students=window.classDataStudents||[],all=window.classDataRecords||[];
+  const start=window.classDataStart,end=window.classDataEnd;
+  const records=all.filter(r=>String(r.date)>=start&&String(r.date)<=end);
+  const metrics=students.map(st=>studentPeriodMetric(st,records));
+  const presentTotal=metrics.reduce((a,m)=>a+m.present,0);
+  const foodTotal=metrics.reduce((a,m)=>a+m.food,0);
+  const tumbTotal=metrics.reduce((a,m)=>a+m.tumbler,0);
+  const bothTotal=metrics.reduce((a,m)=>a+m.both,0);
+  const pct=n=>presentTotal?Math.round(n/presentTotal*100):0;
+  const trend=trendForMetrics(records,students);
+  const need=metrics.filter(m=>m.present>=2&&m.bothPct<50).sort((a,b)=>a.bothPct-b.bothPct);
+  target.innerHTML=`
+    <div class="card classdata-period-controls">
+      <label>Mulai<input id="classDataStart" type="date" value="${esc(start)}"></label>
+      <label>Selesai<input id="classDataEnd" type="date" value="${esc(end)}"></label>
+      <button id="applyClassDataPeriod" class="btn primary">Terapkan</button>
+    </div>
+    <div class="analysis-overview-grid">
+      <div><span>🍱 Wadah</span><b>${pct(foodTotal)}%</b><small>${foodTotal}/${presentTotal} kehadiran</small></div>
+      <div><span>💧 Tumbler</span><b>${pct(tumbTotal)}%</b><small>${tumbTotal}/${presentTotal} kehadiran</small></div>
+      <div><span>✓ Keduanya</span><b>${pct(bothTotal)}%</b><small>Konsistensi kelas</small></div>
+      <div class="trend-${trend.dir}"><span>Tren</span><b>${trend.dir==='up'?'↑':trend.dir==='down'?'↓':'→'} ${esc(trend.label)}</b><small>${trend.first}% → ${trend.last}%</small></div>
+    </div>
+    <div class="card classdata-analysis-card">
+      <div class="section-head"><div><h3>Analisis per Siswa</h3><small>${records.length} hari pendataan • ${idDateShort(start)}–${idDateShort(end)}</small></div></div>
+      <div class="table-wrap"><table class="classdata-analysis-table"><thead><tr><th>Siswa</th><th>Hadir</th><th>Wadah</th><th>Tumbler</th><th>Keduanya</th><th>Status</th></tr></thead><tbody>
+        ${metrics.map(m=>{const a=analysisLabel(m);return `<tr data-student-analysis="${esc(m.student.id)}"><td><b>${esc(m.student.name||'-')}</b><small>NIS ${esc(m.student.nis||m.student.id||'-')}</small></td><td>${m.present}</td><td>${m.foodPct}%</td><td>${m.tumblerPct}%</td><td><b>${m.bothPct}%</b></td><td><span class="badge ${a.cls}">${a.label}</span></td></tr>`}).join('')}
+      </tbody></table></div>
+    </div>
+    <div class="card attention-card">
+      <div class="section-head"><div><h3>Perlu Diingatkan</h3><small>Berdasarkan konsistensi membawa Wadah + Tumbler di bawah 50% dan minimal 2 hari hadir.</small></div></div>
+      <div class="attention-list">${need.map(m=>`<button data-student-analysis="${esc(m.student.id)}"><span>${esc(m.student.name)}</span><b>${m.bothPct}%</b><small>${m.both}/${m.present} hari lengkap</small></button>`).join('')||'<div class="empty">Tidak ada siswa dalam kategori ini pada periode terpilih. 👍</div>'}</div>
+    </div>`;
+  $('#applyClassDataPeriod').onclick=()=>{
+    const a=$('#classDataStart').value,b=$('#classDataEnd').value;
+    if(!a||!b||a>b)return toast('Rentang tanggal tidak valid');
+    window.classDataStart=a;window.classDataEnd=b;renderClassDataAnalysis();
+  };
+  document.querySelectorAll('[data-student-analysis]').forEach(el=>el.onclick=()=>renderStudentCarryHistory(el.dataset.studentAnalysis,start,end));
+}
+function renderStudentCarryHistory(studentId,start=null,end=null){
+  const student=(window.classDataStudents||[]).find(s=>s.id===studentId);if(!student)return;
+  const all=window.classDataRecords||[];
+  const records=start&&end?all.filter(r=>String(r.date)>=start&&String(r.date)<=end):all.slice(-14);
+  const metric=studentPeriodMetric(student,records),a=analysisLabel(metric);
+  pageMeta('Riwayat Siswa',`${student.name||''} • ${window.classDataClassId||''}`);
+  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">${esc(student.name||'-')}</h3><small>NIS ${esc(student.nis||student.id||'-')}</small></div><button id="backClassData" class="btn ghost">← Data Kelas</button></div>
+    <div class="student-history-summary">
+      <div><span>Hari Hadir</span><b>${metric.present}</b></div>
+      <div><span>Wadah</span><b>${metric.foodPct}%</b></div>
+      <div><span>Tumbler</span><b>${metric.tumblerPct}%</b></div>
+      <div><span>Keduanya</span><b>${metric.bothPct}%</b></div>
+    </div>
+    <div class="card"><div class="student-status-head"><span class="badge ${a.cls}">${a.label}</span><small>Riwayat hanya untuk pemantauan Wali Kelas/Admin.</small></div>
+      <div class="student-history-list">${[...metric.history].reverse().map(h=>`<div class="history-row"><div><b>${idDateShort(h.date)}</b><small>${h.item?.presence==='hadir'?'Hadir':esc(h.status.label)}</small></div><span class="${h.item?.presence==='hadir'&&h.item.food?'yes':'no'}">${h.item?.presence==='hadir'&&h.item.food?'✓':'×'} Wadah</span><span class="${h.item?.presence==='hadir'&&h.item.tumbler?'yes':'no'}">${h.item?.presence==='hadir'&&h.item.tumbler?'✓':'×'} Tumbler</span><b class="badge ${h.status.cls}">${esc(h.status.label)}</b></div>`).join('')||'<div class="empty">Belum ada riwayat pada periode ini.</div>'}</div>
+    </div>`;
+  $('#backClassData').onclick=()=>{pageMeta(state.profile.role==='admin'?'Data Siswa per Kelas':'Data Kelas Saya',`Kelas ${window.classDataClassId}`);renderHomeroomStudentDataShell()};
+}
 function morePage(){
   pageMeta('Lainnya','Menu PakKom EcoTrack');
   const admin=state.profile.role==='admin';
+  const homeroom=state.profile.isHomeroom===true;
   content.innerHTML=`<div class="more-grid">
+    ${homeroom||admin?`<button class="more-card class-data-card" data-more-go="classdata"><span>👨‍🎓</span><div><b>${homeroom?'Data Kelas Saya':'Data Siswa per Kelas'}</b><small>Harian, riwayat Wadah & Tumbler, serta analisis siswa</small></div><strong>›</strong></button>`:''}
     <button class="more-card" data-more-go="recap"><span>📊</span><div><b>Rekap & Analisis</b><small>Rekap Wadah, Kebersihan, analisis dan apresiasi</small></div><strong>›</strong></button>
     ${admin?`<button class="more-card" data-more-go="master"><span>⚙️</span><div><b>Kelola Data</b><small>Siswa, guru, kelas, periode dan operasional</small></div><strong>›</strong></button>`:''}
     <button class="more-card" data-more-go="account"><span>👤</span><div><b>Akun</b><small>Profil dan keamanan akun</small></div><strong>›</strong></button>
