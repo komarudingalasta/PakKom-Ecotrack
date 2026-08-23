@@ -431,7 +431,35 @@ async function refreshCore(){
 
 function classRecord(c){ return state.recordsToday.find(r=>r.classId===c); }
 
+
+function applyResponsiveMode(){
+  const coarse=window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  const w=window.innerWidth;
+  let mode;
+  // Perangkat sentuh tidak dipaksa menjadi layout PC hanya karena browser memakai "Situs desktop".
+  if(coarse){
+    mode=w<700?'mobile':'tablet';
+  }else{
+    mode=w>=1180?'desktop':(w>=760?'tablet':'mobile');
+  }
+  document.documentElement.setAttribute('data-layout',mode);
+  document.documentElement.classList.toggle('touch-device',coarse);
+  return mode;
+}
+if(!window.__pakkomResponsiveBound){
+  window.__pakkomResponsiveBound=true;
+  let __responsiveTimer=null;
+  window.addEventListener('resize',()=>{
+    clearTimeout(__responsiveTimer);
+    __responsiveTimer=setTimeout(()=>{
+      const before=document.documentElement.getAttribute('data-layout');
+      const after=applyResponsiveMode();
+      if(state?.profile && before!==after) renderShell();
+    },160);
+  });
+}
 function renderShell(){
+  applyResponsiveMode();
   if(!state.profile){
     $('#bootView')?.classList.add('hidden');
     $('#loginView').classList.remove('hidden');
