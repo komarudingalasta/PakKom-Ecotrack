@@ -176,11 +176,11 @@ function pageMeta(title,sub=''){ $('#pageTitle').textContent=title; $('#pageSubt
 function navItems(){
   const badge=state.chatUnread>0?`<span class="nav-unread">${state.chatUnread>99?'99+':state.chatUnread}</span>`:'';
   return [
-    ['home','⌂<span>Beranda</span>'],
-    ['input',ICON_WADAH_MAKAN+'<span>Wadah</span>'],
-    ['clean','✦<span>Kebersihan</span>'],
-    ['chat',`💬<span>EcoChat</span>${badge}`],
-    ['more','☰<span>Lainnya</span>']
+    ['home','<span class="nav-icon">⌂</span><span class="nav-label">Beranda</span>'],
+    ['input','<span class="nav-icon">▣</span><span class="nav-label">Wadah</span>'],
+    ['clean','<span class="nav-icon">✦</span><span class="nav-label">Kebersihan</span>'],
+    ['chat',`<span class="nav-icon">💬</span><span class="nav-label">EcoChat</span>${badge}`],
+    ['more','<span class="nav-icon">☰</span><span class="nav-label">Lainnya</span>']
   ];
 }
 
@@ -1178,11 +1178,30 @@ function teacherWadahLocked(){
   if(!op.active) return true;
   return !wadahTimeInfo().open;
 }
+
+function inactiveModuleCard(moduleType,reason){
+  const isWadah=moduleType==='wadah';
+  const title=isWadah?'Wadah Makan & Tumbler':'Kebersihan Kelas';
+  const desc=isWadah
+    ? 'Pendataan Wadah Makan & Tumbler tidak tersedia hari ini.'
+    : 'Pemeriksaan Kebersihan Kelas tidak tersedia hari ini.';
+  const icon=isWadah?'🌿':'🌿';
+  return `<div class="inactive-state-wrap">
+    <div class="card inactive-state-card">
+      <div class="inactive-state-icon">${icon}</div>
+      <span class="inactive-state-kicker">${esc(title)}</span>
+      <h3>Hari Tidak Aktif</h3>
+      <div class="inactive-reason">${esc(reason||'Jadwal tidak aktif')}</div>
+      <p>${esc(desc)}</p>
+      <small>Data sebelumnya tetap dapat dilihat melalui menu Rekap.</small>
+    </div>
+  </div>`;
+}
 function inputPage(){
   pageMeta('Wadah Makan & Tumbler','Pilih kelas lalu tandai kondisi siswa');
   const op=operationalInfo();
   if(!op.active){
-    content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p><small>Pendataan Wadah Makan & Tumbler tidak tersedia hari ini.</small></div>`;
+    content.innerHTML=inactiveModuleCard('wadah',op.label);
     return;
   }
 
@@ -1385,7 +1404,7 @@ function hm(m){return String(Math.floor(m/60)).padStart(2,'0')+'.'+String(m%60).
 
 function cleanlinessPage(){
   pageMeta('Kebersihan Kelas','Pantau kelas yang sudah dan belum diperiksa hari ini');
-  const op=operationalInfo(); if(!op.active){content.innerHTML=`<div class="card holiday-card"><div class="holiday-icon">🏖️</div><h3>Hari Tidak Aktif</h3><p>${esc(op.label)}</p></div>`;return;}
+  const op=operationalInfo(); if(!op.active){content.innerHTML=inactiveModuleCard('clean',op.label);return;}
   window.cleanClassFilter=window.cleanClassFilter||'all';
   const own=state.profile.isHomeroom===true&&state.profile.role!=='admin'?String(state.profile.homeroomClass||''):'',ownAllowed=state.accessSettings?.homeroomCleanlinessEnabled===true;
   const stat=c=>{const rows=state.cleanlinessToday.filter(r=>r.classId===c),n=new Set(rows.map(r=>Number(r.jp))).size;return{rows,n}};
