@@ -2055,7 +2055,7 @@ async function editAnalysisPeriod(id=null){
     const name=$('#periodName').value.trim(),type=$('#periodType').value,startDate=$('#periodStart').value,endDate=$('#periodEnd').value,notes=$('#periodNotes').value.trim();
     if(!name||!startDate||!endDate||startDate>endDate)return toast('Lengkapi jadwal periode dengan benar');
     try{
-      const ref=id?doc(db,'analysisPeriods',id):doc(collection(db,'analysisPeriods')),now=new Date().toISOString();
+      const ref=id?doc(db,'analysisPeriods',id):collection(db,'analysisPeriods').doc(),now=new Date().toISOString();
       // Intentionally ONLY save schedule metadata here.
       await setDoc(ref,{
         name,type,startDate,endDate,notes,
