@@ -970,3 +970,28 @@ html[data-layout="tablet"] .chat-composer-wrap{
   z-index:30!important;
   background:#fff!important;
 }
+
+/* =========================================================
+   Analysis Period v2 — Schedule / Calculate / Share
+   ========================================================= */
+.analysis-v2-shell{display:grid;gap:16px}
+.period-v2-section{display:grid;gap:9px}
+.period-v2-title{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 0}
+.period-v2-title>div{display:flex;flex-direction:column;gap:2px}
+.period-v2-title b{font-size:13px;color:#234b39}.period-v2-title small{font-size:10px;color:#839089}
+.period-v2-title>span{min-width:26px;height:26px;border-radius:999px;display:grid;place-items:center;background:#edf5f0;color:#397056;font-size:10px;font-weight:900}
+.period-v2-card{grid-template-columns:minmax(180px,1.4fr) auto minmax(150px,.8fr) auto!important}
+.period-main{display:flex;flex-direction:column;gap:3px}.period-main small{font-size:10px;color:#7b8881}
+.analysis-v2-editor .period-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.analysis-v2-editor .period-form label{display:flex;flex-direction:column;gap:6px;font-size:10px;font-weight:850;color:#52665c}
+.analysis-v2-editor .period-notes{grid-column:1/-1}
+.analysis-v2-editor textarea{min-height:76px;padding:10px 12px}
+.schedule-preview{margin:14px 0;padding:12px 14px;border:1px solid #dbe9e1;border-radius:13px;background:#f4faf6;color:#35634d;font-size:11px;font-weight:800}
+.period-actions{margin:8px 0 16px;flex-wrap:wrap}
+@media(max-width:760px){
+ .period-v2-card{grid-template-columns:1fr auto!important}
+ .period-v2-card .period-access{grid-column:1/-1}
+ .period-v2-card .row-actions{grid-column:1/-1}
+ .analysis-v2-editor .period-form{grid-template-columns:1fr}
+ .analysis-v2-editor .period-notes{grid-column:auto}
+}
