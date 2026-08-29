@@ -180,14 +180,19 @@ function navItems(){
     ['studentaccount','<span class="nav-icon">👤</span><span class="nav-label">Saya</span>']
   ];
   const badge=state.chatUnread>0?`<span class="nav-unread">${state.chatUnread>99?'99+':state.chatUnread}</span>`:'';
-  return [
+  const items=[
     ['home','<span class="nav-icon">⌂</span><span class="nav-label">Beranda</span>'],
     ['input','<span class="nav-icon">▣</span><span class="nav-label">Wadah</span>'],
-    ['clean','<span class="nav-icon">✦</span><span class="nav-label">Kebersihan</span>'],
-    ['tasks','<span class="nav-icon">📝</span><span class="nav-label">Tugas</span>'],
+    ['clean','<span class="nav-icon">✦</span><span class="nav-label">Kebersihan</span>']
+  ];
+  if(state.profile?.role==='admin' || state.profile?.isHomeroom===true){
+    items.push(['tasks','<span class="nav-icon">📝</span><span class="nav-label">Tugas</span>']);
+  }
+  items.push(
     ['chat',`<span class="nav-icon">💬</span><span class="nav-label">EcoChat</span>${badge}`],
     ['more','<span class="nav-icon">☰</span><span class="nav-label">Lainnya</span>']
-  ];
+  );
+  return items;
 }
 
 function showAuthLoading(show=true){
@@ -211,6 +216,9 @@ async function loadProfileForUser(user){
   if(profile.approved===false && profile.role==='guru') throw new Error('Pendaftaran akun masih menunggu persetujuan Admin.');
   if(profile.active===false) throw new Error('Akun dinonaktifkan administrator.');
   if(!['admin','guru','siswa'].includes(profile.role)) throw new Error('Role akun tidak dikenali.');
+  const studentPortal=window.PAKKOM_STUDENT_PORTAL===true;
+  if(studentPortal && profile.role!=='siswa') throw new Error('Halaman ini khusus siswa.');
+  if(!studentPortal && profile.role==='siswa'){ window.location.href='siswa/'; return profile; }
   return profile;
 }
 async function loadCoreDataInBackground(){
@@ -2744,7 +2752,8 @@ async function saveStudentSubmission(e,t,existing){
   const now=new Date().toISOString(),ref=existing?doc(db,'taskSubmissions',existing.id):collection(db,'taskSubmissions').doc(); await setDoc(ref,{taskId:t.id,studentUid:state.user.uid,studentId:state.profile.studentId||'',nis:state.profile.loginId||'',studentName:state.profile.name||'',classId:state.profile.classId||'',answers,reflection:String(fd.get('reflection')||''),status:'submitted',submittedAt:existing?.submittedAt||now,updatedAt:now},{merge:true}); toast('Tugas berhasil dikumpulkan'); state.page='studenthome';renderShell();
 }
 async function taskManagementPage(){
-  if(state.profile.role==='siswa')return; pageMeta('Tugas Siswa',state.profile.role==='admin'?'Kelola tugas dan pengumpulan':'Periksa dan nilai tugas kelas'); content.innerHTML='<div class="card"><div class="empty">Memuat...</div></div>';
+  if(state.profile.role==='siswa')return;
+  if(state.profile.role!=='admin' && state.profile.isHomeroom!==true){ toast('Menu Tugas Siswa hanya untuk Admin dan Wali Kelas.'); state.page='home'; return renderShell(); } pageMeta('Tugas Siswa',state.profile.role==='admin'?'Kelola tugas dan pengumpulan':'Periksa dan nilai tugas kelas'); content.innerHTML='<div class="card"><div class="empty">Memuat...</div></div>';
   const [as,ss]=await Promise.all([getDocs(collection(db,'assignments')),getDocs(collection(db,'taskSubmissions'))]); const tasks=as.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.archived!==true); const subs=ss.docs.map(d=>({id:d.id,...d.data()}));
   const allowed=state.profile.role==='admin'||!state.profile.isHomeroom?tasks:tasks.filter(t=>!Array.isArray(t.targetClasses)||t.targetClasses.includes(state.profile.homeroomClass));
   content.innerHTML=`${state.profile.role==='admin'?'<div class="section-head"><div><h3>Kelola Tugas</h3><small>Task Builder fleksibel.</small></div><button id="newAssignment" class="btn primary">+ Buat Tugas</button></div>':''}<div class="task-admin-list">${allowed.map(t=>{const x=subs.filter(s=>s.taskId===t.id&&(state.profile.role==='admin'||s.classId===state.profile.homeroomClass));return `<div class="card task-admin-card"><div><h3>${esc(t.title||'Tugas')}</h3><small>${esc((t.targetClasses||[]).join(', ')||'Semua kelas')} • Batas ${esc(t.dueDate||'-')}</small></div><div class="task-admin-metrics"><span><b>${x.length}</b> dikumpulkan</span><span><b>${x.filter(s=>s.status!=='graded').length}</b> menunggu</span><span><b>${x.filter(s=>s.status==='graded').length}</b> dinilai</span></div><div class="row-actions"><button class="btn secondary" data-review-task="${t.id}">Pengumpulan</button>${state.profile.role==='admin'?`<button class="btn ghost" data-edit-task="${t.id}">Edit</button>`:''}</div></div>`}).join('')||'<div class="card empty">Belum ada tugas.</div>'}</div>`;
@@ -2836,12 +2845,21 @@ async function provisionStudentAccounts(){
     if(!user) return Promise.resolve();
     if(window.PAKKOM_COMPAT_CORE.startedUid===user.uid) return Promise.resolve();
     return db.collection('users').doc(user.uid).get().then(function(snap){
-      if(!snap.exists) throw new Error('Profil Admin/Guru tidak ditemukan di Firestore.');
+      if(!snap.exists) throw new Error('Profil pengguna tidak ditemukan di Firestore.');
       var profile=Object.assign({uid:user.uid},snap.data());
       if(profile.rejected===true) throw new Error('Pendaftaran akun tidak disetujui Admin.');
       if(profile.approved===false && profile.role==='guru') throw new Error('Akun masih menunggu persetujuan Admin.');
       if(profile.active===false) throw new Error('Akun dinonaktifkan administrator.');
-      if(profile.role!=='admin' && profile.role!=='guru') throw new Error('Role akun tidak dikenali.');
+      if(profile.role!=='admin' && profile.role!=='guru' && profile.role!=='siswa') throw new Error('Role akun tidak dikenali.');
+
+      var studentPortal=window.PAKKOM_STUDENT_PORTAL===true;
+      if(studentPortal && profile.role!=='siswa'){
+        throw new Error('Halaman ini khusus siswa. Guru/Admin silakan masuk dari halaman utama EcoTrack.');
+      }
+      if(!studentPortal && profile.role==='siswa'){
+        window.location.href='siswa/';
+        return;
+      }
 
       window.PAKKOM_COMPAT_CORE.user=user;
       window.PAKKOM_COMPAT_CORE.profile=profile;

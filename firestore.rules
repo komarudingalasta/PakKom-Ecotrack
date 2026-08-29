@@ -99,7 +99,16 @@ service cloud.firestore {
     }
 
     match /students/{studentId} {
-      allow read: if activeUser();
+      allow read: if isAdmin()
+        || isTeacher()
+        || (
+          activeUser()
+          && userDoc().data.role == 'siswa'
+          && (
+            userDoc().data.studentId == studentId
+            || resource.data.authUid == request.auth.uid
+          )
+        );
       allow create, update, delete: if isAdmin();
     }
 
@@ -325,9 +334,16 @@ service cloud.firestore {
     }
 
     match /taskSubmissions/{submissionId} {
-      allow read: if isAdmin() || isTeacher()
-        || (activeUser() && userDoc().data.role == 'siswa'
-          && resource.data.studentUid == request.auth.uid);
+      allow read: if isAdmin()
+        || (
+          isHomeroom()
+          && resource.data.classId == userDoc().data.homeroomClass
+        )
+        || (
+          activeUser()
+          && userDoc().data.role == 'siswa'
+          && resource.data.studentUid == request.auth.uid
+        );
 
       allow create: if activeUser()
         && userDoc().data.role == 'siswa'
@@ -336,7 +352,8 @@ service cloud.firestore {
         && request.resource.data.classId == userDoc().data.classId;
 
       allow update: if (
-        activeUser() && userDoc().data.role == 'siswa'
+        activeUser()
+        && userDoc().data.role == 'siswa'
         && resource.data.studentUid == request.auth.uid
         && request.resource.data.studentUid == resource.data.studentUid
         && request.resource.data.taskId == resource.data.taskId
@@ -346,7 +363,13 @@ service cloud.firestore {
           'answers','reflection','status','updatedAt'
         ])
       ) || (
-        (isAdmin() || isTeacher())
+        (
+          isAdmin()
+          || (
+            isHomeroom()
+            && resource.data.classId == userDoc().data.homeroomClass
+          )
+        )
         && request.resource.data.studentUid == resource.data.studentUid
         && request.resource.data.taskId == resource.data.taskId
         && request.resource.data.classId == resource.data.classId
@@ -355,6 +378,7 @@ service cloud.firestore {
           'score','feedback','status','gradedAt','gradedByUid','gradedByName'
         ])
       );
+
       allow delete: if isAdmin();
     }
 
