@@ -13,15 +13,11 @@ function subFor(taskId){return subs.find(s=>s.taskId===taskId)}
 function st(task){const s=subFor(task.id);if(!s)return 'todo';if(s.status==='revision')return 'revision';if(s.status==='graded'||s.status==='submitted')return 'done';return 'todo'}
 function statusLabel(k){return k==='revision'?'Perlu Perbaikan':k==='done'?'Selesai':'Belum Dikerjakan'}
 async function loadData(){
-  const c=normClass(profile.classId); profile.classId=c;
-  const a=await db.collection('assignments').where('targetClasses','array-contains',c).get();
-  tasks=a.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.published===true&&t.archived!==true);
+  const c=normClass(profile.classId); profile.classId=c; tasks=[]; subs=[];
+  try{const a=await db.collection('assignments').where('targetClasses','array-contains',c).get();tasks=a.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.published===true&&t.archived!==true)}catch(e){console.warn('Tugas belum dapat dimuat:',e)}
   const nis=String(profile.loginId);
-  const s=await db.collection('taskSubmissions').where('nis','==',nis).get();
-  const gm=await db.collection('taskSubmissions').where('memberNis','array-contains',nis).get();
-  const subMap=new Map();
-  [...s.docs,...gm.docs].forEach(d=>subMap.set(d.id,{id:d.id,...d.data()}));
-  subs=[...subMap.values()];
+  try{const own=await db.collection('taskSubmissions').where('nis','==',nis).get();own.docs.forEach(d=>subs.push({id:d.id,...d.data()}))}catch(e){console.warn('Pengumpulan individu belum dapat dimuat:',e)}
+  try{const gm=await db.collection('taskSubmissions').where('memberNis','array-contains',nis).get();const map=new Map(subs.map(x=>[x.id,x]));gm.docs.forEach(d=>map.set(d.id,{id:d.id,...d.data()}));subs=[...map.values()]}catch(e){console.warn('Pengumpulan kelompok belum dapat dimuat:',e)}
 }
 function home(){
   const todo=tasks.filter(t=>st(t)==='todo').length, rev=tasks.filter(t=>st(t)==='revision').length, done=tasks.filter(t=>st(t)==='done').length;

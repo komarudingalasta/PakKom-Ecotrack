@@ -64,16 +64,20 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /cocurricularPrograms/{programId}{
+      allow read: if isStaff() || (isStudent() && resource.data.active == true && resource.data.archived != true);
+      allow create, update, delete: if isAdmin();
+    }
+
     match /taskGroups/{groupKey}{
-      allow read: if isAdmin()
+      allow read: if isStaff()
         || (isHomeroom() && resource.data.classId == userDoc().data.homeroomClass)
         || (isStudent() && resource.data.memberNis is list && userDoc().data.loginId in resource.data.memberNis);
       allow create, update, delete: if isAdmin();
     }
 
     match /taskSubmissions/{id}{
-      allow read: if isAdmin()
-        || (isHomeroom() && resource.data.classId == userDoc().data.homeroomClass)
+      allow read: if isStaff()
         || (isStudent()
           && (resource.data.nis == userDoc().data.loginId
             || (resource.data.memberNis is list && userDoc().data.loginId in resource.data.memberNis)));
