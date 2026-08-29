@@ -2908,11 +2908,11 @@ async function generateOneStudentLogin(st){
   const email=studentInternalEmail(nis), password=studentInternalPassword(nis);
   try{
     // REST signUp membuat akun Auth tanpa pernah mengganti sesi Admin di browser.
-    const data=await firebaseAuthRest('signUp',{email,password,returnSecureToken:false});
+    const data=await firebaseAuthRest('signUp',{email,password,returnSecureToken:true});
     const uid=String(data.localId||'').trim();
     if(!uid) throw Object.assign(new Error('UID akun siswa tidak diterima dari Firebase.'),{code:'student/uid-missing'});
     await writeStudentLoginLink(st,uid);
-    return {status:'success',message:'Login berhasil dibuat.'};
+    return {status:'success',message:`Login berhasil dibuat • ${email}`};
   }catch(e){
     if(String(e?.code||'')==='auth/email-already-in-use'){
       // Jika akun sudah tercipta pada percobaan sebelumnya, validasi password internal
