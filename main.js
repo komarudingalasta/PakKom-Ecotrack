@@ -144,7 +144,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null, chatUnread:0, chatGroup:null, chatUnsub:null, chatReactionUnsub:null, chatNotifyTimer:null, chatUnreadInitialized:false };
 
-const APP_VERSION='3.3.7';
+const APP_VERSION='3.3.8';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -366,22 +366,40 @@ function passwordPanel(){
   };
 }
 async function logoutNow(){
+  // Put the UI in logged-out state immediately, then sign Firebase out.
+  // This prevents the old dashboard remaining visible until a manual refresh.
   state.user=null;
   state.profile=null;
   resetCoreState();
   authResolved=true;
-  $('#bootView')?.classList.add('hidden');
-  renderShell();
+
+  if(window.PAKKOM_COMPAT_CORE){
+    window.PAKKOM_COMPAT_CORE.intentionalLogout=true;
+    window.PAKKOM_COMPAT_CORE.user=null;
+    window.PAKKOM_COMPAT_CORE.profile=null;
+    window.PAKKOM_COMPAT_CORE.startedUid=null;
+  }
+
+  const forceLoggedOutView=()=>{
+    const boot=$('#bootView'), login=$('#loginView'), app=$('#appView');
+    if(boot){boot.classList.add('hidden');boot.style.display='none';}
+    if(app){app.classList.add('hidden');app.style.display='none';}
+    if(login){login.classList.remove('hidden');login.style.removeProperty('display');}
+    const pw=$('#loginPassword'); if(pw) pw.value='';
+    showLoginError('');
+  };
+
+  forceLoggedOutView();
   try{
-    if(window.PAKKOM_COMPAT_CORE){
-      window.PAKKOM_COMPAT_CORE.user=null;
-      window.PAKKOM_COMPAT_CORE.profile=null;
-      window.PAKKOM_COMPAT_CORE.intentionalLogout=true;
-      await window.PAKKOM_COMPAT_CORE.auth.signOut();
-    }
-  }catch(e){ console.warn('Logout',e); }
-  $('#loginPassword').value='';
-  showLoginError('');
+    const logoutAuth=window.PAKKOM_COMPAT_CORE?.auth||auth;
+    await logoutAuth.signOut();
+  }catch(e){
+    console.warn('Logout',e);
+  }finally{
+    // Auth observer may run during signOut; enforce the final DOM state once more.
+    forceLoggedOutView();
+    setTimeout(forceLoggedOutView,0);
+  }
 }
 
 const profileTrigger=$('#profileTrigger');
@@ -2206,6 +2224,29 @@ function bindMasterTabNavigation(){
   };
 }
 
+// Stable event delegation for Student Data actions.
+// Buttons inside the Admin panel are frequently re-rendered, so their actions
+// must not depend on an onclick handler attached to an older DOM node.
+if(!window.__pakkomStudentMasterDelegation){
+  window.__pakkomStudentMasterDelegation=true;
+  document.addEventListener('click',(ev)=>{
+    const bulk=ev.target.closest('#activateSelectedStudents');
+    if(bulk){
+      ev.preventDefault(); ev.stopPropagation();
+      if(bulk.disabled)return;
+      const ids=[...(window.selectedStudentIds||[])];
+      provisionStudentAccounts({mode:'selected',studentIds:ids});
+      return;
+    }
+    const one=ev.target.closest('[data-approve-student-login]');
+    if(one){
+      ev.preventDefault(); ev.stopPropagation();
+      if(one.disabled)return;
+      provisionStudentAccounts({mode:'student',studentId:one.dataset.approveStudentLogin});
+    }
+  },true);
+}
+
 function renderMasterTab(){
   const target=$('#masterTabContent'); if(!target)return;
   if(state.masterTab==='students'){
@@ -2217,7 +2258,6 @@ function renderMasterTab(){
       <div id="studentTable"></div></div>`;
     $('#importStudents').onclick=()=>$('#studentImport').click(); $('#addStudentLocal').onclick=addStudentLocal;
     $('#studentSearch').oninput=renderStudentMasterTable; $('#studentClassFilter').onchange=renderStudentMasterTable;
-    $('#activateSelectedStudents').onclick=()=>provisionStudentAccounts({mode:'selected',studentIds:[...(window.selectedStudentIds||[])]});
     $('#bulkDeleteStudents').onclick=deleteSelectedStudents; renderStudentMasterTable(); return;
   }
   if(state.masterTab==='teachers'){
@@ -2329,7 +2369,6 @@ function renderStudentMasterTable(){
   const activeCount=rows.filter(s=>s.authUid).length;
   const pendingCount=rows.filter(s=>!s.authUid&&s.active!==false).length;
   target.innerHTML=`<div class="teacher-list-summary"><span><b>${activeCount}</b> login aktif</span><span><b>${pendingCount}</b> belum aktif</span></div><div class="bulk-summary"><span><b>${window.selectedStudentIds.size}</b> siswa dipilih</span><small>Centang siswa untuk mengaktifkan login secara bersamaan atau menghapus data.</small></div><div class="table-wrap"><table class="student-master"><thead><tr><th class="check-col"><input id="selectAllStudents" type="checkbox" aria-label="Pilih semua"></th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status Data</th><th>Akses Login</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(st=>`<tr><td class="check-col"><input class="student-check" type="checkbox" data-student-id="${esc(st.id)}" ${window.selectedStudentIds.has(st.id)?'checked':''}></td><td><b>${esc(st.nis||st.id)}</b></td><td>${esc(st.name||'-')}</td><td>${esc(st.classId||'-')}</td><td><span class="badge ${st.active===false?'warn':'ok'}">${st.active===false?'Nonaktif':'Aktif'}</span></td><td>${st.authUid?'<span class="badge ok">Login Aktif</span>':'<span class="badge warn">Belum Aktif</span>'}</td><td><div class="row-actions">${st.authUid?`<button type="button" class="btn-mini" data-sync-student-login="${esc(st.id)}">Sinkronkan</button>`:`<button type="button" class="btn-mini edit" data-approve-student-login="${esc(st.id)}" ${st.active===false?'disabled':''}>Aktifkan</button>`}<button class="btn-mini edit" data-edit-student="${esc(st.id)}">Edit</button><button class="btn-mini danger" data-delete-student="${esc(st.id)}">Hapus</button></div></td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
-  document.querySelectorAll('[data-approve-student-login]').forEach(b=>b.onclick=()=>provisionStudentAccounts({mode:'student',studentId:b.dataset.approveStudentLogin}));
   document.querySelectorAll('[data-sync-student-login]').forEach(b=>b.onclick=()=>repairLinkedStudentProfile(b.dataset.syncStudentLogin));
   document.querySelectorAll('[data-edit-student]').forEach(b=>b.onclick=()=>editStudent(b.dataset.editStudent));
   document.querySelectorAll('[data-delete-student]').forEach(b=>b.onclick=()=>deleteStudentMaster(b.dataset.deleteStudent));
@@ -2972,6 +3011,16 @@ async function provisionStudentAccounts(options={mode:'all'}){
         const st=state.students.find(s=>s.id===id);
         if(st&&successful.has(String(st.nis||st.id||'').trim()))window.selectedStudentIds.delete(id);
       });
+    }
+  }
+  // Refresh the student master data after activation so Login Aktif appears immediately.
+  // This read does not touch Firebase Authentication or the Admin session.
+  if(ok||repaired){
+    try{
+      const fresh=await getDocs(collection(db,'students'));
+      state.students=fresh.docs.map(d=>({id:d.id,...d.data()}));
+    }catch(refreshErr){
+      console.warn('Refresh student login status',refreshErr);
     }
   }
   toast(`Akses siswa: ${ok} dibuat, ${repaired} ditautkan, ${fail} gagal.`,8000);
