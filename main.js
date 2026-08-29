@@ -144,7 +144,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null };
 
-const APP_VERSION='8.1.0';
+const APP_VERSION='8.2.0';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -576,7 +576,20 @@ if(!window.__pakkomHashRouterBound){
   });
 }
 
-// v8.1: #home, #wadah, #clean, #tasks, #more adalah route nyata.
+// v8.2: semua perpindahan halaman internal memakai router URL yang sama.
+if(!window.__pakkomInternalRouteBound){
+  window.__pakkomInternalRouteBound=true;
+  document.addEventListener('click',(e)=>{
+    const el=e.target.closest?.('[data-more-go],[data-go]');
+    if(!el) return;
+    const page=el.dataset.moreGo || el.dataset.go;
+    if(!page || !canOpenPage(page)) return;
+    e.preventDefault();
+    navigateToPage(page);
+  });
+}
+
+// v8.2: #home, #wadah, #clean, #tasks, #more adalah route nyata.
 
 function renderPage(){
   if(content){
@@ -617,7 +630,7 @@ function home(){
   </div>
   ${waliClass?`<div class="card homeroom-card"><span class="badge ok">⭐ Kelas Saya</span><h3>${esc(waliClass)}</h3><div class="wali-summary"><span>${ICON_TUMBLER} ${waliRec?'Sudah didata':'Belum didata'}</span><span>🧹 ${waliClean?`${cleanOverall(waliClean).label} • JP ${waliClean.jp}`:'Belum diperiksa'}</span></div><button class="btn secondary" id="openMyClassData">Lihat Data Siswa & Analisis →</button></div>`:''}
   ${op.active?`<div class="card"><div class="section-head"><div><h3 style="margin:0">Belum Pendataan Wadah Makan & Tumbler</h3><small>Kelas yang belum melakukan pendataan hari ini.</small></div></div><div class="chip-list">${state.classes.filter(c=>!done.has(c)).map(c=>`<button class="mini-chip" data-class="${c}">${c}</button>`).join('')||'<span class="badge ok">Semua kelas sudah didata ✓</span>'}</div></div>`:''}`;
-  document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>{state.page=b.dataset.go;window.scrollTo(0,0);renderShell()});
+  document.querySelectorAll('.module-go').forEach(b=>b.onclick=()=>navigateToPage(b.dataset.go));
   if($('#openMyClassData'))$('#openMyClassData').onclick=()=>{state.page='classdata';renderShell()};
   document.querySelectorAll('.mini-chip').forEach(b=>b.onclick=()=>{state.selectedClass=b.dataset.class;state.page='input';window.scrollTo(0,0);renderShell()});
 }
@@ -894,14 +907,13 @@ function morePage(){
   const admin=state.profile.role==='admin';
   const homeroom=state.profile.isHomeroom===true;
   content.innerHTML=`<div class="more-grid">
-    <button class="more-card" data-more-go="tasks"><span>📝</span><div><b>Tugas Siswa</b><small>${admin?'Buat tugas, pantau pengumpulan dan penilaian':'Periksa dan nilai tugas siswa'}</small></div><strong>›</strong></button>
     ${homeroom||admin?`<button class="more-card class-data-card" data-more-go="classdata"><span>👨‍🎓</span><div><b>${homeroom?'Data Kelas Saya':'Data Siswa per Kelas'}</b><small>Harian, riwayat Wadah & Tumbler, serta analisis siswa</small></div><strong>›</strong></button>`:''}
     <button class="more-card" data-more-go="recap"><span>📊</span><div><b>Rekap & Analisis</b><small>Rekap Wadah, Kebersihan, analisis dan apresiasi</small></div><strong>›</strong></button>
     ${admin?`<button class="more-card" data-more-go="master"><span>⚙️</span><div><b>Kelola Data</b><small>Siswa, guru, kelas, periode dan operasional</small></div><strong>›</strong></button>`:''}
     <button class="more-card" data-more-go="account"><span>👤</span><div><b>Akun</b><small>Profil dan keamanan akun</small></div><strong>›</strong></button>
     <button class="more-card danger-card" id="moreLogout"><span>↪</span><div><b>Keluar</b><small>Keluar dari PakKom EcoTrack</small></div><strong>›</strong></button>
   </div>`;
-  document.querySelectorAll('[data-more-go]').forEach(b=>b.onclick=()=>{state.page=b.dataset.moreGo;renderShell()});
+  document.querySelectorAll('[data-more-go]').forEach(b=>b.onclick=()=>navigateToPage(b.dataset.moreGo));
   $('#moreLogout').onclick=()=>$('#logoutModal')?.classList.remove('hidden');
 }
 
