@@ -144,7 +144,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null };
 
-const APP_VERSION='6.4.0';
+const APP_VERSION='8.0.0';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -526,15 +526,7 @@ function navigateToPage(page){
   document.querySelector('.sidebar')?.classList.remove('open');
 }
 
-if(!window.__pakkomTaskNavStable){
-  window.__pakkomTaskNavStable=true;
-  document.addEventListener('click',(e)=>{
-    const trigger=e.target.closest?.('[data-page="tasks"],[data-more-go="tasks"]');
-    if(!trigger) return;
-    e.preventDefault();
-    navigateToPage('tasks');
-  });
-}
+// v8: navigasi memakai satu handler saja melalui navigateToPage().
 
 function renderPage(){
   if(content){
@@ -2388,7 +2380,7 @@ function taskManagementPage(){
 
   // LANDING SELALU DIRENDER SECARA SINKRON.
   // Jadi halaman Tugas dan tombol Buat Tugas tetap muncul walau Firestore belum siap.
-  content.innerHTML=`<div class="task-core-banner"><div><span class="badge ok">Task Core v7.0</span><h3>${admin?'Kelola Tugas':'Tugas Kelas Saya'}</h3><small>${admin?'Buat tugas individu/kelompok dan pantau pengumpulan.':'Periksa pengumpulan siswa kelas Anda.'}</small></div>${admin?'<button id="newAssignment" class="btn primary" type="button">+ Buat Tugas</button>':''}</div><div id="taskCoreStatus" class="notice">Modul Tugas aktif. Memuat data tugas...</div><div id="taskAdminLoad" class="task-admin-list"><div class="card"><div class="empty">Memuat daftar tugas...</div></div></div>`;
+  content.innerHTML=`<div class="task-core-banner"><div><span class="badge ok">Task Core v8.0</span><h3>${admin?'Kelola Tugas':'Tugas Kelas Saya'}</h3><small>${admin?'Buat tugas individu/kelompok dan pantau pengumpulan.':'Periksa pengumpulan siswa kelas Anda.'}</small></div>${admin?'<button id="newAssignment" class="btn primary" type="button">+ Buat Tugas</button>':''}</div><div id="taskCoreStatus" class="notice">Modul Tugas aktif. Memuat data tugas...</div><div id="taskAdminLoad" class="task-admin-list"><div class="card"><div class="empty">Memuat daftar tugas...</div></div></div>`;
 
   const makeBtn=$('#newAssignment');
   if(makeBtn) makeBtn.addEventListener('click',(e)=>{
@@ -2547,7 +2539,7 @@ async function saveAssignment(old){
     await taskManagementPage();
   }catch(e){
     console.error('Save assignment error',e);
-    const msg=e?.code==='permission-denied'?'Firestore menolak penyimpanan. Pastikan Firestore Rules v7 sudah dipublish dan akun yang login benar-benar Admin.':(e?.message||String(e));
+    const msg=e?.code==='permission-denied'?'Firestore menolak penyimpanan. Pastikan Firestore Rules v8 sudah dipublish dan akun yang login benar-benar Admin.':(e?.message||String(e));
     if(errBox){errBox.textContent=msg;errBox.classList.remove('hidden')}
     toast('Tugas belum tersimpan: '+msg);
   }finally{
@@ -2555,7 +2547,18 @@ async function saveAssignment(old){
   }
 }
 async function reviewTask(taskId){
-  const td=await getDoc(doc(db,'assignments',taskId));if(!td.exists())return;const t={id:td.id,...td.data()};const ss=await getDocs(query(collection(db,'taskSubmissions'),where('taskId','==',taskId)));let subs=ss.docs.map(d=>({id:d.id,...d.data()}));if(state.profile.role!=='admin'&&state.profile.isHomeroom)subs=subs.filter(s=>s.classId===state.profile.homeroomClass);
+  const td=await getDoc(doc(db,'assignments',taskId));if(!td.exists())return;const t={id:td.id,...td.data()};
+  const submissionQuery=state.profile.role==='admin'
+    ? query(collection(db,'taskSubmissions'),where('taskId','==',taskId))
+    : query(collection(db,'taskSubmissions'),where('taskId','==',taskId),where('classId','==',state.profile.homeroomClass));
+  let ss;
+  try{ ss=await getDocs(submissionQuery); }catch(e){
+    console.error('Review task query error',e);
+    pageMeta(t.title||'Tugas','Pengumpulan siswa');
+    content.innerHTML=`<button id="backTaskManage" class="btn ghost">← Tugas Siswa</button><div class="card"><div class="empty"><b>Pengumpulan belum dapat dimuat.</b><br><small>${esc(e?.message||'Periksa Firestore Rules / index.')}</small></div></div>`;
+    $('#backTaskManage').onclick=taskManagementPage; return;
+  }
+  let subs=ss.docs.map(d=>({id:d.id,...d.data()}));
   pageMeta(t.title,'Pengumpulan siswa');content.innerHTML=`<button id="backTaskManage" class="btn ghost">← Tugas Siswa</button><div class="card"><div class="table-wrap"><table><thead><tr><th>${t.taskType==='group'?'Kelompok':'Siswa'}</th><th>Kelas</th><th>Status</th><th>Dikumpulkan oleh</th><th>Nilai</th><th></th></tr></thead><tbody>${subs.sort((a,b)=>String(a.classId).localeCompare(String(b.classId))||Number(a.groupNo||0)-Number(b.groupNo||0)).map(s=>`<tr><td><b>${t.taskType==='group'?`Kelompok ${esc(s.groupNo||'-')}`:esc(s.studentName||s.nis)}</b>${t.taskType==='group'?`<small class="table-subline">${(s.memberNames||[]).map(esc).join(', ')}</small>`:''}</td><td>${esc(s.classId)}</td><td>${taskStatusLabel(s)[0]}</td><td>${esc(s.submittedByName||'-')}</td><td>${esc(s.score??'-')}</td><td><button class="btn-mini edit" data-grade-sub="${s.id}">Periksa</button></td></tr>`).join('')||'<tr><td colspan="6">Belum ada pengumpulan.</td></tr>'}</tbody></table></div></div>`;$('#backTaskManage').onclick=taskManagementPage;document.querySelectorAll('[data-grade-sub]').forEach(b=>b.onclick=()=>gradeSubmission(b.dataset.gradeSub,t))
 }
 async function gradeSubmission(id,t){
