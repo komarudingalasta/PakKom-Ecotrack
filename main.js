@@ -144,7 +144,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null };
 
-const APP_VERSION='8.0.0';
+const APP_VERSION='8.1.0';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -176,6 +176,28 @@ const ICON_TUMBLER=`<svg class="eco-icon eco-icon-bottle" viewBox="0 0 48 48" ar
 
 function esc(v=''){ return String(v).replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m])); }
 function pageMeta(title,sub=''){ $('#pageTitle').textContent=title; $('#pageSubtitle').textContent=sub; }
+// v8.1: URL/hash routing. Menu utama tidak lagi bergantung pada onclick.
+const PAGE_TO_HASH={
+  home:'home', input:'wadah', clean:'clean', tasks:'tasks', more:'more',
+  recap:'recap', account:'account', master:'master', classdata:'classdata',
+  studenthome:'home', studenttasks:'tasks', studentaccount:'saya'
+};
+const HASH_TO_STAFF_PAGE={home:'home',wadah:'input',clean:'clean',tasks:'tasks',more:'more',recap:'recap',account:'account',master:'master',classdata:'classdata'};
+const HASH_TO_STUDENT_PAGE={home:'studenthome',tasks:'studenttasks',saya:'studentaccount'};
+function pageHash(page){ return PAGE_TO_HASH[page] || String(page||'home'); }
+function routePageFromHash(){
+  const key=decodeURIComponent(String(location.hash||'').replace(/^#/,'').trim().toLowerCase());
+  const map=state.profile?.role==='siswa'?HASH_TO_STUDENT_PAGE:HASH_TO_STAFF_PAGE;
+  return map[key] || null;
+}
+function defaultPageForRole(){ return state.profile?.role==='siswa'?'studenthome':'home'; }
+function canOpenPage(page){
+  if(state.profile?.role==='siswa') return ['studenthome','studenttasks','studentaccount'].includes(page);
+  if(page==='tasks') return state.profile?.role==='admin' || state.profile?.isHomeroom===true;
+  if(page==='master') return state.profile?.role==='admin';
+  if(page==='classdata') return state.profile?.role==='admin' || state.profile?.isHomeroom===true;
+  return ['home','input','clean','recap','account','more'].includes(page);
+}
 function navItems(){
   if(state.profile?.role==='siswa') return [
     ['studenthome','<span class="nav-icon">⌂</span><span class="nav-label">Beranda</span>'],
@@ -190,9 +212,7 @@ function navItems(){
   if(state.profile?.role==='admin' || state.profile?.isHomeroom===true){
     items.push(['tasks','<span class="nav-icon">📝</span><span class="nav-label">Tugas</span>']);
   }
-  items.push(
-    ['more','<span class="nav-icon">☰</span><span class="nav-label">Lainnya</span>']
-  );
+  items.push(['more','<span class="nav-icon">☰</span><span class="nav-label">Lainnya</span>']);
   return items;
 }
 
@@ -508,17 +528,27 @@ function renderShell(){
   if($('#profileAvatar')) $('#profileAvatar').textContent=initials;
   if($('#profileMenuName')) $('#profileMenuName').textContent=displayName;
   if($('#profileMenuRole')) $('#profileMenuRole').textContent=chipRole;
-  $('#nav').innerHTML=navItems().map(([k,l])=>`<button class="nav-btn ${state.page===k?'active':''}" data-page="${k}">${l}</button>`).join('');
-  document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>navigateToPage(b.dataset.page));
+  // Sinkronkan route saat sesi pertama kali tampil. URL menjadi sumber route menu utama.
+  const routeFromUrl=routePageFromHash();
+  if(routeFromUrl && canOpenPage(routeFromUrl)) state.page=routeFromUrl;
+  else if(!canOpenPage(state.page)) state.page=defaultPageForRole();
+
+  $('#nav').innerHTML=navItems().map(([k,l])=>`<a class="nav-btn ${state.page===k?'active':''}" data-page="${k}" href="#${pageHash(k)}">${l}</a>`).join('');
+  if($('#appVersionBadge')) $('#appVersionBadge').textContent=`v${APP_VERSION}`;
   renderPage();
 }
 
-// v7 Clean Core: satu pintu navigasi untuk mencegah route Tugas
-// berhenti karena handler lama / DOM yang dirender ulang.
+// v8.1: navigasi mengubah URL. hashchange yang merender halaman.
 function navigateToPage(page){
-  const next=String(page||'home');
-  state.page=next;
+  const next=String(page||defaultPageForRole());
+  if(!canOpenPage(next)) return;
   state.selectedClass=null;
+  const nextHash='#'+pageHash(next);
+  if(location.hash!==nextHash){
+    location.hash=nextHash;
+    return;
+  }
+  state.page=next;
   try{ window.scrollTo({top:0,left:0,behavior:'instant'}); }catch(_){ window.scrollTo(0,0); }
   document.documentElement.scrollTop=0;
   document.body.scrollTop=0;
@@ -526,7 +556,27 @@ function navigateToPage(page){
   document.querySelector('.sidebar')?.classList.remove('open');
 }
 
-// v8: navigasi memakai satu handler saja melalui navigateToPage().
+if(!window.__pakkomHashRouterBound){
+  window.__pakkomHashRouterBound=true;
+  window.addEventListener('hashchange',()=>{
+    if(!state.profile) return;
+    const next=routePageFromHash();
+    if(!next || !canOpenPage(next)){
+      const fallback=defaultPageForRole();
+      const fallbackHash='#'+pageHash(fallback);
+      if(location.hash!==fallbackHash) history.replaceState(null,'',fallbackHash);
+      state.page=fallback;
+    }else{
+      state.page=next;
+    }
+    state.selectedClass=null;
+    try{ window.scrollTo({top:0,left:0,behavior:'instant'}); }catch(_){ window.scrollTo(0,0); }
+    renderShell();
+    document.querySelector('.sidebar')?.classList.remove('open');
+  });
+}
+
+// v8.1: #home, #wadah, #clean, #tasks, #more adalah route nyata.
 
 function renderPage(){
   if(content){

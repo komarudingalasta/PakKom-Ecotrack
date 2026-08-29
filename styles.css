@@ -1404,3 +1404,8 @@ body.student-portal-login #appView.hidden{
 .task-core-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;margin-bottom:14px;border:1px solid rgba(23,107,91,.16);border-radius:18px;background:linear-gradient(135deg,rgba(221,246,237,.82),rgba(255,255,255,.96));box-shadow:0 8px 24px rgba(23,107,91,.07)}
 .task-core-banner h3{margin:7px 0 3px;font-size:1.18rem}.task-core-banner small{display:block;color:var(--muted,#64748b)}
 @media(max-width:640px){.task-core-banner{align-items:stretch;flex-direction:column}.task-core-banner .btn{width:100%}}
+
+/* v8.1 URL routing */
+#nav a.nav-btn{text-decoration:none}
+.app-version-badge{font-size:11px;font-weight:800;line-height:1;padding:5px 8px;border-radius:999px;background:#eef7f3;color:#39735e;white-space:nowrap}
+@media(max-width:600px){.app-version-badge{display:none}}
