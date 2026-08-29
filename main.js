@@ -144,7 +144,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null };
 
-const APP_VERSION='8.2.0';
+const APP_VERSION='9.0.0';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -533,7 +533,7 @@ function renderShell(){
   if(routeFromUrl && canOpenPage(routeFromUrl)) state.page=routeFromUrl;
   else if(!canOpenPage(state.page)) state.page=defaultPageForRole();
 
-  $('#nav').innerHTML=navItems().map(([k,l])=>`<a class="nav-btn ${state.page===k?'active':''}" data-page="${k}" href="#${pageHash(k)}">${l}</a>`).join('');
+  $('#nav').innerHTML=navItems().map(([k,l])=>{ const href=k==='tasks'?'./tugas/':(k==='studenttasks'?'./tugas/':`#${pageHash(k)}`); return `<a class="nav-btn ${state.page===k?'active':''}" data-page="${k}" href="${href}">${l}</a>`; }).join('');
   if($('#appVersionBadge')) $('#appVersionBadge').textContent=`v${APP_VERSION}`;
   renderPage();
 }
