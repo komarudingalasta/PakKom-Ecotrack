@@ -2837,18 +2837,38 @@ function makeAutoGroups(classId,count){
   return groups.filter(g=>g.members.length);
 }
 async function fetchAssignmentsForClass(classId){
-  const snap=await getDocs(collection(db,'assignments'));
-  return snap.docs.map(d=>({id:d.id,...d.data()})).filter(a=>a.archived!==true&&a.published===true&&(!Array.isArray(a.targetClasses)||!a.targetClasses.length||a.targetClasses.includes(classId))).sort((a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999')));
+  if(!classId)return [];
+  // Query harus sesuai Firestore Rules siswa. Membaca seluruh collection akan ditolak
+  // karena di dalamnya dapat terdapat tugas untuk kelas lain.
+  const snap=await getDocs(query(collection(db,'assignments'),where('targetClasses','array-contains',classId)));
+  return snap.docs.map(d=>({id:d.id,...d.data()}))
+    .filter(a=>a.archived!==true&&a.published===true)
+    .sort((a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999')));
 }
 async function fetchMySubmissions(){
-  const nis=myNis(), cls=state.profile.classId;
-  const snap=await getDocs(query(collection(db,'taskSubmissions'),where('classId','==',cls)));
-  return snap.docs.map(d=>({id:d.id,...d.data()})).filter(s=>s.nis===nis||(Array.isArray(s.memberNis)&&s.memberNis.includes(nis)));
+  const nis=myNis();
+  if(!nis)return [];
+  // Individu dan kelompok dibaca dengan query berbeda agar Rules dapat memverifikasi
+  // bahwa siswa memang pemilik / anggota submission tanpa composite index.
+  const [ownSnap,groupSnap]=await Promise.all([
+    getDocs(query(collection(db,'taskSubmissions'),where('nis','==',nis))),
+    getDocs(query(collection(db,'taskSubmissions'),where('memberNis','array-contains',nis)))
+  ]);
+  const map=new Map();
+  [...ownSnap.docs,...groupSnap.docs].forEach(d=>map.set(d.id,{id:d.id,...d.data()}));
+  return [...map.values()];
 }
 async function studentHome(){
   pageMeta('Tugas Saya',`${state.profile.name||'Siswa'} • ${state.profile.classId||'-'}`);
   content.innerHTML='<div class="card"><div class="empty">Memuat tugas...</div></div>';
-  const [tasks,subs]=await Promise.all([fetchAssignmentsForClass(state.profile.classId),fetchMySubmissions()]);
+  let tasks=[],subs=[];
+  try{
+    [tasks,subs]=await Promise.all([fetchAssignmentsForClass(state.profile.classId),fetchMySubmissions()]);
+  }catch(e){
+    console.error('Student task dashboard error',e);
+    content.innerHTML=`<div class="student-hero"><div><small>Halo,</small><h2>${esc(state.profile.name||'Siswa')} 👋</h2><p>Kelas ${esc(state.profile.classId||'-')}</p></div><div class="student-lock">🔒 Akun siswa</div></div><div class="card"><div class="empty"><b>Tugas belum dapat dimuat.</b><br><small>${esc(e?.message||'Periksa Firestore Rules Tugas Siswa v6.1.')}</small></div></div>`;
+    return;
+  }
   const sm=new Map(subs.map(x=>[x.taskId,x]));
   const active=tasks.filter(t=>!t.openDate||t.openDate<=todayId());
   const pending=active.filter(t=>!sm.has(t.id)).length, drafts=subs.filter(s=>s.status==='draft'||s.status==='revision').length, done=subs.filter(s=>s.status==='graded').length;
@@ -2899,11 +2919,34 @@ async function saveStudentSubmission(e,t,existing,status){
 async function taskManagementPage(){
   if(state.profile.role==='siswa')return;
   if(state.profile.role!=='admin' && state.profile.isHomeroom!==true){toast('Menu Tugas Siswa hanya untuk Admin dan Wali Kelas.');state.page='home';return renderShell()}
-  pageMeta('Tugas Siswa',state.profile.role==='admin'?'Kelola tugas dan pengumpulan':'Periksa dan nilai tugas kelas');content.innerHTML='<div class="card"><div class="empty">Memuat...</div></div>';
-  const [as,ss]=await Promise.all([getDocs(collection(db,'assignments')),getDocs(collection(db,'taskSubmissions'))]);const tasks=as.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.archived!==true),subs=ss.docs.map(d=>({id:d.id,...d.data()}));
-  const allowed=state.profile.role==='admin'?tasks:tasks.filter(t=>!Array.isArray(t.targetClasses)||t.targetClasses.includes(state.profile.homeroomClass));
-  content.innerHTML=`${state.profile.role==='admin'?'<div class="section-head"><div><h3>Kelola Tugas</h3><small>Individu atau kelompok, dengan komponen fleksibel.</small></div><button id="newAssignment" class="btn primary">+ Buat Tugas</button></div>':''}<div class="task-admin-list">${allowed.map(t=>{const x=subs.filter(s=>s.taskId===t.id&&(state.profile.role==='admin'||s.classId===state.profile.homeroomClass));return `<div class="card task-admin-card"><div><div class="task-mini-tags"><span class="badge neutral">${taskTypeLabel(t)}</span>${t.taskType==='group'?`<span class="badge neutral">${t.groupCount||6} kelompok/kelas</span>`:''}</div><h3>${esc(t.title||'Tugas')}</h3><small>${esc((t.targetClasses||[]).join(', ')||'Semua kelas')} • Batas ${esc(t.dueDate||'-')}</small></div><div class="task-admin-metrics"><span><b>${x.filter(s=>s.status==='submitted'||s.status==='graded').length}</b> dikumpulkan</span><span><b>${x.filter(s=>s.status==='draft'||s.status==='revision').length}</b> draf/revisi</span><span><b>${x.filter(s=>s.status==='graded').length}</b> dinilai</span></div><div class="row-actions"><button class="btn secondary" data-review-task="${t.id}">Pengumpulan</button>${state.profile.role==='admin'?`<button class="btn ghost" data-edit-task="${t.id}">Edit</button>`:''}</div></div>`}).join('')||'<div class="card empty">Belum ada tugas.</div>'}</div>`;
-  $('#newAssignment')&&($('#newAssignment').onclick=()=>assignmentBuilder());document.querySelectorAll('[data-edit-task]').forEach(b=>b.onclick=()=>assignmentBuilder(b.dataset.editTask));document.querySelectorAll('[data-review-task]').forEach(b=>b.onclick=()=>reviewTask(b.dataset.reviewTask));
+  pageMeta('Tugas Siswa',state.profile.role==='admin'?'Kelola tugas dan pengumpulan':'Periksa dan nilai tugas kelas');
+  // Tombol utama dirender lebih dulu sehingga Admin tetap dapat membuat tugas meski
+  // pembacaan submission mengalami masalah Rules/jaringan.
+  content.innerHTML=`${state.profile.role==='admin'?'<div class="section-head"><div><h3>Kelola Tugas</h3><small>Individu atau kelompok, dengan komponen fleksibel.</small></div><button id="newAssignment" class="btn primary">+ Buat Tugas</button></div>':''}<div id="taskAdminLoad" class="task-admin-list"><div class="card"><div class="empty">Memuat daftar tugas...</div></div></div>`;
+  $('#newAssignment')&&($('#newAssignment').onclick=()=>assignmentBuilder());
+  try{
+    const as=await getDocs(collection(db,'assignments'));
+    const tasks=as.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.archived!==true);
+    let subs=[];
+    try{
+      const ss=state.profile.role==='admin'
+        ? await getDocs(collection(db,'taskSubmissions'))
+        : await getDocs(query(collection(db,'taskSubmissions'),where('classId','==',state.profile.homeroomClass)));
+      subs=ss.docs.map(d=>({id:d.id,...d.data()}));
+    }catch(subErr){
+      console.error('Task submissions read error',subErr);
+      // Daftar tugas dan Task Builder tetap dapat digunakan walau submission belum terbaca.
+    }
+    const allowed=state.profile.role==='admin'?tasks:tasks.filter(t=>!Array.isArray(t.targetClasses)||t.targetClasses.includes(state.profile.homeroomClass));
+    const box=$('#taskAdminLoad'); if(!box)return;
+    box.innerHTML=allowed.map(t=>{const x=subs.filter(s=>s.taskId===t.id&&(state.profile.role==='admin'||s.classId===state.profile.homeroomClass));return `<div class="card task-admin-card"><div><div class="task-mini-tags"><span class="badge neutral">${taskTypeLabel(t)}</span>${t.taskType==='group'?`<span class="badge neutral">${t.groupCount||6} kelompok/kelas</span>`:''}</div><h3>${esc(t.title||'Tugas')}</h3><small>${esc((t.targetClasses||[]).join(', ')||'Semua kelas')} • Batas ${esc(t.dueDate||'-')}</small></div><div class="task-admin-metrics"><span><b>${x.filter(s=>s.status==='submitted'||s.status==='graded').length}</b> dikumpulkan</span><span><b>${x.filter(s=>s.status==='draft'||s.status==='revision').length}</b> draf/revisi</span><span><b>${x.filter(s=>s.status==='graded').length}</b> dinilai</span></div><div class="row-actions"><button class="btn secondary" data-review-task="${t.id}">Pengumpulan</button>${state.profile.role==='admin'?`<button class="btn ghost" data-edit-task="${t.id}">Edit</button>`:''}</div></div>`}).join('')||'<div class="card empty">Belum ada tugas. Tekan <b>+ Buat Tugas</b> untuk membuat tugas pertama.</div>';
+    document.querySelectorAll('[data-edit-task]').forEach(b=>b.onclick=()=>assignmentBuilder(b.dataset.editTask));
+    document.querySelectorAll('[data-review-task]').forEach(b=>b.onclick=()=>reviewTask(b.dataset.reviewTask));
+  }catch(e){
+    console.error('Task management error',e);
+    const box=$('#taskAdminLoad');
+    if(box)box.innerHTML=`<div class="card"><div class="empty"><b>Daftar tugas belum dapat dimuat.</b><br><small>${esc(e?.message||'Periksa Firestore Rules Tugas Siswa v6.1.')}</small></div></div>`;
+  }
 }
 async function assignmentBuilder(id=''){
   if(state.profile.role!=='admin')return;let t={title:'',description:'',taskType:'individual',groupCount:6,targetClasses:[],components:[{type:'link',label:'Link Video / Media Sosial',required:true,descriptionLabel:'Deskripsi kegiatan',descriptionMax:500,linkHint:'Google Drive, YouTube, Instagram, TikTok, atau link lain yang dapat dibuka guru.'}],published:true,requireReflection:false,allowLate:true};if(id){const d=await getDoc(doc(db,'assignments',id));if(d.exists())t={id:d.id,...d.data()}}

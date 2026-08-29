@@ -83,15 +83,16 @@ service cloud.firestore {
     }
 
     match /assignments/{taskId}{
+      // Siswa wajib membaca dengan query targetClasses array-contains classId.
       allow read: if isStaff() || (isStudent()
-        && resource.data.keys().hasAny(['targetClasses'])
-        && (resource.data.targetClasses.size() == 0 || userDoc().data.classId in resource.data.targetClasses));
+        && resource.data.targetClasses is list
+        && userDoc().data.classId in resource.data.targetClasses);
       allow create, update, delete: if isAdmin();
     }
     match /taskSubmissions/{id}{
       allow read: if isAdmin()
         || (isHomeroom() && resource.data.classId == userDoc().data.homeroomClass)
-        || (isStudent() && resource.data.classId == userDoc().data.classId
+        || (isStudent()
           && (resource.data.nis == userDoc().data.loginId
             || (resource.data.memberNis is list && userDoc().data.loginId in resource.data.memberNis)));
 
