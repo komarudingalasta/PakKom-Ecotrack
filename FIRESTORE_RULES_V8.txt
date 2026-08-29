@@ -40,7 +40,7 @@ service cloud.firestore {
 
     match /classes/{id}{ allow read: if isStaff(); allow write: if isAdmin(); }
     match /students/{id}{
-      allow read: if isStaff() || (isStudent() && userDoc().data.studentId == id) || isAnonymous();
+      allow read: if isStaff() || (isStudent() && userDoc().data.studentId == id);
       allow create, update, delete: if isAdmin();
     }
     match /records/{id}{ allow read: if isStaff(); allow create, update: if isStaff(); allow delete: if isAdmin(); }

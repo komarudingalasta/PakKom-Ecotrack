@@ -1,103 +1,51 @@
 <!doctype html>
 <html lang="id">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#0f766e" />
-  <title>PakKom EcoTrack • Tugas Siswa</title>
-  <link rel="stylesheet" href="../styles.css?v=9.0.0" />
-
-  <script>
-    window.pakkomTogglePassword = function(inputId, button) {
-      var input = document.getElementById(inputId);
-      if (!input) return;
-      var show = input.type === 'password';
-      input.type = show ? 'text' : 'password';
-      if (button) {
-        button.textContent = show ? '🙈' : '👁';
-        button.setAttribute('aria-label', show ? 'Sembunyikan password' : 'Tampilkan password');
-        button.setAttribute('title', show ? 'Sembunyikan password' : 'Tampilkan password');
-      }
-      input.focus();
-    };
-  </script>
-<meta name="theme-color" content="#0f766e">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>PakKom EcoTrack • Portal Siswa</title>
+  <link rel="stylesheet" href="siswa.css?v=9.2.0">
 </head>
-<body class="student-portal-login">
-  <div id="logoutModal" class="modal hidden">
-    <div class="modal-card logout-confirm-card">
-      <div class="logout-confirm-icon"><svg viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zm9-14H9c-1.1 0-2 .9-2 2v3h2V5h10v14H9v-3H7v3c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg></div>
-      <h3>Keluar dari PakKom Eco Track?</h3>
-      <p>Anda perlu masuk kembali untuk menggunakan aplikasi.</p>
-      <div class="logout-confirm-actions"><button id="cancelLogout" class="btn ghost" type="button">Batal</button><button id="confirmLogout" class="btn danger" type="button">Keluar</button></div>
-    </div>
-  </div>
-
+<body>
   <div id="toast" class="toast"></div>
-
-  <section id="bootView" class="boot-view">
-    <div class="boot-brand"><div class="boot-logo">🌿</div><strong>PakKom Eco Track</strong><span>Menyiapkan halaman...</span><div class="boot-loader"></div></div>
+  <section id="boot" class="center-card">
+    <div class="brand-mark">🌿</div>
+    <h1>PakKom EcoTrack</h1>
+    <p>Menyiapkan portal siswa...</p>
   </section>
-<section id="loginView" class="login-shell">
-    <div class="login-visual">
-      <div class="visual-badge">🌱 Sekolah Hijau</div>
-      <div class="visual-copy"><h2>Tugas Sekolah,<br>Lebih Terarah</h2><p>Lihat tugas, unggah bukti, tulis deskripsi, dan pantau status pengumpulan dalam satu tempat.</p></div>
-      <div class="visual-scene">🏫<span>🌳</span><span>♻️</span></div>
-    </div>
-    <div class="login-panel">
-      <div class="login-brand"><div class="brand-mark">🌿</div><div><h1>PakKom Eco Track</h1><p>Sistem Monitoring Lingkungan Sekolah</p></div></div>
-      <form id="loginForm" class="form-card login-form">
-        <div class="login-heading"><h2>Tugas Siswa</h2><p>Masuk menggunakan NIS. Password sama dengan NIS.</p></div>
-        <label>NIS Siswa<input id="loginId" inputmode="numeric" autocomplete="username" placeholder="Masukkan NIS" required /></label>
-        <label>Password<div class="password-wrap"><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" required /><button id="togglePassword" type="button" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('loginPassword', this)">👁</button></div></label>
-        <button id="loginBtn" class="btn primary full login-submit" type="submit">MASUK</button>
-        <p id="loginError" class="login-error hidden"></p>
-        <p id="loginHint" class="demo-note">Akun siswa dibuat oleh Admin EcoTrack.</p>
-        <button id="openRegister" class="btn ghost full hidden" type="button">Daftar Guru / Wali Kelas</button>
+
+  <section id="login" class="login-shell hidden">
+    <div class="login-card">
+      <div class="brand-row"><span class="brand-mark">🌿</span><div><h1>PakKom EcoTrack</h1><p>Portal Siswa</p></div></div>
+      <h2>Masuk sebagai Siswa</h2>
+      <p class="muted">Gunakan NIS dan password yang diberikan sekolah.</p>
+      <form id="loginForm">
+        <label>NIS<input id="nis" inputmode="numeric" autocomplete="username" required></label>
+        <label>Password<div class="password-row"><input id="password" type="password" autocomplete="current-password" required><button id="togglePwd" type="button">👁</button></div></label>
+        <button id="loginBtn" class="btn primary full" type="submit">MASUK</button>
       </form>
-      <div class="login-footer"><strong>PakKom Eco Track</strong><span>Pembiasaan lingkungan sekolah</span></div>
+      <div id="loginError" class="notice danger hidden"></div>
     </div>
   </section>
 
-  <div id="appView" class="app hidden">
-    <aside class="sidebar">
-      <div class="side-brand"><span>🌿</span><div><strong>PakKom</strong><small>Eco Track</small></div></div>
-      <nav id="nav"></nav>
-      
-    </aside>
-    <main class="main">
-      <header class="topbar">
-        <button id="menuBtn" class="menu-btn">☰</button>
-        <div><h2 id="pageTitle">Beranda</h2><p id="pageSubtitle"></p></div><span id="appVersionBadge" class="app-version-badge">v8.1.0</span>
-        <button id="profileTrigger" class="profile-trigger" type="button" aria-label="Menu akun">
-          <span id="profileAvatar" class="profile-avatar">PK</span>
-          <span id="userChip" class="user-chip"></span>
-          <span class="profile-chevron">⌄</span>
-        </button>
-        <div id="profileMenu" class="profile-menu hidden">
-          <div class="profile-menu-head"><b id="profileMenuName"></b><span id="profileMenuRole"></span></div>
-          <button id="quickLogout" class="profile-logout" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5v3H3v4h7v3zm9-14H9c-1.1 0-2 .9-2 2v3h2V5h10v14H9v-3H7v3c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg><span>Keluar dari akun</span></button>
-        </div>
-      </header>
-      <section id="content" class="content"></section>
-    </main>
-  </div>
-
-  <div id="registerModal" class="modal hidden"><div class="modal-card register-card"><div class="modal-head"><div><h3>Daftar Akun Guru</h3><small>Akun baru harus disetujui Admin sebelum dapat digunakan.</small></div><button id="registerClose" class="modal-x">×</button></div><div class="modal-body"><div class="register-grid"><label>NIP Guru<input id="regLoginId" placeholder="Contoh: 198701012010011001"></label><label>Nama Lengkap<input id="regName" placeholder="Nama guru"></label><label>Jenis<select id="regType"><option value="guru">Guru</option><option value="wali">Wali Kelas</option></select></label><label id="regClassWrap" class="hidden">Kelas Wali<select id="regClass"></select></label><label>Password<div class="password-wrap"><input id="regPassword" type="password" placeholder="Minimal 6 karakter"><button class="password-toggle" type="button" data-toggle-target="regPassword" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('regPassword', this)">👁</button></div></label>
-<label>Ulangi Password<div class="password-wrap"><input id="regPassword2" type="password" placeholder="Ulangi password"><button class="password-toggle" type="button" data-toggle-target="regPassword2" aria-label="Tampilkan password" title="Tampilkan password" onclick="pakkomTogglePassword('regPassword2', this)">👁</button></div></label></div><div class="notice">Pendaftaran tidak langsung memberikan akses. Admin akan memeriksa dan menyetujui akun terlebih dahulu.</div></div><div class="modal-actions"><button id="registerCancel" class="btn ghost">Batal</button><button id="registerSubmit" class="btn primary">Kirim Pendaftaran</button></div></div></div>
-
-  <div id="editModal" class="modal hidden"><div class="modal-card"><div class="modal-head"><h3 id="editModalTitle">Edit Data</h3><button id="editModalClose" class="modal-x">×</button></div><div id="editModalBody" class="modal-body"></div><div class="modal-actions"><button id="editModalCancel" class="btn ghost">Batal</button><button id="editModalSave" class="btn primary">Simpan</button></div></div></div>
-  <input id="studentImport" type="file" accept=".xlsx,.xls,.csv" hidden />
-  <input id="studentAccessImport" type="file" accept=".xlsx,.xls,.csv" hidden />
-  <input id="teacherImport" type="file" accept=".xlsx,.xls,.csv" hidden />
-  <input id="attendanceImport" type="file" accept=".xlsx,.xls,.csv" hidden />
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <section id="app" class="app hidden">
+    <header class="topbar">
+      <div class="brand-row compact"><span class="brand-mark small">🌿</span><div><strong>PakKom EcoTrack</strong><small>Portal Siswa • v9.2.0</small></div></div>
+      <button id="logoutBtn" class="btn ghost">Keluar</button>
+    </header>
+    <main id="content"></main>
+    <nav class="bottom-nav">
+      <button data-page="home" class="active"><span>⌂</span><b>Beranda</b></button>
+      <a href="tugas/"><span>✓</span><b>Tugas</b></a>
+      <button data-page="me"><span>👤</span><b>Saya</b></button>
+    </nav>
+  </section>
 
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
-  <script>window.PAKKOM_STUDENT_PORTAL=true;</script>
   <script src="../firebase-config.js"></script>
-  <script src="../main.js?v=9.0.0"></script>
+  <script src="siswa.js?v=9.2.0"></script>
 </body>
 </html>
