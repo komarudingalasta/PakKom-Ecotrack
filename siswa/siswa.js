@@ -16,8 +16,12 @@ async function loadData(){
   const c=normClass(profile.classId); profile.classId=c;
   const a=await db.collection('assignments').where('targetClasses','array-contains',c).get();
   tasks=a.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.published===true&&t.archived!==true);
-  const s=await db.collection('taskSubmissions').where('nis','==',String(profile.loginId)).get();
-  subs=s.docs.map(d=>({id:d.id,...d.data()}));
+  const nis=String(profile.loginId);
+  const s=await db.collection('taskSubmissions').where('nis','==',nis).get();
+  const gm=await db.collection('taskSubmissions').where('memberNis','array-contains',nis).get();
+  const subMap=new Map();
+  [...s.docs,...gm.docs].forEach(d=>subMap.set(d.id,{id:d.id,...d.data()}));
+  subs=[...subMap.values()];
 }
 function home(){
   const todo=tasks.filter(t=>st(t)==='todo').length, rev=tasks.filter(t=>st(t)==='revision').length, done=tasks.filter(t=>st(t)==='done').length;

@@ -45,23 +45,32 @@ service cloud.firestore {
     }
     match /records/{id}{ allow read: if isStaff(); allow create, update: if isStaff(); allow delete: if isAdmin(); }
     match /cleanliness/{id}{ allow read: if isStaff(); allow create, update: if isStaff(); allow delete: if isAdmin(); }
-    match /settings/{id}{ allow read: if isStaff(); allow write: if isAdmin(); }
+
+    match /settings/{id}{
+      allow read: if isStaff() || (isStudent() && id == 'taskAssessment');
+      allow write: if isAdmin();
+    }
+
     match /analysisPeriods/{id}{ allow read: if isAdmin() || (isHomeroom() && resource.data.sharedToHomeroom == true); allow write: if isAdmin(); }
     match /analysisPeriodRevisions/{id}{ allow read, create: if isAdmin(); allow update, delete: if false; }
     match /auditLogs/{id}{ allow read, create: if isAdmin(); allow update, delete: if false; }
     match /recordResetArchive/{id}{ allow read, create: if isAdmin(); allow update, delete: if false; }
     match /cleanlinessResetArchive/{id}{ allow read, create: if isAdmin(); allow update, delete: if false; }
 
-    // EcoChat dihapus pada v7. Data chat lama tetap tersimpan,
-    // tetapi tidak memiliki izin akses karena default deny di bawah.
-
     match /assignments/{taskId}{
-      // Siswa wajib membaca dengan query targetClasses array-contains classId.
       allow read: if isStaff() || (isStudent()
         && resource.data.targetClasses is list
         && userDoc().data.classId in resource.data.targetClasses);
       allow create, update, delete: if isAdmin();
     }
+
+    match /taskGroups/{groupKey}{
+      allow read: if isAdmin()
+        || (isHomeroom() && resource.data.classId == userDoc().data.homeroomClass)
+        || (isStudent() && resource.data.memberNis is list && userDoc().data.loginId in resource.data.memberNis);
+      allow create, update, delete: if isAdmin();
+    }
+
     match /taskSubmissions/{id}{
       allow read: if isAdmin()
         || (isHomeroom() && resource.data.classId == userDoc().data.homeroomClass)
@@ -71,12 +80,12 @@ service cloud.firestore {
 
       allow create: if isStudent()
         && request.resource.data.studentUid == request.auth.uid
-        && request.resource.data.nis == userDoc().data.loginId
         && request.resource.data.classId == userDoc().data.classId
-        && (request.resource.data.taskType == 'individual'
+        && ((request.resource.data.taskType == 'individual'
+              && request.resource.data.nis == userDoc().data.loginId)
           || (request.resource.data.taskType == 'group'
-            && request.resource.data.memberNis is list
-            && userDoc().data.loginId in request.resource.data.memberNis));
+              && request.resource.data.memberNis is list
+              && userDoc().data.loginId in request.resource.data.memberNis));
 
       allow update: if (isStudent()
         && resource.data.classId == userDoc().data.classId
