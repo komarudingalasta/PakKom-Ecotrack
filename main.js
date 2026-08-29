@@ -523,10 +523,27 @@ function renderShell(){
     document.documentElement.scrollTop=0;
     document.body.scrollTop=0;
     renderShell();
-    document.querySelector('.sidebar').classList.remove('open');
+    document.querySelector('.sidebar')?.classList.remove('open');
   });
   renderPage();
 }
+// v6.3: delegated navigation fallback. This keeps Tugas usable even if a nav button
+// is re-rendered after its direct onclick binding was attached.
+if(!window.__pakkomTaskNavFallback){
+  window.__pakkomTaskNavFallback=true;
+  document.addEventListener('click',(e)=>{
+    const nav=e.target.closest?.('[data-page="tasks"]');
+    const more=e.target.closest?.('[data-more-go="tasks"]');
+    if(!nav && !more) return;
+    e.preventDefault();
+    e.stopPropagation();
+    state.page='tasks';
+    state.selectedClass=null;
+    window.scrollTo(0,0);
+    renderShell();
+  },true);
+}
+
 function renderPage(){
   if(content){
     content.classList.add('page-content-stable');
