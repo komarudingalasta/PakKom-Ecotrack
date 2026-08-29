@@ -2167,6 +2167,7 @@ async function master(){
   </div>
   <div class="master-tabs" style="margin-top:16px">
     <button class="master-tab ${state.masterTab==='students'?'active':''}" data-master-tab="students">👨‍🎓 Data Siswa</button>
+    <button class="master-tab ${state.masterTab==='studentAccess'?'active':''}" data-master-tab="studentAccess">🔐 Akses Login Siswa</button>
     <button class="master-tab ${state.masterTab==='teachers'?'active':''}" data-master-tab="teachers">👨‍🏫 Guru & Wali Kelas${pendingTeachers.length?` <span class="tab-count">${pendingTeachers.length}</span>`:''}</button>
     <button class="master-tab ${state.masterTab==='classes'?'active':''}" data-master-tab="classes">🏫 Kelas & Import</button>
     <button class="master-tab ${state.masterTab==='calendar'?'active':''}" data-master-tab="calendar">📅 Kalender Sekolah</button>
@@ -2184,11 +2185,14 @@ function renderMasterTab(){
     target.innerHTML=`<div class="card master-section">
       <div class="section-head"><div><h3>Data Siswa</h3><small>Kelola siswa tanpa mencampur akun guru.</small></div><div class="row-actions"><a class="btn ghost" href="format-import-pakkom-eco-track.xlsx" download>Format Siswa</a><button id="importStudents" class="btn primary">Upload Data Siswa</button></div></div>
       <div class="notice">Format: <b>NIS | Nama | Kelas | Status</b>. Upload hanya membuka preview; data baru masuk setelah menekan <b>Import Sekarang</b>.</div>
-      <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button><button id="provisionStudentAccounts" class="btn ghost">🔐 Buat Akun Siswa</button><button id="bulkDeleteStudents" class="btn danger" disabled>Hapus Terpilih</button></div>
+      <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button><button id="openStudentAccess" class="btn ghost">🔐 Akses Login Siswa</button><button id="bulkDeleteStudents" class="btn danger" disabled>Hapus Terpilih</button></div>
       <div id="studentTable"></div></div>`;
     $('#importStudents').onclick=()=>$('#studentImport').click(); $('#addStudentLocal').onclick=addStudentLocal;
-    $('#provisionStudentAccounts').onclick=provisionStudentAccounts; $('#studentSearch').oninput=renderStudentMasterTable; $('#studentClassFilter').onchange=renderStudentMasterTable;
+    $('#openStudentAccess').onclick=()=>{state.masterTab='studentAccess';renderMasterTab();document.querySelectorAll('[data-master-tab]').forEach(x=>x.classList.toggle('active',x.dataset.masterTab===state.masterTab));}; $('#studentSearch').oninput=renderStudentMasterTable; $('#studentClassFilter').onchange=renderStudentMasterTable;
     $('#bulkDeleteStudents').onclick=deleteSelectedStudents; renderStudentMasterTable(); return;
+  }
+  if(state.masterTab==='studentAccess'){
+    renderStudentAccessPanel(); return;
   }
   if(state.masterTab==='teachers'){
     target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Akun Guru & Wali Kelas</h3><small>Akun hasil pendaftaran baru harus disetujui Admin.</small></div><div class="row-actions"><button id="importTeachers" class="btn ghost">Upload Akun Guru</button><button id="addTeacher" class="btn primary">+ Guru</button></div></div><div id="pendingApprovals"></div>
@@ -2737,7 +2741,7 @@ async function studentHome(){
 }
 function studentTaskCard(t,sub){const [label,cls]=taskStatusLabel(sub);return `<button class="task-student-card" data-student-task="${esc(t.id)}"><div><b>${esc(t.title||'Tugas')}</b><small>${t.dueDate?'Batas: '+esc(t.dueDate):'Tanpa batas waktu'}</small><span class="badge ${cls}">${label}</span></div><strong>›</strong></button>`}
 async function studentTasks(){return studentHome()}
-function studentAccount(){pageMeta('Saya','Akun siswa');content.innerHTML=`<div class="card account-card"><div class="account-name">${esc(state.profile.name||'-')}</div><div class="account-details"><div class="account-row"><span>NIS</span><b>${esc(state.profile.loginId||state.profile.nis||'-')}</b></div><div class="account-row"><span>Kelas</span><b>${esc(state.profile.classId||'-')}</b></div><div class="account-row"><span>Password</span><b>123456 • tidak dapat diubah</b></div></div><div class="notice">Akun ini hanya dapat mengakses tugas milikmu.</div><button id="studentLogout" class="btn danger">Keluar</button></div>`;$('#studentLogout').onclick=()=>$('#logoutModal')?.classList.remove('hidden')}
+function studentAccount(){pageMeta('Saya','Akun siswa');content.innerHTML=`<div class="card account-card"><div class="account-name">${esc(state.profile.name||'-')}</div><div class="account-details"><div class="account-row"><span>NIS</span><b>${esc(state.profile.loginId||state.profile.nis||'-')}</b></div><div class="account-row"><span>Kelas</span><b>${esc(state.profile.classId||'-')}</b></div><div class="account-row"><span>Password</span><b>Sama dengan NIS • tidak dapat diubah</b></div></div><div class="notice">Akun ini hanya dapat mengakses tugas milikmu.</div><button id="studentLogout" class="btn danger">Keluar</button></div>`;$('#studentLogout').onclick=()=>$('#logoutModal')?.classList.remove('hidden')}
 async function studentTaskDetail(id){
   const d=await getDoc(doc(db,'assignments',id)); if(!d.exists())return toast('Tugas tidak ditemukan'); const t={id:d.id,...d.data()};
   const ss=await getDocs(query(collection(db,'taskSubmissions'),where('studentUid','==',state.user.uid))); const sub=ss.docs.map(x=>({id:x.id,...x.data()})).find(x=>x.taskId===id);
@@ -2769,11 +2773,100 @@ function addTaskComponent(){window.taskBuilderComponents.push({type:'photo',labe
 async function saveAssignment(old){document.querySelectorAll('[data-comp-type]').forEach(el=>{const i=Number(el.dataset.compType),c=window.taskBuilderComponents[i];c.type=el.value;c.label=document.querySelector(`[data-comp-label="${i}"]`).value.trim();c.descriptionLabel=document.querySelector(`[data-comp-desc="${i}"]`).value.trim();c.required=document.querySelector(`[data-comp-required="${i}"]`).checked});const title=$('#taskTitle').value.trim();if(!title)return toast('Judul tugas wajib diisi');const ref=old.id?doc(db,'assignments',old.id):collection(db,'assignments').doc();await setDoc(ref,{title,description:$('#taskDescription').value.trim(),openDate:$('#taskOpen').value,dueDate:$('#taskDue').value,targetClasses:[...document.querySelectorAll('[data-task-class]:checked')].map(x=>x.dataset.taskClass),components:window.taskBuilderComponents,requireReflection:$('#taskReflection').checked,published:$('#taskPublished').checked,archived:false,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,createdAt:old.createdAt||new Date().toISOString()},{merge:true});toast('Tugas berhasil disimpan');taskManagementPage()}
 async function reviewTask(taskId){const td=await getDoc(doc(db,'assignments',taskId));if(!td.exists())return;const t={id:td.id,...td.data()};const ss=await getDocs(query(collection(db,'taskSubmissions'),where('taskId','==',taskId)));let subs=ss.docs.map(d=>({id:d.id,...d.data()}));if(state.profile.role!=='admin'&&state.profile.isHomeroom)subs=subs.filter(s=>s.classId===state.profile.homeroomClass);pageMeta(t.title,'Pengumpulan siswa');content.innerHTML=`<button id="backTaskManage" class="btn ghost">← Tugas Siswa</button><div class="card"><div class="table-wrap"><table><thead><tr><th>Siswa</th><th>Kelas</th><th>Status</th><th>Nilai</th><th></th></tr></thead><tbody>${subs.map(s=>`<tr><td><b>${esc(s.studentName||s.nis)}</b></td><td>${esc(s.classId)}</td><td>${taskStatusLabel(s)[0]}</td><td>${esc(s.score??'-')}</td><td><button class="btn-mini edit" data-grade-sub="${s.id}">Periksa</button></td></tr>`).join('')||'<tr><td colspan="5">Belum ada pengumpulan.</td></tr>'}</tbody></table></div></div>`;$('#backTaskManage').onclick=taskManagementPage;document.querySelectorAll('[data-grade-sub]').forEach(b=>b.onclick=()=>gradeSubmission(b.dataset.gradeSub,t))}
 async function gradeSubmission(id,t){const d=await getDoc(doc(db,'taskSubmissions',id));if(!d.exists())return;const s={id:d.id,...d.data()};pageMeta('Penilaian',`${s.studentName||s.nis} • ${s.classId}`);content.innerHTML=`<button id="backReview" class="btn ghost">← Pengumpulan</button><div class="review-layout"><div class="card"><h3>Bukti & Deskripsi</h3>${(s.answers||[]).map((a,i)=>`<div class="review-proof"><b>${esc(t.components?.[i]?.label||'Bukti '+(i+1))}</b>${a.fileName?`<small>${esc(a.fileName)}</small>`:''}<p>${esc(a.description||a.text||'-')}</p></div>`).join('')}${s.reflection?`<div class="review-proof"><b>Refleksi Akhir</b><p>${esc(s.reflection)}</p></div>`:''}</div><div class="card grade-panel"><label>Nilai (0–100)</label><input id="gradeScore" type="number" min="0" max="100" class="input-inline" value="${esc(s.score??'')}"><label>Catatan untuk siswa</label><textarea id="gradeFeedback">${esc(s.feedback||'')}</textarea><button id="saveGrade" class="btn primary">Simpan Penilaian</button></div></div>`;$('#backReview').onclick=()=>reviewTask(t.id);$('#saveGrade').onclick=async()=>{const score=Number($('#gradeScore').value);if(!Number.isFinite(score)||score<0||score>100)return toast('Nilai harus 0–100');await setDoc(doc(db,'taskSubmissions',id),{score,feedback:$('#gradeFeedback').value.trim(),status:'graded',gradedAt:new Date().toISOString(),gradedByUid:state.user.uid,gradedByName:state.profile.name||''},{merge:true});toast('Penilaian tersimpan');reviewTask(t.id)}}
-async function provisionStudentAccounts(){
-  if(state.profile.role!=='admin')return; const candidates=state.students.filter(s=>s.active!==false&&!s.authUid); if(!candidates.length)return toast('Semua siswa aktif sudah memiliki akun.'); if(!confirm(`Buat akun login untuk ${candidates.length} siswa? Username menggunakan NIS dan password semua siswa 123456. Proses dapat memerlukan waktu.`))return;
-  let ok=0,fail=0; const secondary=initializeApp(window.PAKKOM_FIREBASE_CONFIG,'studentProvision_'+Date.now()); const a=getAuth(secondary);
-  for(const st of candidates){const nis=String(st.nis||st.id||'').trim();if(!nis){fail++;continue}try{const cred=await createUserWithEmailAndPassword(a,nis.toLowerCase().replace(/[^a-z0-9._-]/g,'')+'@pakkom-ecotrack.app','123456');await setDoc(doc(db,'users',cred.user.uid),{role:'siswa',active:true,approved:true,name:st.name||'',loginId:nis,nis,studentId:st.id,classId:st.classId||'',createdAt:new Date().toISOString()});await setDoc(doc(db,'students',st.id),{authUid:cred.user.uid},{merge:true});await a.signOut();ok++}catch(e){console.warn('student provision',nis,e);fail++}}
-  await deleteApp(secondary).catch(()=>{});toast(`Akun siswa: ${ok} berhasil, ${fail} gagal. Password siswa: 123456.`);master();
+function studentAccessStats(){
+  const active=state.students.filter(s=>s.active!==false);
+  const loginActive=active.filter(s=>!!s.authUid);
+  const pending=active.filter(s=>!s.authUid);
+  return {active,loginActive,pending};
+}
+function renderStudentAccessPanel(){
+  const target=$('#masterTabContent'); if(!target)return;
+  const {active,loginActive,pending}=studentAccessStats();
+  const report=window.studentProvisionReport||[];
+  const classRows=state.classes.map(c=>{
+    const rows=active.filter(s=>s.classId===c), on=rows.filter(s=>!!s.authUid).length, off=rows.length-on;
+    return `<tr><td><b>${esc(c)}</b></td><td>${rows.length}</td><td><span class="badge ok">${on} aktif</span></td><td>${off?`<span class="badge warn">${off} belum</span>`:'<span class="badge ok">Lengkap</span>'}</td><td><button class="btn-mini edit" data-activate-class="${esc(c)}" ${off?'':'disabled'}>Aktifkan</button></td></tr>`;
+  }).join('');
+  target.innerHTML=`<div class="grid stats admin-stats student-access-stats">
+      <div class="stat"><span>Siswa aktif</span><strong>${active.length}</strong></div>
+      <div class="stat"><span>Login aktif</span><strong>${loginActive.length}</strong></div>
+      <div class="stat"><span>Belum aktif</span><strong>${pending.length}</strong></div>
+      <div class="stat"><span>Terakhir gagal</span><strong>${report.filter(x=>x.status==='failed').length}</strong></div>
+    </div>
+    <div class="card master-section">
+      <div class="section-head"><div><h3>🔐 Akses Login Siswa</h3><small>Data siswa tetap menjadi data induk. Menu ini hanya mengaktifkan akun login dari NIS yang sudah ada.</small></div><div class="row-actions"><button id="syncStudentProfiles" class="btn ghost">↻ Sinkronkan Kelas</button><button id="activateAllStudents" class="btn primary" ${pending.length?'':'disabled'}>Aktifkan Semua (${pending.length})</button></div></div>
+      <div class="notice">Siswa login melalui <b>/siswa/</b> menggunakan <b>NIS sebagai NIS dan password</b>. Untuk NIS 5 digit, EcoTrack menambahkan awalan internal saat berkomunikasi dengan Firebase; siswa tetap mengetik NIS biasa.</div>
+      <div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Siswa</th><th>Login Aktif</th><th>Belum Aktif</th><th>Aksi</th></tr></thead><tbody>${classRows||'<tr><td colspan="5">Belum ada kelas.</td></tr>'}</tbody></table></div>
+    </div>
+    ${report.length?`<div class="card master-section"><div class="section-head"><div><h3>Hasil Aktivasi Terakhir</h3><small>${report.filter(x=>x.status==='success').length} berhasil • ${report.filter(x=>x.status==='skipped').length} dilewati • ${report.filter(x=>x.status==='failed').length} gagal</small></div><button id="clearStudentProvisionReport" class="btn ghost">Bersihkan</button></div><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${report.map(r=>`<tr><td>${esc(r.nis)}</td><td>${esc(r.name)}</td><td>${esc(r.classId)}</td><td>${r.status==='success'?'<span class="badge ok">Berhasil</span>':r.status==='skipped'?'<span class="badge">Dilewati</span>':'<span class="badge bad">Gagal</span>'}</td><td>${esc(r.message||'-')}</td></tr>`).join('')}</tbody></table></div></div>`:''}`;
+  $('#activateAllStudents')?.addEventListener('click',()=>provisionStudentAccounts());
+  $('#syncStudentProfiles')?.addEventListener('click',syncStudentLoginProfiles);
+  $('#clearStudentProvisionReport')?.addEventListener('click',()=>{window.studentProvisionReport=[];renderStudentAccessPanel()});
+  document.querySelectorAll('[data-activate-class]').forEach(b=>b.onclick=()=>provisionStudentAccounts(b.dataset.activateClass));
+}
+function studentInternalEmail(nis){
+  return String(nis||'').trim().toLowerCase().replace(/[^a-z0-9._-]/g,'')+'@pakkom-ecotrack.app';
+}
+function studentInternalPassword(nis){ return 'S'+String(nis||'').trim(); }
+function authErrorText(e){
+  const code=String(e?.code||'');
+  const map={
+    'auth/operation-not-allowed':'Email/Password Authentication belum diaktifkan di Firebase.',
+    'auth/email-already-in-use':'Email internal sudah ada di Authentication, tetapi data siswa belum tertaut.',
+    'auth/invalid-email':'Format NIS menghasilkan email internal yang tidak valid.',
+    'auth/weak-password':'Password internal ditolak Firebase.',
+    'auth/network-request-failed':'Koneksi ke Firebase terputus.',
+    'auth/too-many-requests':'Firebase membatasi permintaan sementara. Coba lagi beberapa saat.'
+  };
+  return map[code]||`${code||'error'}${e?.message?` • ${String(e.message).replace(/^Firebase:\s*/,'')}`:''}`;
+}
+async function provisionStudentAccounts(classId=''){
+  if(state.profile.role!=='admin')return;
+  const candidates=state.students.filter(s=>s.active!==false&&!s.authUid&&(!classId||s.classId===classId));
+  if(!candidates.length)return toast(classId?`Semua siswa ${classId} sudah memiliki login.`:'Semua siswa aktif sudah memiliki login.');
+  const scope=classId?`kelas ${classId}`:'semua kelas';
+  if(!confirm(`Aktifkan login untuk ${candidates.length} siswa ${scope}?\n\nSiswa tetap login menggunakan NIS sebagai password.`))return;
+  const report=[];
+  let secondary=null;
+  try{
+    secondary=initializeApp(window.PAKKOM_FIREBASE_CONFIG,'studentProvision_'+Date.now());
+    const a=getAuth(secondary);
+    for(let i=0;i<candidates.length;i++){
+      const st=candidates[i], nis=String(st.nis||st.id||'').trim();
+      if(!nis){report.push({nis:'-',name:st.name||'',classId:st.classId||'',status:'failed',message:'NIS kosong.'});continue}
+      try{
+        const cred=await createUserWithEmailAndPassword(a,studentInternalEmail(nis),studentInternalPassword(nis));
+        await setDoc(doc(db,'users',cred.user.uid),{role:'siswa',active:true,approved:true,name:st.name||'',loginId:nis,nis,studentId:st.id,classId:st.classId||'',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+        await setDoc(doc(db,'students',st.id),{authUid:cred.user.uid,loginEnabled:true,loginEnabledAt:new Date().toISOString()},{merge:true});
+        st.authUid=cred.user.uid; st.loginEnabled=true;
+        report.push({nis,name:st.name||'',classId:st.classId||'',status:'success',message:'Login aktif.'});
+      }catch(e){
+        console.warn('student provision',nis,e);
+        report.push({nis,name:st.name||'',classId:st.classId||'',status:'failed',message:authErrorText(e)});
+      }finally{
+        await signOut(a).catch(()=>{});
+      }
+    }
+  }finally{
+    if(secondary)await deleteApp(secondary).catch(()=>{});
+  }
+  window.studentProvisionReport=report;
+  const ok=report.filter(x=>x.status==='success').length, fail=report.filter(x=>x.status==='failed').length;
+  toast(`Aktivasi login selesai: ${ok} berhasil, ${fail} gagal.`);
+  renderStudentAccessPanel();
+}
+async function syncStudentLoginProfiles(){
+  if(state.profile.role!=='admin')return;
+  const linked=state.students.filter(s=>s.active!==false&&s.authUid);
+  if(!linked.length)return toast('Belum ada akun siswa yang tertaut.');
+  let ok=0,fail=0;
+  for(const st of linked){
+    try{
+      await setDoc(doc(db,'users',st.authUid),{name:st.name||'',loginId:String(st.nis||st.id||'').trim(),nis:String(st.nis||st.id||'').trim(),studentId:st.id,classId:st.classId||'',role:'siswa',updatedAt:new Date().toISOString()},{merge:true});ok++;
+    }catch(e){console.warn('sync student profile',st.id,e);fail++}
+  }
+  toast(`Sinkronisasi profil siswa: ${ok} berhasil, ${fail} gagal.`);
+  renderStudentAccessPanel();
 }
 
 (function(){
@@ -2939,7 +3032,21 @@ async function provisionStudentAccounts(){
     window.PAKKOM_COMPAT_CORE.startedUid=null;
     auth.signOut().catch(function(){})
       .then(function(){
-        return auth.signInWithEmailAndPassword(loginEmail(id),password);
+        if(!studentPortal){
+          return auth.signInWithEmailAndPassword(loginEmail(id),password);
+        }
+        // Student UX remains NIS + password=NIS. Firebase receives S+NIS internally
+        // so 5-digit NIS works despite Firebase's 6-character minimum password.
+        return auth.signInWithEmailAndPassword(loginEmail(id),'S'+password)
+          .catch(function(err){
+            // Backward compatibility for any older 6+ digit student account
+            // that may already have been created with raw NIS as Firebase password.
+            var code=err&&err.code?err.code:'';
+            if(code==='auth/invalid-credential'||code==='auth/wrong-password'){
+              return auth.signInWithEmailAndPassword(loginEmail(id),password);
+            }
+            throw err;
+          });
       })
       .then(function(cred){
         if(id.toUpperCase()==='ADMIN' &&
