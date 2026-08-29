@@ -2166,29 +2166,54 @@ async function master(){
     <div class="stat"><span>Menunggu approve</span><strong>${pendingTeachers.length}</strong></div>
   </div>
   <div class="master-tabs" style="margin-top:16px">
-    <button class="master-tab ${state.masterTab==='students'?'active':''}" data-master-tab="students">👨‍🎓 Data Siswa</button>
-    <button class="master-tab ${state.masterTab==='studentAccess'?'active':''}" data-master-tab="studentAccess">🔐 Akses Login Siswa</button>
-    <button class="master-tab ${state.masterTab==='teachers'?'active':''}" data-master-tab="teachers">👨‍🏫 Guru & Wali Kelas${pendingTeachers.length?` <span class="tab-count">${pendingTeachers.length}</span>`:''}</button>
-    <button class="master-tab ${state.masterTab==='classes'?'active':''}" data-master-tab="classes">🏫 Kelas & Import</button>
-    <button class="master-tab ${state.masterTab==='calendar'?'active':''}" data-master-tab="calendar">📅 Kalender Sekolah</button>
-    <button class="master-tab ${state.masterTab==='operations'?'active':''}" data-master-tab="operations">🛠️ Operasional</button>
-    <button class="master-tab ${state.masterTab==='periods'?'active':''}" data-master-tab="periods">📊 Periode Analisis</button>
-    <button class="master-tab ${state.masterTab==='audit'?'active':''}" data-master-tab="audit">🕒 Riwayat</button>
+    <button type="button" class="master-tab ${state.masterTab==='students'?'active':''}" data-master-tab="students">👨‍🎓 Data Siswa</button>
+    <button type="button" class="master-tab ${state.masterTab==='studentAccess'?'active':''}" data-master-tab="studentAccess">🔐 Akses Login Siswa</button>
+    <button type="button" class="master-tab ${state.masterTab==='teachers'?'active':''}" data-master-tab="teachers">👨‍🏫 Guru & Wali Kelas${pendingTeachers.length?` <span class="tab-count">${pendingTeachers.length}</span>`:''}</button>
+    <button type="button" class="master-tab ${state.masterTab==='classes'?'active':''}" data-master-tab="classes">🏫 Kelas & Import</button>
+    <button type="button" class="master-tab ${state.masterTab==='calendar'?'active':''}" data-master-tab="calendar">📅 Kalender Sekolah</button>
+    <button type="button" class="master-tab ${state.masterTab==='operations'?'active':''}" data-master-tab="operations">🛠️ Operasional</button>
+    <button type="button" class="master-tab ${state.masterTab==='periods'?'active':''}" data-master-tab="periods">📊 Periode Analisis</button>
+    <button type="button" class="master-tab ${state.masterTab==='audit'?'active':''}" data-master-tab="audit">🕒 Riwayat</button>
   </div>
   <div id="masterTabContent"></div>`;
-  document.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMasterTab();document.querySelectorAll('[data-master-tab]').forEach(x=>x.classList.toggle('active',x.dataset.masterTab===state.masterTab));});
+  bindMasterTabNavigation();
   renderMasterTab();
 }
+function setMasterTab(tab){
+  const valid=['students','studentAccess','teachers','classes','calendar','operations','periods','audit'];
+  if(!valid.includes(tab))tab='students';
+  state.masterTab=tab;
+  try{
+    renderMasterTab();
+  }catch(e){
+    console.error('Master tab render error',tab,e);
+    const host=$('#masterTabContent');
+    if(host)host.innerHTML=`<div class="card"><div class="notice warn-note"><b>Panel tidak dapat ditampilkan.</b><br>${esc(e?.message||String(e))}</div></div>`;
+  }
+  document.querySelectorAll('[data-master-tab]').forEach(x=>x.classList.toggle('active',x.dataset.masterTab===state.masterTab));
+}
+function bindMasterTabNavigation(){
+  const tabs=document.querySelector('.master-tabs');
+  if(!tabs)return;
+  tabs.onclick=(ev)=>{
+    const btn=ev.target.closest('[data-master-tab]');
+    if(!btn||!tabs.contains(btn))return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    setMasterTab(btn.dataset.masterTab);
+  };
+}
+
 function renderMasterTab(){
   const target=$('#masterTabContent'); if(!target)return;
   if(state.masterTab==='students'){
     target.innerHTML=`<div class="card master-section">
       <div class="section-head"><div><h3>Data Siswa</h3><small>Kelola siswa tanpa mencampur akun guru.</small></div><div class="row-actions"><a class="btn ghost" href="format-import-pakkom-eco-track.xlsx" download>Format Siswa</a><button id="importStudents" class="btn primary">Upload Data Siswa</button></div></div>
       <div class="notice">Format: <b>NIS | Nama | Kelas | Status</b>. Upload hanya membuka preview; data baru masuk setelah menekan <b>Import Sekarang</b>.</div>
-      <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button><button id="openStudentAccess" class="btn ghost">🔐 Akses Login Siswa</button><button id="bulkDeleteStudents" class="btn danger" disabled>Hapus Terpilih</button></div>
+      <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button><button type="button" id="openStudentAccess" class="btn ghost">🔐 Akses Login Siswa</button><button id="bulkDeleteStudents" class="btn danger" disabled>Hapus Terpilih</button></div>
       <div id="studentTable"></div></div>`;
     $('#importStudents').onclick=()=>$('#studentImport').click(); $('#addStudentLocal').onclick=addStudentLocal;
-    $('#openStudentAccess').onclick=()=>{state.masterTab='studentAccess';renderMasterTab();document.querySelectorAll('[data-master-tab]').forEach(x=>x.classList.toggle('active',x.dataset.masterTab===state.masterTab));}; $('#studentSearch').oninput=renderStudentMasterTable; $('#studentClassFilter').onchange=renderStudentMasterTable;
+    $('#openStudentAccess').onclick=(ev)=>{ev.preventDefault();setMasterTab('studentAccess');}; $('#studentSearch').oninput=renderStudentMasterTable; $('#studentClassFilter').onchange=renderStudentMasterTable;
     $('#bulkDeleteStudents').onclick=deleteSelectedStudents; renderStudentMasterTable(); return;
   }
   if(state.masterTab==='studentAccess'){
@@ -2785,11 +2810,11 @@ function renderStudentAccessPanel(){
   const report=window.studentProvisionReport||[];
   const classRows=state.classes.map(c=>{
     const rows=active.filter(s=>s.classId===c), on=rows.filter(s=>!!s.authUid).length, off=rows.length-on;
-    return `<tr><td><b>${esc(c)}</b></td><td>${rows.length}</td><td><span class="badge ok">${on} aktif</span></td><td>${off?`<span class="badge warn">${off} belum</span>`:'<span class="badge ok">Lengkap</span>'}</td><td><button class="btn-mini edit" data-activate-class="${esc(c)}" ${off?'':'disabled'}>Generate Kelas</button></td></tr>`;
+    return `<tr><td><b>${esc(c)}</b></td><td>${rows.length}</td><td><span class="badge ok">${on} aktif</span></td><td>${off?`<span class="badge warn">${off} belum</span>`:'<span class="badge ok">Lengkap</span>'}</td><td><button type="button" class="btn-mini edit" data-activate-class="${esc(c)}" ${off?'':'disabled'}>Generate Kelas</button></td></tr>`;
   }).join('');
   const studentRows=active.slice().sort((a,b)=>String(a.classId||'').localeCompare(String(b.classId||''))||String(a.name||'').localeCompare(String(b.name||''))).map(st=>{
     const nis=String(st.nis||st.id||'').trim();
-    return `<tr><td>${esc(nis||'-')}</td><td><b>${esc(st.name||'-')}</b></td><td>${esc(st.classId||'-')}</td><td>${st.authUid?'<span class="badge ok">Aktif</span>':'<span class="badge warn">Belum</span>'}</td><td>${st.authUid?`<button class="btn-mini" data-repair-student="${esc(st.id)}">Sinkronkan</button>`:`<button class="btn-mini edit" data-activate-student="${esc(st.id)}">Generate Login</button>`}</td></tr>`;
+    return `<tr><td>${esc(nis||'-')}</td><td><b>${esc(st.name||'-')}</b></td><td>${esc(st.classId||'-')}</td><td>${st.authUid?'<span class="badge ok">Aktif</span>':'<span class="badge warn">Belum</span>'}</td><td>${st.authUid?`<button type="button" class="btn-mini" data-repair-student="${esc(st.id)}">Sinkronkan</button>`:`<button type="button" class="btn-mini edit" data-activate-student="${esc(st.id)}">Generate Login</button>`}</td></tr>`;
   }).join('');
   target.innerHTML=`<div class="grid stats admin-stats student-access-stats">
       <div class="stat"><span>Siswa aktif</span><strong>${active.length}</strong></div>
@@ -2798,7 +2823,7 @@ function renderStudentAccessPanel(){
       <div class="stat"><span>Terakhir gagal</span><strong>${report.filter(x=>x.status==='failed').length}</strong></div>
     </div>
     <div class="card master-section">
-      <div class="section-head"><div><h3>🔐 Generate Akses Login Siswa</h3><small>Admin membuat akses login langsung dari data siswa yang sudah ada. Data siswa tidak digandakan.</small></div><div class="row-actions"><button id="syncStudentProfiles" class="btn ghost">↻ Sinkronkan Semua</button><button id="activateAllStudents" class="btn primary" ${pending.length?'':'disabled'}>Generate Semua (${pending.length})</button></div></div>
+      <div class="section-head"><div><h3>🔐 Generate Akses Login Siswa</h3><small>Admin membuat akses login langsung dari data siswa yang sudah ada. Data siswa tidak digandakan.</small></div><div class="row-actions"><button type="button" id="syncStudentProfiles" class="btn ghost">↻ Sinkronkan Semua</button><button type="button" id="activateAllStudents" class="btn primary" ${pending.length?'':'disabled'}>Generate Semua (${pending.length})</button></div></div>
       <div class="notice">Login siswa: <b>NIS = password</b>. Contoh NIS <b>24001</b>, siswa tetap mengetik <b>24001</b>. Sistem Firebase menyimpan password internal <b>S24001</b>.</div>
       <div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Siswa</th><th>Login Aktif</th><th>Belum Aktif</th><th>Aksi</th></tr></thead><tbody>${classRows||'<tr><td colspan="5">Belum ada kelas.</td></tr>'}</tbody></table></div>
     </div>
@@ -2806,7 +2831,7 @@ function renderStudentAccessPanel(){
       <div class="section-head"><div><h3>Akses per Siswa</h3><small>Gunakan ini untuk uji satu siswa terlebih dahulu sebelum generate massal.</small></div></div>
       <div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${studentRows||'<tr><td colspan="5">Belum ada data siswa.</td></tr>'}</tbody></table></div>
     </div>
-    ${report.length?`<div class="card master-section"><div class="section-head"><div><h3>Hasil Generate Terakhir</h3><small>${report.filter(x=>x.status==='success').length} berhasil • ${report.filter(x=>x.status==='repaired').length} diperbaiki • ${report.filter(x=>x.status==='failed').length} gagal</small></div><button id="clearStudentProvisionReport" class="btn ghost">Bersihkan</button></div><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${report.map(r=>`<tr><td>${esc(r.nis)}</td><td>${esc(r.name)}</td><td>${esc(r.classId)}</td><td>${r.status==='success'?'<span class="badge ok">Berhasil</span>':r.status==='repaired'?'<span class="badge ok">Diperbaiki</span>':'<span class="badge bad">Gagal</span>'}</td><td>${esc(r.message||'-')}</td></tr>`).join('')}</tbody></table></div></div>`:''}`;
+    ${report.length?`<div class="card master-section"><div class="section-head"><div><h3>Hasil Generate Terakhir</h3><small>${report.filter(x=>x.status==='success').length} berhasil • ${report.filter(x=>x.status==='repaired').length} diperbaiki • ${report.filter(x=>x.status==='failed').length} gagal</small></div><button type="button" id="clearStudentProvisionReport" class="btn ghost">Bersihkan</button></div><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${report.map(r=>`<tr><td>${esc(r.nis)}</td><td>${esc(r.name)}</td><td>${esc(r.classId)}</td><td>${r.status==='success'?'<span class="badge ok">Berhasil</span>':r.status==='repaired'?'<span class="badge ok">Diperbaiki</span>':'<span class="badge bad">Gagal</span>'}</td><td>${esc(r.message||'-')}</td></tr>`).join('')}</tbody></table></div></div>`:''}`;
   $('#activateAllStudents')?.addEventListener('click',()=>provisionStudentAccounts({mode:'all'}));
   $('#syncStudentProfiles')?.addEventListener('click',syncStudentLoginProfiles);
   $('#clearStudentProvisionReport')?.addEventListener('click',()=>{window.studentProvisionReport=[];renderStudentAccessPanel()});
