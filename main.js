@@ -2949,20 +2949,119 @@ async function taskManagementPage(){
   }
 }
 async function assignmentBuilder(id=''){
-  if(state.profile.role!=='admin')return;let t={title:'',description:'',taskType:'individual',groupCount:6,targetClasses:[],components:[{type:'link',label:'Link Video / Media Sosial',required:true,descriptionLabel:'Deskripsi kegiatan',descriptionMax:500,linkHint:'Google Drive, YouTube, Instagram, TikTok, atau link lain yang dapat dibuka guru.'}],published:true,requireReflection:false,allowLate:true};if(id){const d=await getDoc(doc(db,'assignments',id));if(d.exists())t={id:d.id,...d.data()}}
-  pageMeta(id?'Edit Tugas':'Buat Tugas','Task Builder');content.innerHTML=`<div class="card task-builder"><label>Judul Tugas *</label><input id="taskTitle" class="input-inline" value="${esc(t.title)}"><label>Deskripsi / Petunjuk</label><textarea id="taskDescription">${esc(t.description||'')}</textarea><div class="form-grid"><div><label>Jenis Tugas</label><select id="taskType" class="input-inline"><option value="individual" ${t.taskType!=='group'?'selected':''}>Individu</option><option value="group" ${t.taskType==='group'?'selected':''}>Kelompok</option></select></div><div id="groupCountWrap" ${t.taskType==='group'?'':'class="hidden"'}><label>Jumlah kelompok per kelas</label><input id="taskGroupCount" type="number" min="2" max="12" class="input-inline" value="${Number(t.groupCount||6)}"><small>Anggota dibagi otomatis merata berdasarkan daftar siswa.</small></div></div><div class="form-grid"><div><label>Tanggal mulai</label><input id="taskOpen" type="date" class="input-inline" value="${esc(t.openDate||todayId())}"></div><div><label>Batas pengumpulan</label><input id="taskDue" type="date" class="input-inline" value="${esc(t.dueDate||'')}"></div></div><label>Kelas Sasaran</label><div class="class-checks">${state.classes.map(c=>`<label><input type="checkbox" data-task-class="${c}" ${t.targetClasses?.includes(c)?'checked':''}> ${c}</label>`).join('')}</div><div id="groupInfo" class="notice ${t.taskType==='group'?'':'hidden'}">Saat disimpan, setiap kelas akan dibagi otomatis menjadi <b>${Number(t.groupCount||6)} kelompok</b>. Satu anggota cukup mengumpulkan untuk seluruh kelompok.</div><div class="section-head"><div><h3>Komponen Pengumpulan</h3><small>Untuk video, gunakan Link agar tidak menghabiskan Drive EcoTrack.</small></div><button id="addTaskComponent" class="btn secondary">+ Komponen</button></div><div id="taskComponents"></div><label class="check-line"><input id="taskReflection" type="checkbox" ${t.requireReflection?'checked':''}> Tambahkan Refleksi Akhir</label><label class="check-line"><input id="taskAllowLate" type="checkbox" ${t.allowLate!==false?'checked':''}> Izinkan pengumpulan setelah deadline</label><label class="check-line"><input id="taskPublished" type="checkbox" ${t.published!==false?'checked':''}> Terbitkan tugas</label><div class="row-actions"><button id="saveAssignment" class="btn primary">Simpan Tugas</button><button id="cancelAssignment" class="btn ghost">Batal</button></div></div>`;
-  window.taskBuilderComponents=JSON.parse(JSON.stringify(t.components||[]));renderTaskComponents();$('#addTaskComponent').onclick=addTaskComponent;$('#saveAssignment').onclick=()=>saveAssignment(t);$('#cancelAssignment').onclick=taskManagementPage;$('#taskType').onchange=()=>{$('#groupCountWrap').classList.toggle('hidden',$('#taskType').value!=='group');$('#groupInfo').classList.toggle('hidden',$('#taskType').value!=='group')};$('#taskGroupCount').oninput=()=>{const b=$('#groupInfo b');if(b)b.textContent=$('#taskGroupCount').value+' kelompok'};
+  try{
+    if(String(state.profile?.role||'').toLowerCase()!=='admin'){
+      toast('Task Builder hanya dapat dibuka oleh Admin.');
+      return;
+    }
+    let t={title:'',description:'',taskType:'individual',groupCount:6,targetClasses:[],components:[{type:'link',label:'Link Video / Media Sosial',required:true,descriptionLabel:'Deskripsi kegiatan',descriptionMax:500,linkHint:'Google Drive, YouTube, Instagram, TikTok, atau link lain yang dapat dibuka guru.'}],published:true,requireReflection:false,allowLate:true};
+    if(id){
+      const d=await getDoc(doc(db,'assignments',id));
+      if(d.exists()) t={id:d.id,...d.data()};
+    }
+    const classes=Array.isArray(state.classes)?state.classes.filter(Boolean):[];
+    pageMeta(id?'Edit Tugas':'Buat Tugas','Task Builder');
+    content.innerHTML=`<div class="card task-builder">
+      <div class="section-head"><div><h3>${id?'Edit Tugas':'Buat Tugas Baru'}</h3><small>Atur jenis tugas, kelas sasaran, dan bukti yang harus dikumpulkan.</small></div></div>
+      <label>Judul Tugas *</label><input id="taskTitle" class="input-inline" value="${esc(t.title||'')}" placeholder="Contoh: Kampanye Peduli Lingkungan">
+      <label>Deskripsi / Petunjuk</label><textarea id="taskDescription" placeholder="Tuliskan petunjuk tugas...">${esc(t.description||'')}</textarea>
+      <div class="form-grid"><div><label>Jenis Tugas</label><select id="taskType" class="input-inline"><option value="individual" ${t.taskType!=='group'?'selected':''}>Individu</option><option value="group" ${t.taskType==='group'?'selected':''}>Kelompok</option></select></div><div id="groupCountWrap" ${t.taskType==='group'?'':'class="hidden"'}><label>Jumlah kelompok per kelas</label><input id="taskGroupCount" type="number" min="2" max="12" class="input-inline" value="${Number(t.groupCount||6)}"><small>Default 6 kelompok per kelas.</small></div></div>
+      <div class="form-grid"><div><label>Tanggal mulai</label><input id="taskOpen" type="date" class="input-inline" value="${esc(t.openDate||todayId())}"></div><div><label>Batas pengumpulan</label><input id="taskDue" type="date" class="input-inline" value="${esc(t.dueDate||'')}"></div></div>
+      <label>Kelas Sasaran *</label>
+      <div class="class-checks">${classes.length?classes.map(c=>`<label><input type="checkbox" data-task-class="${esc(c)}" ${Array.isArray(t.targetClasses)&&t.targetClasses.includes(c)?'checked':''}> ${esc(c)}</label>`).join(''):'<div class="notice warn">Data kelas belum termuat. Kembali ke Beranda lalu buka menu Tugas lagi.</div>'}</div>
+      <div id="groupInfo" class="notice ${t.taskType==='group'?'':'hidden'}">Saat disimpan, siswa tiap kelas akan dibagi otomatis menjadi <b>${Number(t.groupCount||6)} kelompok</b>. Cukup satu anggota yang mengumpulkan.</div>
+      <div class="section-head"><div><h3>Komponen Pengumpulan</h3><small>Video disarankan menggunakan link agar tidak memakai kapasitas Drive EcoTrack.</small></div><button id="addTaskComponent" class="btn secondary" type="button">+ Komponen</button></div>
+      <div id="taskComponents"></div>
+      <label class="check-line"><input id="taskReflection" type="checkbox" ${t.requireReflection?'checked':''}> Tambahkan Refleksi Akhir</label>
+      <label class="check-line"><input id="taskAllowLate" type="checkbox" ${t.allowLate!==false?'checked':''}> Izinkan pengumpulan setelah deadline</label>
+      <label class="check-line"><input id="taskPublished" type="checkbox" ${t.published!==false?'checked':''}> Terbitkan tugas ke siswa</label>
+      <div id="taskSaveError" class="notice warn hidden"></div>
+      <div class="row-actions"><button id="saveAssignment" class="btn primary" type="button">Simpan Tugas</button><button id="cancelAssignment" class="btn ghost" type="button">Batal</button></div>
+    </div>`;
+    window.taskBuilderComponents=JSON.parse(JSON.stringify(Array.isArray(t.components)&&t.components.length?t.components:[{type:'link',label:'Link Video / Media Sosial',required:true,descriptionLabel:'Deskripsi kegiatan',descriptionMax:500}]));
+    renderTaskComponents();
+    const add=$('#addTaskComponent'), save=$('#saveAssignment'), cancel=$('#cancelAssignment'), type=$('#taskType'), count=$('#taskGroupCount');
+    if(add) add.onclick=addTaskComponent;
+    if(save) save.onclick=()=>saveAssignment(t);
+    if(cancel) cancel.onclick=taskManagementPage;
+    if(type) type.onchange=()=>{$('#groupCountWrap')?.classList.toggle('hidden',type.value!=='group');$('#groupInfo')?.classList.toggle('hidden',type.value!=='group')};
+    if(count) count.oninput=()=>{const b=$('#groupInfo b');if(b)b.textContent=count.value+' kelompok'};
+  }catch(e){
+    console.error('Task Builder error',e);
+    toast('Task Builder gagal dibuka: '+(e?.message||e));
+    content.innerHTML=`<div class="card"><div class="empty"><b>Task Builder gagal dibuka.</b><br><small>${esc(e?.message||String(e))}</small></div><div class="row-actions"><button id="backTaskError" class="btn ghost">Kembali</button></div></div>`;
+    $('#backTaskError')&&($('#backTaskError').onclick=taskManagementPage);
+  }
 }
 function renderTaskComponents(){
-  const box=$('#taskComponents');if(!box)return;box.innerHTML=window.taskBuilderComponents.map((c,i)=>`<div class="builder-component"><div class="form-grid"><select data-comp-type="${i}" class="input-inline"><option value="photo" ${c.type==='photo'?'selected':''}>Foto Upload</option><option value="video" ${c.type==='video'?'selected':''}>Video Upload</option><option value="document" ${c.type==='document'?'selected':''}>Dokumen</option><option value="text" ${c.type==='text'?'selected':''}>Jawaban Teks</option><option value="link" ${c.type==='link'?'selected':''}>Link Video / Media Sosial</option></select><input data-comp-label="${i}" class="input-inline" value="${esc(c.label||'')}" placeholder="Judul komponen"></div><div class="form-grid"><input data-comp-desc="${i}" class="input-inline" value="${esc(c.descriptionLabel||'Deskripsi bukti')}" placeholder="Label deskripsi"><label class="check-line"><input data-comp-required="${i}" type="checkbox" ${c.required!==false?'checked':''}> Wajib</label></div><button class="btn-mini danger" data-remove-comp="${i}">Hapus</button></div>`).join('');document.querySelectorAll('[data-remove-comp]').forEach(b=>b.onclick=()=>{window.taskBuilderComponents.splice(Number(b.dataset.removeComp),1);renderTaskComponents()})
+  const box=$('#taskComponents');if(!box)return;
+  const arr=Array.isArray(window.taskBuilderComponents)?window.taskBuilderComponents:[];
+  box.innerHTML=arr.map((c,i)=>`<div class="builder-component"><div class="form-grid"><select data-comp-type="${i}" class="input-inline"><option value="text" ${c.type==='text'?'selected':''}>Jawaban Teks</option><option value="link" ${c.type==='link'?'selected':''}>Link Video / Media Sosial</option><option value="photo" ${c.type==='photo'?'selected':''}>Foto Upload (belum aktif)</option><option value="video" ${c.type==='video'?'selected':''}>Video Upload (belum aktif)</option><option value="document" ${c.type==='document'?'selected':''}>Dokumen (belum aktif)</option></select><input data-comp-label="${i}" class="input-inline" value="${esc(c.label||'')}" placeholder="Judul komponen"></div><div class="form-grid"><input data-comp-desc="${i}" class="input-inline" value="${esc(c.descriptionLabel||'Deskripsi bukti')}" placeholder="Label deskripsi"><label class="check-line"><input data-comp-required="${i}" type="checkbox" ${c.required!==false?'checked':''}> Wajib</label></div><button class="btn-mini danger" type="button" data-remove-comp="${i}">Hapus</button></div>`).join('') || '<div class="notice">Belum ada komponen. Tekan <b>+ Komponen</b>.</div>';
+  document.querySelectorAll('[data-remove-comp]').forEach(b=>b.onclick=()=>{window.taskBuilderComponents.splice(Number(b.dataset.removeComp),1);renderTaskComponents()});
 }
-function addTaskComponent(){window.taskBuilderComponents.push({type:'link',label:'Bukti / Link',required:true,descriptionLabel:'Deskripsi bukti',descriptionMax:500});renderTaskComponents()}
+function addTaskComponent(){
+  if(!Array.isArray(window.taskBuilderComponents))window.taskBuilderComponents=[];
+  window.taskBuilderComponents.push({type:'link',label:'Bukti / Link',required:true,descriptionLabel:'Deskripsi bukti',descriptionMax:500});
+  renderTaskComponents();
+}
 async function saveAssignment(old){
-  document.querySelectorAll('[data-comp-type]').forEach(el=>{const i=Number(el.dataset.compType),c=window.taskBuilderComponents[i];c.type=el.value;c.label=document.querySelector(`[data-comp-label="${i}"]`).value.trim();c.descriptionLabel=document.querySelector(`[data-comp-desc="${i}"]`).value.trim();c.required=document.querySelector(`[data-comp-required="${i}"]`).checked;if(c.type==='link')c.linkHint='Pastikan link dapat dibuka guru tanpa meminta izin akses.'});
-  const title=$('#taskTitle').value.trim();if(!title)return toast('Judul tugas wajib diisi');const targetClasses=[...document.querySelectorAll('[data-task-class]:checked')].map(x=>x.dataset.taskClass);if(!targetClasses.length)return toast('Pilih minimal satu kelas sasaran');
-  const taskType=$('#taskType').value,groupCount=Math.max(2,Math.min(12,Number($('#taskGroupCount').value||6)));let groupAssignments=old.groupAssignments||{};
-  if(taskType==='group'){groupAssignments={};targetClasses.forEach(c=>groupAssignments[c]=makeAutoGroups(c,groupCount))}else groupAssignments={};
-  const ref=old.id?doc(db,'assignments',old.id):collection(db,'assignments').doc();await setDoc(ref,{title,description:$('#taskDescription').value.trim(),taskType,groupCount,groupAssignments,openDate:$('#taskOpen').value,dueDate:$('#taskDue').value,targetClasses,components:window.taskBuilderComponents,requireReflection:$('#taskReflection').checked,allowLate:$('#taskAllowLate').checked,published:$('#taskPublished').checked,archived:false,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,createdAt:old.createdAt||new Date().toISOString()},{merge:true});toast(taskType==='group'?`Tugas tersimpan. ${groupCount} kelompok dibuat otomatis per kelas.`:'Tugas individu berhasil disimpan');taskManagementPage()
+  const btn=$('#saveAssignment'), errBox=$('#taskSaveError');
+  try{
+    if(btn){btn.disabled=true;btn.textContent='Menyimpan...'}
+    if(errBox){errBox.classList.add('hidden');errBox.textContent=''}
+    document.querySelectorAll('[data-comp-type]').forEach(el=>{
+      const i=Number(el.dataset.compType),c=window.taskBuilderComponents[i];if(!c)return;
+      c.type=el.value;
+      c.label=(document.querySelector(`[data-comp-label="${i}"]`)?.value||'').trim() || `Komponen ${i+1}`;
+      c.descriptionLabel=(document.querySelector(`[data-comp-desc="${i}"]`)?.value||'').trim() || 'Deskripsi bukti';
+      c.required=!!document.querySelector(`[data-comp-required="${i}"]`)?.checked;
+      c.descriptionMax=Number(c.descriptionMax||500);
+      if(c.type==='link')c.linkHint='Pastikan link dapat dibuka guru tanpa meminta izin akses.';
+    });
+    const title=($('#taskTitle')?.value||'').trim();
+    if(!title)throw new Error('Judul tugas wajib diisi.');
+    const targetClasses=[...document.querySelectorAll('[data-task-class]:checked')].map(x=>x.dataset.taskClass).filter(Boolean);
+    if(!targetClasses.length)throw new Error('Pilih minimal satu kelas sasaran.');
+    if(!Array.isArray(window.taskBuilderComponents)||!window.taskBuilderComponents.length)throw new Error('Tambahkan minimal satu komponen pengumpulan.');
+    const taskType=$('#taskType')?.value==='group'?'group':'individual';
+    const groupCount=Math.max(2,Math.min(12,Number($('#taskGroupCount')?.value||6)));
+    let groupAssignments={};
+    if(taskType==='group'){
+      targetClasses.forEach(c=>{groupAssignments[c]=makeAutoGroups(c,groupCount)});
+      const empty=targetClasses.filter(c=>!(groupAssignments[c]||[]).length);
+      if(empty.length)throw new Error('Data siswa belum tersedia untuk kelas: '+empty.join(', ')+'. Muat ulang data lalu coba lagi.');
+    }
+    const now=new Date().toISOString();
+    const ref=old?.id?doc(db,'assignments',old.id):collection(db,'assignments').doc();
+    const payload={
+      title,
+      description:($('#taskDescription')?.value||'').trim(),
+      taskType,
+      groupCount,
+      groupAssignments,
+      openDate:$('#taskOpen')?.value||'',
+      dueDate:$('#taskDue')?.value||'',
+      targetClasses,
+      components:window.taskBuilderComponents,
+      requireReflection:!!$('#taskReflection')?.checked,
+      allowLate:!!$('#taskAllowLate')?.checked,
+      published:!!$('#taskPublished')?.checked,
+      archived:false,
+      updatedAt:now,
+      updatedByUid:state.user.uid,
+      createdAt:old?.createdAt||now
+    };
+    await setDoc(ref,payload,{merge:true});
+    toast(taskType==='group'?`Tugas berhasil disimpan. ${groupCount} kelompok dibuat per kelas.`:'Tugas individu berhasil disimpan.');
+    await taskManagementPage();
+  }catch(e){
+    console.error('Save assignment error',e);
+    const msg=e?.code==='permission-denied'?'Firestore menolak penyimpanan. Pastikan Rules v6.1/v6.2 sudah dipublish dan akun yang login benar-benar Admin.':(e?.message||String(e));
+    if(errBox){errBox.textContent=msg;errBox.classList.remove('hidden')}
+    toast('Tugas belum tersimpan: '+msg);
+  }finally{
+    if(btn && document.body.contains(btn)){btn.disabled=false;btn.textContent='Simpan Tugas'}
+  }
 }
 async function reviewTask(taskId){
   const td=await getDoc(doc(db,'assignments',taskId));if(!td.exists())return;const t={id:td.id,...td.data()};const ss=await getDocs(query(collection(db,'taskSubmissions'),where('taskId','==',taskId)));let subs=ss.docs.map(d=>({id:d.id,...d.data()}));if(state.profile.role!=='admin'&&state.profile.isHomeroom)subs=subs.filter(s=>s.classId===state.profile.homeroomClass);
