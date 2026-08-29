@@ -1,4 +1,7 @@
-/* PakKom Eco Track v3.3.6 — Unified Core
+/* PakKom Eco Track v4.6 — Stable Admin Student Activation
+   Student Auth provisioning via Firebase REST; does not change Admin session.
+
+   Legacy: PakKom Eco Track v3.3.6 — Unified Core
    Application Core + Authentication Core dalam satu file klasik.
 */
 
@@ -2855,7 +2858,9 @@ function authErrorText(e){
     'auth/invalid-email':'Format NIS menghasilkan email internal yang tidak valid.',
     'auth/weak-password':'Password internal ditolak Firebase.',
     'auth/network-request-failed':'Koneksi ke Firebase terputus.',
-    'auth/too-many-requests':'Firebase membatasi permintaan sementara. Coba lagi beberapa saat.'
+    'auth/too-many-requests':'Firebase membatasi permintaan sementara. Coba lagi beberapa saat.',
+    'auth/api-key-missing':'Firebase API key tidak ditemukan.',
+    'student/uid-missing':'Akun dibuat tetapi UID Firebase tidak diterima.'
   };
   return map[code]||`${code||'error'}${e?.message?` • ${String(e.message).replace(/^Firebase:\s*/,'')}`:''}`;
 }
@@ -2869,25 +2874,54 @@ async function writeStudentLoginLink(st,uid){
   await setDoc(doc(db,'students',st.id),{authUid:uid,loginEnabled:true,loginEnabledAt:now},{merge:true});
   st.authUid=uid; st.loginEnabled=true;
 }
-async function generateOneStudentLogin(a,st){
+async function firebaseAuthRest(endpoint,payload){
+  const apiKey=String((window.PAKKOM_FIREBASE_CONFIG||{}).apiKey||'').trim();
+  if(!apiKey) throw Object.assign(new Error('Firebase API key tidak ditemukan.'),{code:'auth/api-key-missing'});
+  const res=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:${endpoint}?key=${encodeURIComponent(apiKey)}`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload)
+  });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok||data?.error){
+    const raw=String(data?.error?.message||`HTTP_${res.status}`);
+    const map={
+      EMAIL_EXISTS:'auth/email-already-in-use',
+      EMAIL_NOT_FOUND:'auth/user-not-found',
+      INVALID_PASSWORD:'auth/wrong-password',
+      INVALID_LOGIN_CREDENTIALS:'auth/invalid-credential',
+      OPERATION_NOT_ALLOWED:'auth/operation-not-allowed',
+      TOO_MANY_ATTEMPTS_TRY_LATER:'auth/too-many-requests',
+      NETWORK_REQUEST_FAILED:'auth/network-request-failed'
+    };
+    let code=map[raw]||'';
+    if(raw.startsWith('WEAK_PASSWORD'))code='auth/weak-password';
+    if(raw.startsWith('INVALID_EMAIL'))code='auth/invalid-email';
+    if(!code)code='auth/rest-'+raw.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    throw Object.assign(new Error(raw),{code,rawFirebaseMessage:raw});
+  }
+  return data;
+}
+async function generateOneStudentLogin(st){
   const nis=String(st.nis||st.id||'').trim();
   if(!nis) throw Object.assign(new Error('NIS kosong.'),{code:'student/nis-empty'});
   const email=studentInternalEmail(nis), password=studentInternalPassword(nis);
   try{
-    const cred=await createUserWithEmailAndPassword(a,email,password);
-    await writeStudentLoginLink(st,cred.user.uid);
+    // REST signUp membuat akun Auth tanpa pernah mengganti sesi Admin di browser.
+    const data=await firebaseAuthRest('signUp',{email,password,returnSecureToken:false});
+    const uid=String(data.localId||'').trim();
+    if(!uid) throw Object.assign(new Error('UID akun siswa tidak diterima dari Firebase.'),{code:'student/uid-missing'});
+    await writeStudentLoginLink(st,uid);
     return {status:'success',message:'Login berhasil dibuat.'};
   }catch(e){
     if(String(e?.code||'')==='auth/email-already-in-use'){
-      // Pemulihan penting: akun Auth mungkin sudah dibuat pada percobaan lama,
-      // tetapi users/{uid} / students.authUid belum sempat tertulis.
-      try{
-        const cred=await signInWithEmailAndPassword(a,email,password);
-        await writeStudentLoginLink(st,cred.user.uid);
-        return {status:'repaired',message:'Akun Authentication lama ditemukan dan berhasil ditautkan kembali.'};
-      }catch(linkErr){
-        throw linkErr;
-      }
+      // Jika akun sudah tercipta pada percobaan sebelumnya, validasi password internal
+      // melalui REST. Token hasil REST tidak disimpan ke browser sehingga sesi Admin tetap aman.
+      const data=await firebaseAuthRest('signInWithPassword',{email,password,returnSecureToken:true});
+      const uid=String(data.localId||'').trim();
+      if(!uid) throw Object.assign(new Error('UID akun lama tidak ditemukan.'),{code:'student/uid-missing'});
+      await writeStudentLoginLink(st,uid);
+      return {status:'repaired',message:'Akun Authentication lama ditemukan dan berhasil ditautkan kembali.'};
     }
     throw e;
   }
@@ -2902,34 +2936,53 @@ async function provisionStudentAccounts(options={mode:'all'}){
     const ids=new Set(options.studentIds||[]);
     candidates=candidates.filter(s=>ids.has(s.id));
   }
-  if(!candidates.length)return toast('Tidak ada siswa yang perlu dibuatkan login.');
+  if(!candidates.length)return toast('Tidak ada siswa yang perlu diaktifkan login.');
   const scope=mode==='student'?`${candidates[0].name||candidates[0].nis||'siswa ini'}`:mode==='class'?`kelas ${options.classId}`:mode==='selected'?`${candidates.length} siswa terpilih`:'semua siswa yang belum aktif';
-  if(!confirm(`Generate akses login untuk ${scope}?\n\nJumlah: ${candidates.length} siswa.\nSiswa login menggunakan NIS sebagai password.`))return;
+  if(!confirm(`Aktifkan akses login untuk ${scope}?\n\nJumlah: ${candidates.length} siswa.\nID dan password siswa = NIS.`))return;
+
+  const triggerButtons=[...document.querySelectorAll('#activateSelectedStudents,[data-approve-student-login]')];
+  triggerButtons.forEach(b=>{b.disabled=true; b.dataset.oldText=b.textContent;});
+  const selectedButton=$('#activateSelectedStudents');
+  if(selectedButton)selectedButton.textContent='Mengaktifkan...';
+
   const report=[];
-  let secondary=null;
   try{
-    secondary=initializeApp(window.PAKKOM_FIREBASE_CONFIG,'studentProvision_'+Date.now()+'_'+Math.random().toString(36).slice(2));
-    const a=getAuth(secondary);
     for(const st of candidates){
       const nis=String(st.nis||st.id||'').trim();
       try{
-        const result=await generateOneStudentLogin(a,st);
+        const result=await generateOneStudentLogin(st);
         report.push({nis,name:st.name||'',classId:st.classId||'',status:result.status,message:result.message});
       }catch(e){
         console.warn('student provision',nis,e);
         report.push({nis,name:st.name||'',classId:st.classId||'',status:'failed',message:e?.code==='student/nis-empty'?'NIS kosong.':authErrorText(e)});
-      }finally{
-        await signOut(a).catch(()=>{});
       }
     }
   }finally{
-    if(secondary)await deleteApp(secondary).catch(()=>{});
+    triggerButtons.forEach(b=>{b.disabled=false;if(b.dataset.oldText)b.textContent=b.dataset.oldText;delete b.dataset.oldText;});
   }
+
   window.studentProvisionReport=report;
-  const ok=report.filter(x=>x.status==='success').length, repaired=report.filter(x=>x.status==='repaired').length, fail=report.filter(x=>x.status==='failed').length;
-  toast(`Aktivasi login: ${ok} baru, ${repaired} diperbaiki, ${fail} gagal.`,7000);
+  const ok=report.filter(x=>x.status==='success').length;
+  const repaired=report.filter(x=>x.status==='repaired').length;
+  const fail=report.filter(x=>x.status==='failed').length;
+  if(ok||repaired){
+    const successful=new Set(report.filter(x=>x.status==='success'||x.status==='repaired').map(x=>x.nis));
+    if(window.selectedStudentIds){
+      [...window.selectedStudentIds].forEach(id=>{
+        const st=state.students.find(s=>s.id===id);
+        if(st&&successful.has(String(st.nis||st.id||'').trim()))window.selectedStudentIds.delete(id);
+      });
+    }
+  }
+  toast(`Akses siswa: ${ok} dibuat, ${repaired} ditautkan, ${fail} gagal.`,8000);
+
+  // Penting: hanya render ulang panel Data Siswa. Jangan memanggil auth/signOut/render login.
   if(state.page==='master'&&state.masterTab==='students')renderStudentMasterTable();
-  else renderStudentAccessPanel();
+
+  if(fail){
+    const sample=report.filter(x=>x.status==='failed').slice(0,5).map(x=>`${x.nis||'-'}: ${x.message}`).join('\n');
+    setTimeout(()=>alert(`Ada ${fail} akun yang gagal diaktifkan.\n\n${sample}${fail>5?'\n\nLihat Console untuk detail lainnya.':''}`),100);
+  }
 }
 async function repairLinkedStudentProfile(studentId){
   if(state.profile.role!=='admin')return;
