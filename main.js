@@ -2167,7 +2167,6 @@ async function master(){
   </div>
   <div class="master-tabs" style="margin-top:16px">
     <button type="button" class="master-tab ${state.masterTab==='students'?'active':''}" data-master-tab="students">👨‍🎓 Data Siswa</button>
-    <button type="button" class="master-tab ${state.masterTab==='studentAccess'?'active':''}" data-master-tab="studentAccess">🔐 Akses Login Siswa</button>
     <button type="button" class="master-tab ${state.masterTab==='teachers'?'active':''}" data-master-tab="teachers">👨‍🏫 Guru & Wali Kelas${pendingTeachers.length?` <span class="tab-count">${pendingTeachers.length}</span>`:''}</button>
     <button type="button" class="master-tab ${state.masterTab==='classes'?'active':''}" data-master-tab="classes">🏫 Kelas & Import</button>
     <button type="button" class="master-tab ${state.masterTab==='calendar'?'active':''}" data-master-tab="calendar">📅 Kalender Sekolah</button>
@@ -2180,7 +2179,7 @@ async function master(){
   renderMasterTab();
 }
 function setMasterTab(tab){
-  const valid=['students','studentAccess','teachers','classes','calendar','operations','periods','audit'];
+  const valid=['students','teachers','classes','calendar','operations','periods','audit'];
   if(!valid.includes(tab))tab='students';
   state.masterTab=tab;
   try{
@@ -2210,14 +2209,13 @@ function renderMasterTab(){
     target.innerHTML=`<div class="card master-section">
       <div class="section-head"><div><h3>Data Siswa</h3><small>Kelola siswa tanpa mencampur akun guru.</small></div><div class="row-actions"><a class="btn ghost" href="format-import-pakkom-eco-track.xlsx" download>Format Siswa</a><button id="importStudents" class="btn primary">Upload Data Siswa</button></div></div>
       <div class="notice">Format: <b>NIS | Nama | Kelas | Status</b>. Upload hanya membuka preview; data baru masuk setelah menekan <b>Import Sekarang</b>.</div>
-      <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button><button type="button" id="openStudentAccess" class="btn ghost">🔐 Akses Login Siswa</button><button id="bulkDeleteStudents" class="btn danger" disabled>Hapus Terpilih</button></div>
+      <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button><button type="button" id="activateSelectedStudents" class="btn primary" disabled>Aktifkan Login Terpilih</button><button id="bulkDeleteStudents" class="btn danger" disabled>Hapus Terpilih</button></div>
+      <div class="notice">Akses login siswa dikelola langsung dari tabel ini. Siswa login dengan <b>NIS sebagai ID dan password</b>. Klik <b>Aktifkan</b> pada satu siswa untuk uji coba, atau centang beberapa siswa lalu pilih <b>Aktifkan Login Terpilih</b>.</div>
       <div id="studentTable"></div></div>`;
     $('#importStudents').onclick=()=>$('#studentImport').click(); $('#addStudentLocal').onclick=addStudentLocal;
-    $('#openStudentAccess').onclick=(ev)=>{ev.preventDefault();setMasterTab('studentAccess');}; $('#studentSearch').oninput=renderStudentMasterTable; $('#studentClassFilter').onchange=renderStudentMasterTable;
+    $('#studentSearch').oninput=renderStudentMasterTable; $('#studentClassFilter').onchange=renderStudentMasterTable;
+    $('#activateSelectedStudents').onclick=()=>provisionStudentAccounts({mode:'selected',studentIds:[...(window.selectedStudentIds||[])]});
     $('#bulkDeleteStudents').onclick=deleteSelectedStudents; renderStudentMasterTable(); return;
-  }
-  if(state.masterTab==='studentAccess'){
-    renderStudentAccessPanel(); return;
   }
   if(state.masterTab==='teachers'){
     target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Akun Guru & Wali Kelas</h3><small>Akun hasil pendaftaran baru harus disetujui Admin.</small></div><div class="row-actions"><button id="importTeachers" class="btn ghost">Upload Akun Guru</button><button id="addTeacher" class="btn primary">+ Guru</button></div></div><div id="pendingApprovals"></div>
@@ -2325,14 +2323,18 @@ function filteredMasterStudents(){
 function renderStudentMasterTable(){
   const target=$('#studentTable'); if(!target)return;
   const rows=filteredMasterStudents(); window.selectedStudentIds=window.selectedStudentIds||new Set();
-  target.innerHTML=`<div class="bulk-summary"><span><b>${window.selectedStudentIds.size}</b> siswa dipilih</span><small>Centang beberapa siswa lalu pilih Hapus Terpilih.</small></div><div class="table-wrap"><table class="student-master"><thead><tr><th class="check-col"><input id="selectAllStudents" type="checkbox" aria-label="Pilih semua"></th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(st=>`<tr><td class="check-col"><input class="student-check" type="checkbox" data-student-id="${esc(st.id)}" ${window.selectedStudentIds.has(st.id)?'checked':''}></td><td><b>${esc(st.nis||st.id)}</b></td><td>${esc(st.name||'-')}</td><td>${esc(st.classId||'-')}</td><td><span class="badge ${st.active===false?'warn':'ok'}">${st.active===false?'Nonaktif':'Aktif'}</span></td><td><button class="btn-mini edit" data-edit-student="${esc(st.id)}">Edit</button> <button class="btn-mini danger" data-delete-student="${esc(st.id)}">Hapus</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
+  const activeCount=rows.filter(s=>s.authUid).length;
+  const pendingCount=rows.filter(s=>!s.authUid&&s.active!==false).length;
+  target.innerHTML=`<div class="teacher-list-summary"><span><b>${activeCount}</b> login aktif</span><span><b>${pendingCount}</b> belum aktif</span></div><div class="bulk-summary"><span><b>${window.selectedStudentIds.size}</b> siswa dipilih</span><small>Centang siswa untuk mengaktifkan login secara bersamaan atau menghapus data.</small></div><div class="table-wrap"><table class="student-master"><thead><tr><th class="check-col"><input id="selectAllStudents" type="checkbox" aria-label="Pilih semua"></th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status Data</th><th>Akses Login</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(st=>`<tr><td class="check-col"><input class="student-check" type="checkbox" data-student-id="${esc(st.id)}" ${window.selectedStudentIds.has(st.id)?'checked':''}></td><td><b>${esc(st.nis||st.id)}</b></td><td>${esc(st.name||'-')}</td><td>${esc(st.classId||'-')}</td><td><span class="badge ${st.active===false?'warn':'ok'}">${st.active===false?'Nonaktif':'Aktif'}</span></td><td>${st.authUid?'<span class="badge ok">Login Aktif</span>':'<span class="badge warn">Belum Aktif</span>'}</td><td><div class="row-actions">${st.authUid?`<button type="button" class="btn-mini" data-sync-student-login="${esc(st.id)}">Sinkronkan</button>`:`<button type="button" class="btn-mini edit" data-approve-student-login="${esc(st.id)}" ${st.active===false?'disabled':''}>Aktifkan</button>`}<button class="btn-mini edit" data-edit-student="${esc(st.id)}">Edit</button><button class="btn-mini danger" data-delete-student="${esc(st.id)}">Hapus</button></div></td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
+  document.querySelectorAll('[data-approve-student-login]').forEach(b=>b.onclick=()=>provisionStudentAccounts({mode:'student',studentId:b.dataset.approveStudentLogin}));
+  document.querySelectorAll('[data-sync-student-login]').forEach(b=>b.onclick=()=>repairLinkedStudentProfile(b.dataset.syncStudentLogin));
   document.querySelectorAll('[data-edit-student]').forEach(b=>b.onclick=()=>editStudent(b.dataset.editStudent));
   document.querySelectorAll('[data-delete-student]').forEach(b=>b.onclick=()=>deleteStudentMaster(b.dataset.deleteStudent));
   document.querySelectorAll('.student-check').forEach(c=>c.onchange=()=>{c.checked?window.selectedStudentIds.add(c.dataset.studentId):window.selectedStudentIds.delete(c.dataset.studentId);updateBulkStudentButton();});
   const selectAll=$('#selectAllStudents'); if(selectAll){const visible=rows.slice(0,500);selectAll.checked=visible.length>0&&visible.every(x=>window.selectedStudentIds.has(x.id));selectAll.onchange=()=>{visible.forEach(x=>selectAll.checked?window.selectedStudentIds.add(x.id):window.selectedStudentIds.delete(x.id));renderStudentMasterTable();};}
   updateBulkStudentButton();
 }
-function updateBulkStudentButton(){const b=$('#bulkDeleteStudents');if(b){const n=window.selectedStudentIds?.size||0;b.disabled=!n;b.textContent=n?`Hapus Terpilih (${n})`:'Hapus Terpilih';}}
+function updateBulkStudentButton(){const n=window.selectedStudentIds?.size||0;const del=$('#bulkDeleteStudents');if(del){del.disabled=!n;del.textContent=n?`Hapus Terpilih (${n})`:'Hapus Terpilih';}const act=$('#activateSelectedStudents');if(act){const selected=[...(window.selectedStudentIds||[])].map(id=>state.students.find(s=>s.id===id)).filter(s=>s&&s.active!==false&&!s.authUid);act.disabled=!selected.length;act.textContent=selected.length?`Aktifkan Login Terpilih (${selected.length})`:'Aktifkan Login Terpilih';}}
 async function deleteSelectedStudents(){
   const ids=[...(window.selectedStudentIds||[])]; if(!ids.length)return;
   const sample=ids.slice(0,3).map(id=>state.students.find(s=>s.id===id)?.name||id).join(', ');
@@ -2896,8 +2898,12 @@ async function provisionStudentAccounts(options={mode:'all'}){
   let candidates=state.students.filter(s=>s.active!==false&&!s.authUid);
   if(mode==='class')candidates=candidates.filter(s=>s.classId===options.classId);
   if(mode==='student')candidates=candidates.filter(s=>s.id===options.studentId);
+  if(mode==='selected'){
+    const ids=new Set(options.studentIds||[]);
+    candidates=candidates.filter(s=>ids.has(s.id));
+  }
   if(!candidates.length)return toast('Tidak ada siswa yang perlu dibuatkan login.');
-  const scope=mode==='student'?`${candidates[0].name||candidates[0].nis||'siswa ini'}`:mode==='class'?`kelas ${options.classId}`:'semua siswa yang belum aktif';
+  const scope=mode==='student'?`${candidates[0].name||candidates[0].nis||'siswa ini'}`:mode==='class'?`kelas ${options.classId}`:mode==='selected'?`${candidates.length} siswa terpilih`:'semua siswa yang belum aktif';
   if(!confirm(`Generate akses login untuk ${scope}?\n\nJumlah: ${candidates.length} siswa.\nSiswa login menggunakan NIS sebagai password.`))return;
   const report=[];
   let secondary=null;
@@ -2921,8 +2927,9 @@ async function provisionStudentAccounts(options={mode:'all'}){
   }
   window.studentProvisionReport=report;
   const ok=report.filter(x=>x.status==='success').length, repaired=report.filter(x=>x.status==='repaired').length, fail=report.filter(x=>x.status==='failed').length;
-  toast(`Generate login: ${ok} baru, ${repaired} diperbaiki, ${fail} gagal.`,7000);
-  renderStudentAccessPanel();
+  toast(`Aktivasi login: ${ok} baru, ${repaired} diperbaiki, ${fail} gagal.`,7000);
+  if(state.page==='master'&&state.masterTab==='students')renderStudentMasterTable();
+  else renderStudentAccessPanel();
 }
 async function repairLinkedStudentProfile(studentId){
   if(state.profile.role!=='admin')return;
@@ -2933,7 +2940,7 @@ async function repairLinkedStudentProfile(studentId){
     await setDoc(doc(db,'users',st.authUid),{role:'siswa',active:true,approved:true,name:st.name||'',loginId:nis,nis,studentId:st.id,classId:st.classId||'',updatedAt:new Date().toISOString()},{merge:true});
     toast(`Profil login ${st.name||nis} sudah disinkronkan.`);
   }catch(e){console.error(e);toast('Sinkronisasi akun siswa gagal: '+(e.message||e.code||'error'),6500)}
-  renderStudentAccessPanel();
+  if(state.page==='master'&&state.masterTab==='students')renderStudentMasterTable();else renderStudentAccessPanel();
 }
 
 async function syncStudentLoginProfiles(){
