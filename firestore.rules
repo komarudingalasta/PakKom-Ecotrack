@@ -2,14 +2,29 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn(){ return request.auth != null; }
+    function hasUser(){ return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
     function userDoc(){ return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
-    function activeUser(){ return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc().data.active == true; }
+    function activeUser(){ return hasUser() && userDoc().data.active == true; }
     function isAdmin(){ return activeUser() && userDoc().data.role == 'admin'; }
     function isTeacher(){ return activeUser() && userDoc().data.role == 'guru'; }
-    function isStudent(){ return activeUser() && userDoc().data.role == 'siswa'; }
     function isStaff(){ return isAdmin() || isTeacher(); }
     function isHomeroom(){ return isTeacher() && userDoc().data.isHomeroom == true; }
     function isAnonymous(){ return signedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous'; }
+
+    // Siswa dianggap aktif berdasarkan sumber utama studentAccess,
+    // bukan hanya field active pada users/{anonymousUid}.
+    // Ini mencegah sesi siswa yang valid tertolak karena profil sesi lama/stale.
+    function hasStudentAccess(){
+      return hasUser()
+        && userDoc().data.role == 'siswa'
+        && userDoc().data.approved == true
+        && userDoc().data.loginId is string
+        && exists(/databases/$(database)/documents/studentAccess/$(userDoc().data.loginId));
+    }
+    function isStudent(){
+      return hasStudentAccess()
+        && get(/databases/$(database)/documents/studentAccess/$(userDoc().data.loginId)).data.active == true;
+    }
 
     match /studentAccess/{nis} {
       allow get: if isAdmin() || isAnonymous();
@@ -29,54 +44,120 @@ service cloud.firestore {
           && request.resource.data.classId is string)
         || (signedIn() && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['loginId','name','role','approved','active','rejected','requestedType','requestedHomeroomClass','isHomeroom','homeroomClass','createdAt'])
-          && request.resource.data.loginId is string && request.resource.data.name is string
-          && request.resource.data.role == 'guru' && request.resource.data.approved == false
-          && request.resource.data.active == false && request.resource.data.rejected == false
+          && request.resource.data.loginId is string
+          && request.resource.data.name is string
+          && request.resource.data.role == 'guru'
+          && request.resource.data.approved == false
+          && request.resource.data.active == false
+          && request.resource.data.rejected == false
           && request.resource.data.requestedType in ['guru','wali']
-          && request.resource.data.isHomeroom == false && request.resource.data.homeroomClass == '');
+          && request.resource.data.isHomeroom == false
+          && request.resource.data.homeroomClass == '');
       allow update: if isAdmin();
       allow delete: if isAdmin() || (isStudent() && request.auth.uid == uid);
     }
 
-    match /classes/{id}{ allow read: if isStaff(); allow write: if isAdmin(); }
-    match /students/{id}{
-      allow read: if isStaff() || (isStudent() && userDoc().data.studentId == id);
+    match /classes/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    match /students/{id} {
+      allow get: if isStaff()
+        || (isStudent() && (userDoc().data.studentId == id || resource.data.classId == userDoc().data.classId));
+      // Siswa boleh mengambil daftar teman sekelas untuk membentuk kelompok.
+      // Frontend wajib query dengan where(classId == kelas siswa).
+      allow list: if isStaff()
+        || (isStudent() && resource.data.classId == userDoc().data.classId);
       allow create, update, delete: if isAdmin();
     }
-    match /records/{id}{ allow read: if isStaff(); allow create, update: if isStaff(); allow delete: if isAdmin(); }
-    match /cleanliness/{id}{ allow read: if isStaff(); allow create, update: if isStaff(); allow delete: if isAdmin(); }
 
-    match /settings/{id}{
+    match /records/{id} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /cleanliness/{id} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /settings/{id} {
       allow read: if isStaff() || (isStudent() && id == 'taskAssessment');
       allow write: if isAdmin();
     }
 
-    match /analysisPeriods/{id}{ allow read: if isAdmin() || (isHomeroom() && resource.data.sharedToHomeroom == true); allow write: if isAdmin(); }
-    match /analysisPeriodRevisions/{id}{ allow read, create: if isAdmin(); allow update, delete: if false; }
-    match /auditLogs/{id}{ allow read, create: if isAdmin(); allow update, delete: if false; }
-    match /recordResetArchive/{id}{ allow read, create: if isAdmin(); allow update, delete: if false; }
-    match /cleanlinessResetArchive/{id}{ allow read, create: if isAdmin(); allow update, delete: if false; }
+    match /analysisPeriods/{id} {
+      allow read: if isAdmin() || (isHomeroom() && resource.data.sharedToHomeroom == true);
+      allow write: if isAdmin();
+    }
+    match /analysisPeriodRevisions/{id} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+    match /auditLogs/{id} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+    match /recordResetArchive/{id} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+    match /cleanlinessResetArchive/{id} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
 
-    match /assignments/{taskId}{
-      allow read: if isStaff() || (isStudent()
+    match /cocurricularPrograms/{programId} {
+      allow get: if isStaff() || (isStudent() && resource.data.active == true);
+      allow list: if isStaff() || (isStudent() && resource.data.active == true);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /assignments/{taskId} {
+      allow get: if isStaff() || (isStudent()
         && resource.data.targetClasses is list
         && userDoc().data.classId in resource.data.targetClasses);
+      allow list: if isStaff() || isStudent();
       allow create, update, delete: if isAdmin();
     }
 
-    match /cocurricularPrograms/{programId}{
-      allow read: if isStaff() || (isStudent() && resource.data.active == true && resource.data.archived != true);
-      allow create, update, delete: if isAdmin();
+    match /taskGroups/{groupKey} {
+      // Staff dapat monitoring semua kelompok.
+      allow get: if isStaff()
+        || (isStudent() && resource.data.classId == userDoc().data.classId);
+      // Siswa perlu membaca kelompok satu kelas pada tugas yang sama
+      // agar tidak memilih anggota yang sudah tergabung.
+      allow list: if isStaff()
+        || (isStudent() && resource.data.classId == userDoc().data.classId);
+
+      // Kelompok dibuat sendiri oleh siswa, 2-6 anggota, kelas harus sama
+      // dengan kelas siswa dan tugas memang bertipe group.
+      allow create: if isAdmin()
+        || (isStudent()
+          && request.resource.data.taskId is string
+          && request.resource.data.classId == userDoc().data.classId
+          && request.resource.data.groupKey is string
+          && request.resource.data.memberNis is list
+          && request.resource.data.memberNames is list
+          && request.resource.data.memberNis.size() >= 2
+          && request.resource.data.memberNis.size() <= 6
+          && request.resource.data.memberNames.size() == request.resource.data.memberNis.size()
+          && userDoc().data.loginId in request.resource.data.memberNis
+          && request.resource.data.createdByNis == userDoc().data.loginId
+          && exists(/databases/$(database)/documents/assignments/$(request.resource.data.taskId))
+          && get(/databases/$(database)/documents/assignments/$(request.resource.data.taskId)).data.taskType == 'group'
+          && get(/databases/$(database)/documents/assignments/$(request.resource.data.taskId)).data.targetClasses is list
+          && userDoc().data.classId in get(/databases/$(database)/documents/assignments/$(request.resource.data.taskId)).data.targetClasses);
+
+      // Untuk sekarang anggota kelompok dikunci setelah dibuat agar tidak
+      // berubah diam-diam. Perubahan/hapus hanya Admin.
+      allow update, delete: if isAdmin();
     }
 
-    match /taskGroups/{groupKey}{
-      allow read: if isStaff()
-        || (isHomeroom() && resource.data.classId == userDoc().data.homeroomClass)
-        || (isStudent() && resource.data.memberNis is list && userDoc().data.loginId in resource.data.memberNis);
-      allow create, update, delete: if isAdmin();
-    }
-
-    match /taskSubmissions/{id}{
+    match /taskSubmissions/{id} {
       allow read: if isStaff()
         || (isStudent()
           && (resource.data.nis == userDoc().data.loginId
@@ -88,7 +169,11 @@ service cloud.firestore {
         && ((request.resource.data.taskType == 'individual'
               && request.resource.data.nis == userDoc().data.loginId)
           || (request.resource.data.taskType == 'group'
-              && request.resource.data.memberNis is list
+              && request.resource.data.groupKey is string
+              && exists(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey))
+              && get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.taskId == request.resource.data.taskId
+              && get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.classId == userDoc().data.classId
+              && get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.memberNis == request.resource.data.memberNis
               && userDoc().data.loginId in request.resource.data.memberNis));
 
       allow update: if (isStudent()
@@ -115,6 +200,8 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /{document=**}{ allow read, write: if false; }
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }

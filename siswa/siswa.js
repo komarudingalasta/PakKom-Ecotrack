@@ -28,7 +28,7 @@ function me(){
   $('#content').innerHTML=`<section class="card"><h3>Profil Saya</h3><div class="profile-grid"><div>Nama</div><strong>${esc(profile.name||'-')}</strong><div>NIS</div><strong>${esc(profile.loginId||'-')}</strong><div>Kelas</div><strong>${esc(profile.classId||'-')}</strong><div>Status</div><strong>Aktif</strong></div></section><section class="card"><h3>Akun</h3><p class="muted">Data profil bersumber dari data siswa EcoTrack. Jika ada kesalahan nama atau kelas, hubungi wali kelas/Admin.</p><button id="meLogout" class="btn ghost">Keluar dari Akun</button></section>`;$('#meLogout').onclick=logout;
 }
 function render(page='home'){document.querySelectorAll('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page)); if(page==='me')me(); else home()}
-async function logout(){try{if(user)await db.collection('users').doc(user.uid).delete()}catch(_){}try{await auth.signOut()}finally{location.href='./'}}
+async function logout(){try{if(user)await db.collection('users').doc(user.uid).delete()}catch(_){}sessionStorage.removeItem('pakkomStudentNis');try{await auth.signOut()}finally{location.href='./'}}
 $('#logoutBtn').onclick=logout; $('#togglePwd').onclick=()=>{$('#password').type=$('#password').type==='password'?'text':'password'};
 document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>render(b.dataset.page));
 $('#loginForm').onsubmit=async e=>{e.preventDefault();loginInProgress=true;const nis=$('#nis').value.trim(),pwd=$('#password').value;const btn=$('#loginBtn');if(!nis||!pwd)return;btn.disabled=true;btn.textContent='MEMERIKSA...';try{
@@ -41,8 +41,9 @@ $('#loginForm').onsubmit=async e=>{e.preventDefault();loginInProgress=true;const
   if(await sha256(pwd)!==String(a.passwordHash||''))throw new Error('NIS atau password salah.');
   const c=normClass(a.classId);if(!c)throw new Error('Kelas siswa belum terisi pada data akses.');
   profile={role:'siswa',active:true,approved:true,name:a.name||'Siswa',loginId:nis,nis,studentId:String(a.studentId||''),classId:c,sessionType:'anonymous',createdAt:new Date().toISOString()};
+  sessionStorage.setItem('pakkomStudentNis',nis);
   await db.collection('users').doc(cred.user.uid).set(profile);
   user=cred.user;await loadData();showApp();render('home');
 }catch(err){console.error(err);try{await auth.signOut()}catch(_){}showLogin(err.message||'Login gagal.')}finally{loginInProgress=false;btn.disabled=false;btn.textContent='MASUK'}};
-auth.onAuthStateChanged(async u=>{if(loginInProgress)return;if(!u)return showLogin();user=u;try{const d=await db.collection('users').doc(u.uid).get();if(!d.exists||d.data().role!=='siswa'||d.data().active!==true)return showLogin();profile=d.data();profile.classId=normClass(profile.classId);await loadData();showApp();render('home')}catch(e){console.error(e);showLogin('Sesi siswa perlu diperbarui. Silakan masuk kembali.')}});
+auth.onAuthStateChanged(async u=>{if(loginInProgress)return;if(!u)return showLogin();user=u;try{const d=await db.collection('users').doc(u.uid).get();if(!d.exists||d.data().role!=='siswa'||d.data().active!==true)return showLogin();profile=d.data();profile.classId=normClass(profile.classId);if(profile.loginId)sessionStorage.setItem('pakkomStudentNis',String(profile.loginId));await loadData();showApp();render('home')}catch(e){console.error(e);showLogin('Sesi siswa perlu diperbarui. Silakan masuk kembali.')}});
 })();
