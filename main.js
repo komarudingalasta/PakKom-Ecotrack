@@ -2918,6 +2918,8 @@ async function syncStudentLoginProfiles(){
   var auth=firebase.auth();
   auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(){});
   var db=firebase.firestore();
+  // Shared portal flag for session restore and login submit handler.
+  var studentPortal=window.PAKKOM_STUDENT_PORTAL===true;
 
   window.PAKKOM_COMPAT_CORE={
     auth:auth,
@@ -2945,7 +2947,6 @@ async function syncStudentLoginProfiles(){
       if(profile.active===false) throw new Error('Akun dinonaktifkan administrator.');
       if(profile.role!=='admin' && profile.role!=='guru' && profile.role!=='siswa') throw new Error('Role akun tidak dikenali.');
 
-      var studentPortal=window.PAKKOM_STUDENT_PORTAL===true;
       if(studentPortal && profile.role!=='siswa'){
         throw new Error('Halaman ini khusus siswa. Guru/Admin silakan masuk dari halaman utama EcoTrack.');
       }
