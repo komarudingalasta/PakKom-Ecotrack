@@ -1001,3 +1001,400 @@ html[data-layout="tablet"] .chat-composer-wrap{
 
 /* Student access provisioning v4 */
 .student-access-stats{margin-bottom:16px}.student-access-stats .stat strong{font-size:1.65rem}.badge.bad{background:#fee2e2;color:#991b1b}.badge.warn{background:#fef3c7;color:#92400e}.master-section .table-wrap td:last-child{white-space:nowrap}
+
+
+/* =========================================================
+   STUDENT PORTAL LOGIN — v5.1
+   Visual-only polish. Does not alter authentication logic.
+   ========================================================= */
+body.student-portal-login{
+  min-height:100dvh;
+  margin:0;
+  background:
+    radial-gradient(circle at top left, rgba(16,185,129,.14), transparent 34%),
+    linear-gradient(180deg,#f0fdf4 0%,#f8fafc 52%,#ffffff 100%);
+  color:#0f172a;
+}
+
+body.student-portal-login #bootView{
+  background:transparent;
+}
+
+body.student-portal-login .student-login-brand{
+  position:fixed;
+  left:50%;
+  top:clamp(34px,8vh,78px);
+  transform:translateX(-50%);
+  z-index:20;
+  width:min(92vw,520px);
+  text-align:center;
+  pointer-events:none;
+}
+
+body.student-portal-login .student-login-logo{
+  width:58px;
+  height:58px;
+  margin:0 auto 10px;
+  display:grid;
+  place-items:center;
+  border-radius:18px;
+  background:#ffffff;
+  box-shadow:0 10px 32px rgba(15,118,110,.16);
+  font-size:30px;
+}
+
+body.student-portal-login .student-login-name{
+  font-weight:800;
+  font-size:clamp(24px,5vw,34px);
+  letter-spacing:-.03em;
+  color:#0f766e;
+}
+
+body.student-portal-login .student-login-kicker{
+  margin-top:5px;
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.18em;
+  color:#64748b;
+}
+
+body.student-portal-login #loginView{
+  min-height:100dvh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:clamp(170px,26vh,220px) 18px 34px;
+  box-sizing:border-box;
+  background:transparent !important;
+}
+
+body.student-portal-login #loginView.hidden{
+  display:none !important;
+}
+
+body.student-portal-login #loginView > *{
+  width:min(100%,430px);
+}
+
+body.student-portal-login #loginView .login-card,
+body.student-portal-login #loginView .auth-card,
+body.student-portal-login #loginView .card{
+  width:100%;
+  border:1px solid rgba(15,23,42,.07);
+  border-radius:24px;
+  background:rgba(255,255,255,.96);
+  box-shadow:0 24px 70px rgba(15,23,42,.10);
+  padding:24px;
+  box-sizing:border-box;
+  backdrop-filter:blur(12px);
+}
+
+body.student-portal-login #loginView h1,
+body.student-portal-login #loginView h2{
+  margin-top:0;
+  margin-bottom:8px;
+  font-size:26px;
+  line-height:1.15;
+  letter-spacing:-.025em;
+  color:#0f172a;
+}
+
+body.student-portal-login #loginView p{
+  color:#64748b;
+  line-height:1.55;
+}
+
+body.student-portal-login #loginView label{
+  display:block;
+  margin:14px 0 7px;
+  font-size:13px;
+  font-weight:700;
+  color:#334155;
+}
+
+body.student-portal-login #loginView input,
+body.student-portal-login #loginView select{
+  width:100%;
+  min-height:50px;
+  border:1px solid #dbe4ea;
+  border-radius:14px;
+  background:#fff;
+  padding:0 14px;
+  font-size:16px;
+  box-sizing:border-box;
+  outline:none;
+  transition:border-color .18s ease,box-shadow .18s ease;
+}
+
+body.student-portal-login #loginView input:focus,
+body.student-portal-login #loginView select:focus{
+  border-color:#0f766e;
+  box-shadow:0 0 0 4px rgba(15,118,110,.10);
+}
+
+body.student-portal-login #loginView button,
+body.student-portal-login #loginView .btn{
+  width:100%;
+  min-height:50px;
+  margin-top:16px;
+  border-radius:14px;
+  font-weight:800;
+  font-size:15px;
+}
+
+body.student-portal-login #loginView .btn.primary,
+body.student-portal-login #loginView button[type="submit"]{
+  background:#0f766e;
+  border-color:#0f766e;
+  color:#fff;
+}
+
+body.student-portal-login #loginView .btn.primary:hover,
+body.student-portal-login #loginView button[type="submit"]:hover{
+  background:#0b5f59;
+}
+
+body.student-portal-login #loginView .demo-note,
+body.student-portal-login #loginView .hint,
+body.student-portal-login #loginView small{
+  color:#64748b;
+  font-size:12px;
+}
+
+body.student-portal-login #registerView,
+body.student-portal-login [data-role="teacher-register"]{
+  display:none !important;
+}
+
+/* hide the fixed brand after authenticated app appears */
+body.student-portal-login:has(#appView:not(.hidden)) .student-login-brand{
+  display:none;
+}
+
+@media (max-width:560px){
+  body.student-portal-login #loginView{
+    align-items:flex-start;
+    padding-top:158px;
+    padding-left:14px;
+    padding-right:14px;
+  }
+  body.student-portal-login #loginView .login-card,
+  body.student-portal-login #loginView .auth-card,
+  body.student-portal-login #loginView .card{
+    border-radius:20px;
+    padding:20px;
+  }
+}
+
+@media (min-width:768px){
+  body.student-portal-login #loginView{
+    padding-top:190px;
+  }
+}
+
+
+/* =========================================================
+   STUDENT PORTAL LOGIN v5.1.2
+   Clean mobile-first layout; removes duplicated overlay brand.
+   ========================================================= */
+body.student-portal-login .student-login-brand{
+  display:none !important;
+}
+
+body.student-portal-login #loginView{
+  min-height:100dvh !important;
+  display:grid !important;
+  grid-template-columns:1fr !important;
+  place-items:center !important;
+  padding:24px 16px !important;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(16,185,129,.16), transparent 36%),
+    linear-gradient(180deg,#f0fdf4 0%,#f8fafc 58%,#ffffff 100%) !important;
+}
+
+body.student-portal-login #loginView.hidden{
+  display:none !important;
+}
+
+body.student-portal-login #loginView .login-visual{
+  display:none !important;
+}
+
+body.student-portal-login #loginView .login-panel{
+  width:min(100%,430px) !important;
+  margin:0 auto !important;
+  padding:0 !important;
+  background:transparent !important;
+}
+
+body.student-portal-login #loginView .login-brand{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:center !important;
+  text-align:center !important;
+  gap:8px !important;
+  margin:0 0 18px !important;
+}
+
+body.student-portal-login #loginView .login-brand .brand-mark{
+  width:64px !important;
+  height:64px !important;
+  display:grid !important;
+  place-items:center !important;
+  border-radius:20px !important;
+  background:#fff !important;
+  box-shadow:0 12px 34px rgba(15,118,110,.16) !important;
+  font-size:31px !important;
+}
+
+body.student-portal-login #loginView .login-brand h1{
+  margin:0 !important;
+  font-size:28px !important;
+  color:#0f766e !important;
+  letter-spacing:-.03em !important;
+}
+
+body.student-portal-login #loginView .login-brand p{
+  margin:3px 0 0 !important;
+  font-size:13px !important;
+  color:#64748b !important;
+}
+
+body.student-portal-login #loginView .login-form{
+  width:100% !important;
+  margin:0 !important;
+  padding:24px !important;
+  border:1px solid rgba(15,23,42,.07) !important;
+  border-radius:24px !important;
+  background:#fff !important;
+  box-shadow:0 22px 60px rgba(15,23,42,.09) !important;
+}
+
+body.student-portal-login #loginView .login-heading{
+  text-align:center !important;
+  margin-bottom:18px !important;
+}
+
+body.student-portal-login #loginView .login-heading h2{
+  margin:0 0 7px !important;
+  font-size:24px !important;
+  color:#0f172a !important;
+}
+
+body.student-portal-login #loginView .login-heading p{
+  margin:0 !important;
+  font-size:13px !important;
+  color:#64748b !important;
+}
+
+body.student-portal-login #loginView label{
+  margin:14px 0 0 !important;
+  color:#334155 !important;
+  font-size:13px !important;
+  font-weight:750 !important;
+}
+
+body.student-portal-login #loginView input{
+  min-height:52px !important;
+  font-size:16px !important;
+  border-radius:14px !important;
+  border:1px solid #d9e2e8 !important;
+  background:#fff !important;
+  padding:0 14px !important;
+}
+
+body.student-portal-login #loginView .password-wrap{
+  position:relative !important;
+  margin-top:7px !important;
+}
+
+body.student-portal-login #loginView .password-wrap input{
+  padding-right:52px !important;
+}
+
+body.student-portal-login #loginView #togglePassword{
+  position:absolute !important;
+  right:8px !important;
+  top:50% !important;
+  transform:translateY(-50%) !important;
+  width:38px !important;
+  min-width:38px !important;
+  height:38px !important;
+  min-height:38px !important;
+  margin:0 !important;
+  padding:0 !important;
+  border:0 !important;
+  border-radius:10px !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  font-size:18px !important;
+}
+
+body.student-portal-login #loginView .login-submit{
+  min-height:52px !important;
+  margin-top:20px !important;
+  border-radius:14px !important;
+  background:#0f766e !important;
+  border-color:#0f766e !important;
+  font-size:15px !important;
+  font-weight:800 !important;
+}
+
+body.student-portal-login #loginView .login-error{
+  margin:14px 0 0 !important;
+  padding:12px 14px !important;
+  border-radius:12px !important;
+  background:#fff1f2 !important;
+  color:#be123c !important;
+  font-size:13px !important;
+  font-weight:650 !important;
+}
+
+body.student-portal-login #loginView .demo-note{
+  margin:16px 0 0 !important;
+  text-align:center !important;
+  color:#64748b !important;
+  font-size:12px !important;
+}
+
+body.student-portal-login #loginView .login-footer{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:center !important;
+  gap:2px !important;
+  margin-top:18px !important;
+  color:#64748b !important;
+  font-size:12px !important;
+}
+
+body.student-portal-login #loginView .login-footer strong{
+  color:#0f766e !important;
+}
+
+body.student-portal-login #appView.hidden{
+  display:none !important;
+}
+
+@media (max-width:560px){
+  body.student-portal-login #loginView{
+    align-items:start !important;
+    padding-top:30px !important;
+  }
+  body.student-portal-login #loginView .login-form{
+    padding:20px !important;
+    border-radius:20px !important;
+  }
+  body.student-portal-login #loginView .login-brand h1{
+    font-size:25px !important;
+  }
+}
+
+/* ===== Tugas Siswa v6 ===== */
+.task-mini-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.group-member-box{padding:14px 16px;border-radius:14px;background:rgba(31,122,78,.07);margin:14px 0}
+.group-member-box p{margin:6px 0;line-height:1.6}
+.task-submit-actions,.task-grade-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.table-subline{display:block;max-width:420px;margin-top:4px;white-space:normal;line-height:1.35}
+.notice.warn{border-left:4px solid currentColor}
+.review-proof a{font-weight:700;text-decoration:none}
+@media(max-width:640px){.task-submit-actions .btn,.task-grade-actions .btn{flex:1}.task-builder .form-grid{grid-template-columns:1fr}}

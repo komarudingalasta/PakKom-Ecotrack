@@ -144,7 +144,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null, chatUnread:0, chatGroup:null, chatUnsub:null, chatReactionUnsub:null, chatNotifyTimer:null, chatUnreadInitialized:false };
 
-const APP_VERSION='3.3.8';
+const APP_VERSION='5.1.2';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -366,39 +366,29 @@ function passwordPanel(){
   };
 }
 async function logoutNow(){
-  // Put the UI in logged-out state immediately, then sign Firebase out.
-  // This prevents the old dashboard remaining visible until a manual refresh.
-  state.user=null;
-  state.profile=null;
-  resetCoreState();
-  authResolved=true;
-
-  if(window.PAKKOM_COMPAT_CORE){
-    window.PAKKOM_COMPAT_CORE.intentionalLogout=true;
-    window.PAKKOM_COMPAT_CORE.user=null;
-    window.PAKKOM_COMPAT_CORE.profile=null;
-    window.PAKKOM_COMPAT_CORE.startedUid=null;
-  }
-
-  const forceLoggedOutView=()=>{
-    const boot=$('#bootView'), login=$('#loginView'), app=$('#appView');
-    if(boot){boot.classList.add('hidden');boot.style.display='none';}
-    if(app){app.classList.add('hidden');app.style.display='none';}
-    if(login){login.classList.remove('hidden');login.style.removeProperty('display');}
-    const pw=$('#loginPassword'); if(pw) pw.value='';
-    showLoginError('');
-  };
-
-  forceLoggedOutView();
+  // v5: one deterministic logout path. Remove the temporary anonymous
+  // student profile first, then sign out, then reload the current portal.
+  const uid=state.user?.uid||window.PAKKOM_COMPAT_CORE?.user?.uid||'';
+  const role=state.profile?.role||window.PAKKOM_COMPAT_CORE?.profile?.role||'';
   try{
+    if(uid && role==='siswa'){
+      await deleteDoc(doc(db,'users',uid)).catch(()=>{});
+    }
+  }catch(_){}
+  try{
+    if(window.PAKKOM_COMPAT_CORE){
+      window.PAKKOM_COMPAT_CORE.intentionalLogout=true;
+      window.PAKKOM_COMPAT_CORE.user=null;
+      window.PAKKOM_COMPAT_CORE.profile=null;
+      window.PAKKOM_COMPAT_CORE.startedUid=null;
+    }
     const logoutAuth=window.PAKKOM_COMPAT_CORE?.auth||auth;
     await logoutAuth.signOut();
   }catch(e){
     console.warn('Logout',e);
   }finally{
-    // Auth observer may run during signOut; enforce the final DOM state once more.
-    forceLoggedOutView();
-    setTimeout(forceLoggedOutView,0);
+    // Reload guarantees no stale dashboard/listener remains on screen.
+    window.location.reload();
   }
 }
 
@@ -2224,41 +2214,22 @@ function bindMasterTabNavigation(){
   };
 }
 
-// Stable event delegation for Student Data actions.
-// Buttons inside the Admin panel are frequently re-rendered, so their actions
-// must not depend on an onclick handler attached to an older DOM node.
-if(!window.__pakkomStudentMasterDelegation){
-  window.__pakkomStudentMasterDelegation=true;
-  document.addEventListener('click',(ev)=>{
-    const bulk=ev.target.closest('#activateSelectedStudents');
-    if(bulk){
-      ev.preventDefault(); ev.stopPropagation();
-      if(bulk.disabled)return;
-      const ids=[...(window.selectedStudentIds||[])];
-      provisionStudentAccounts({mode:'selected',studentIds:ids});
-      return;
-    }
-    const one=ev.target.closest('[data-approve-student-login]');
-    if(one){
-      ev.preventDefault(); ev.stopPropagation();
-      if(one.disabled)return;
-      provisionStudentAccounts({mode:'student',studentId:one.dataset.approveStudentLogin});
-    }
-  },true);
-}
-
 function renderMasterTab(){
   const target=$('#masterTabContent'); if(!target)return;
   if(state.masterTab==='students'){
     target.innerHTML=`<div class="card master-section">
       <div class="section-head"><div><h3>Data Siswa</h3><small>Kelola siswa tanpa mencampur akun guru.</small></div><div class="row-actions"><a class="btn ghost" href="format-import-pakkom-eco-track.xlsx" download>Format Siswa</a><button id="importStudents" class="btn primary">Upload Data Siswa</button></div></div>
       <div class="notice">Format: <b>NIS | Nama | Kelas | Status</b>. Upload hanya membuka preview; data baru masuk setelah menekan <b>Import Sekarang</b>.</div>
-      <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button><button type="button" id="activateSelectedStudents" class="btn primary" disabled>Aktifkan Login Terpilih</button><button id="bulkDeleteStudents" class="btn danger" disabled>Hapus Terpilih</button></div>
-      <div class="notice">Akses login siswa dikelola langsung dari tabel ini. Siswa login dengan <b>NIS sebagai ID dan password</b>. Klik <b>Aktifkan</b> pada satu siswa untuk uji coba, atau centang beberapa siswa lalu pilih <b>Aktifkan Login Terpilih</b>.</div>
+      <div class="master-tools"><input id="studentSearch" class="input-inline" placeholder="Cari NIS atau nama siswa"><select id="studentClassFilter" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select><button id="addStudentLocal" class="btn secondary">+ Siswa</button><button id="bulkDeleteStudents" class="btn danger" disabled>Hapus Terpilih</button></div>
+      <div class="notice"><b>Akses Login Siswa v5:</b> tidak membuat akun Email/Password satu per satu. Unduh template, isi/cek kolom Password dan Aktif, lalu upload. Secara default password dapat dibuat sama dengan NIS.</div>
+      <div class="row-actions" style="margin:12px 0"><button type="button" id="downloadStudentAccess" class="btn ghost">Unduh Template Akses</button><button type="button" id="uploadStudentAccess" class="btn primary">Upload Akses Login</button></div>
       <div id="studentTable"></div></div>`;
     $('#importStudents').onclick=()=>$('#studentImport').click(); $('#addStudentLocal').onclick=addStudentLocal;
     $('#studentSearch').oninput=renderStudentMasterTable; $('#studentClassFilter').onchange=renderStudentMasterTable;
-    $('#bulkDeleteStudents').onclick=deleteSelectedStudents; renderStudentMasterTable(); return;
+    $('#bulkDeleteStudents').onclick=deleteSelectedStudents;
+    $('#downloadStudentAccess').onclick=downloadStudentAccessTemplate;
+    $('#uploadStudentAccess').onclick=()=>$('#studentAccessImport').click();
+    renderStudentMasterTable(); return;
   }
   if(state.masterTab==='teachers'){
     target.innerHTML=`<div class="card master-section"><div class="section-head"><div><h3>Akun Guru & Wali Kelas</h3><small>Akun hasil pendaftaran baru harus disetujui Admin.</small></div><div class="row-actions"><button id="importTeachers" class="btn ghost">Upload Akun Guru</button><button id="addTeacher" class="btn primary">+ Guru</button></div></div><div id="pendingApprovals"></div>
@@ -2366,17 +2337,20 @@ function filteredMasterStudents(){
 function renderStudentMasterTable(){
   const target=$('#studentTable'); if(!target)return;
   const rows=filteredMasterStudents(); window.selectedStudentIds=window.selectedStudentIds||new Set();
-  const activeCount=rows.filter(s=>s.authUid).length;
-  const pendingCount=rows.filter(s=>!s.authUid&&s.active!==false).length;
-  target.innerHTML=`<div class="teacher-list-summary"><span><b>${activeCount}</b> login aktif</span><span><b>${pendingCount}</b> belum aktif</span></div><div class="bulk-summary"><span><b>${window.selectedStudentIds.size}</b> siswa dipilih</span><small>Centang siswa untuk mengaktifkan login secara bersamaan atau menghapus data.</small></div><div class="table-wrap"><table class="student-master"><thead><tr><th class="check-col"><input id="selectAllStudents" type="checkbox" aria-label="Pilih semua"></th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status Data</th><th>Akses Login</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(st=>`<tr><td class="check-col"><input class="student-check" type="checkbox" data-student-id="${esc(st.id)}" ${window.selectedStudentIds.has(st.id)?'checked':''}></td><td><b>${esc(st.nis||st.id)}</b></td><td>${esc(st.name||'-')}</td><td>${esc(st.classId||'-')}</td><td><span class="badge ${st.active===false?'warn':'ok'}">${st.active===false?'Nonaktif':'Aktif'}</span></td><td>${st.authUid?'<span class="badge ok">Login Aktif</span>':'<span class="badge warn">Belum Aktif</span>'}</td><td><div class="row-actions">${st.authUid?`<button type="button" class="btn-mini" data-sync-student-login="${esc(st.id)}">Sinkronkan</button>`:`<button type="button" class="btn-mini edit" data-approve-student-login="${esc(st.id)}" ${st.active===false?'disabled':''}>Aktifkan</button>`}<button class="btn-mini edit" data-edit-student="${esc(st.id)}">Edit</button><button class="btn-mini danger" data-delete-student="${esc(st.id)}">Hapus</button></div></td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
-  document.querySelectorAll('[data-sync-student-login]').forEach(b=>b.onclick=()=>repairLinkedStudentProfile(b.dataset.syncStudentLogin));
+  const activeCount=rows.filter(s=>s.loginEnabled===true).length;
+  const pendingCount=rows.filter(s=>s.loginEnabled!==true&&s.active!==false).length;
+  target.innerHTML=`<div class="teacher-list-summary"><span><b>${activeCount}</b> akses login aktif</span><span><b>${pendingCount}</b> belum aktif</span></div><div class="bulk-summary"><span><b>${window.selectedStudentIds.size}</b> siswa dipilih</span><small>Centang siswa hanya untuk pengelolaan data/hapus. Akses login dikelola melalui file Excel.</small></div><div class="table-wrap"><table class="student-master"><thead><tr><th class="check-col"><input id="selectAllStudents" type="checkbox" aria-label="Pilih semua"></th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status Data</th><th>Akses Login</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(st=>`<tr><td class="check-col"><input class="student-check" type="checkbox" data-student-id="${esc(st.id)}" ${window.selectedStudentIds.has(st.id)?'checked':''}></td><td><b>${esc(st.nis||st.id)}</b></td><td>${esc(st.name||'-')}</td><td>${esc(st.classId||'-')}</td><td><span class="badge ${st.active===false?'warn':'ok'}">${st.active===false?'Nonaktif':'Aktif'}</span></td><td>${st.loginEnabled===true?'<span class="badge ok">Login Aktif</span>':'<span class="badge warn">Belum Aktif</span>'}</td><td><div class="row-actions"><button class="btn-mini edit" data-edit-student="${esc(st.id)}">Edit</button><button class="btn-mini danger" data-delete-student="${esc(st.id)}">Hapus</button></div></td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
   document.querySelectorAll('[data-edit-student]').forEach(b=>b.onclick=()=>editStudent(b.dataset.editStudent));
   document.querySelectorAll('[data-delete-student]').forEach(b=>b.onclick=()=>deleteStudentMaster(b.dataset.deleteStudent));
   document.querySelectorAll('.student-check').forEach(c=>c.onchange=()=>{c.checked?window.selectedStudentIds.add(c.dataset.studentId):window.selectedStudentIds.delete(c.dataset.studentId);updateBulkStudentButton();});
   const selectAll=$('#selectAllStudents'); if(selectAll){const visible=rows.slice(0,500);selectAll.checked=visible.length>0&&visible.every(x=>window.selectedStudentIds.has(x.id));selectAll.onchange=()=>{visible.forEach(x=>selectAll.checked?window.selectedStudentIds.add(x.id):window.selectedStudentIds.delete(x.id));renderStudentMasterTable();};}
   updateBulkStudentButton();
 }
-function updateBulkStudentButton(){const n=window.selectedStudentIds?.size||0;const del=$('#bulkDeleteStudents');if(del){del.disabled=!n;del.textContent=n?`Hapus Terpilih (${n})`:'Hapus Terpilih';}const act=$('#activateSelectedStudents');if(act){const selected=[...(window.selectedStudentIds||[])].map(id=>state.students.find(s=>s.id===id)).filter(s=>s&&s.active!==false&&!s.authUid);act.disabled=!selected.length;act.textContent=selected.length?`Aktifkan Login Terpilih (${selected.length})`:'Aktifkan Login Terpilih';}}
+function updateBulkStudentButton(){
+  const n=window.selectedStudentIds?.size||0;
+  const del=$('#bulkDeleteStudents');
+  if(del){del.disabled=!n;del.textContent=n?`Hapus Terpilih (${n})`:'Hapus Terpilih';}
+}
 async function deleteSelectedStudents(){
   const ids=[...(window.selectedStudentIds||[])]; if(!ids.length)return;
   const sample=ids.slice(0,3).map(id=>state.students.find(s=>s.id===id)?.name||id).join(', ');
@@ -2628,6 +2602,63 @@ async function addStudentLocal(){
   try{await setDoc(doc(db,'students',key),{nis:key,name:name.trim(),classId:classId.trim().toUpperCase(),active:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()},{merge:false});await ensureClassesFromStudents();toast('Siswa berhasil ditambahkan');await master();}catch(e){console.error(e);toast('Gagal menambah siswa');}
 }
 
+
+window.pakkomSha256Text = async function(value){
+  const data=new TextEncoder().encode(String(value||''));
+  const hash=await crypto.subtle.digest('SHA-256',data);
+  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+};
+async function sha256Text(value){
+  return window.pakkomSha256Text(value);
+}
+function downloadStudentAccessTemplate(){
+  if(!window.XLSX)return toast('Library Excel belum siap.');
+  const rows=state.students
+    .slice()
+    .sort((a,b)=>classSortKey(a.classId)-classSortKey(b.classId)||String(a.name||'').localeCompare(String(b.name||''),'id'))
+    .map(st=>({
+      NIS:String(st.nis||st.id||''),
+      Nama:String(st.name||''),
+      Kelas:String(st.classId||''),
+      Password:String(st.nis||st.id||''),
+      Aktif:st.active===false?'TIDAK':'YA'
+    }));
+  const ws=XLSX.utils.json_to_sheet(rows,{header:['NIS','Nama','Kelas','Password','Aktif']});
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Akses Login Siswa');
+  XLSX.writeFile(wb,'akses-login-siswa-pakkom-ecotrack.xlsx');
+}
+$('#studentAccessImport')?.addEventListener('change',async e=>{
+  const f=e.target.files?.[0]; if(!f)return;
+  try{
+    const buf=await f.arrayBuffer(),wb=XLSX.read(buf),sheet=wb.Sheets['Akses Login Siswa']||wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
+    const master=new Map(state.students.map(st=>[String(st.nis||st.id||'').trim(),st]));
+    let skipped=0;
+    const normalized=[];
+    for(const r of rows){
+      const nis=String(r.NIS||r.nis||'').trim();
+      const password=String(r.Password||r.password||nis).trim();
+      const active=['ya','y','yes','1','true','aktif'].includes(String(r.Aktif||r.aktif||'YA').trim().toLowerCase());
+      const st=master.get(nis);
+      if(!nis||!password||!st){skipped++;continue;}
+      normalized.push({nis,studentId:st.id,name:st.name||'',classId:st.classId||'',active,passwordHash:await sha256Text(password)});
+    }
+    if(!normalized.length)throw new Error('Tidak ada baris akses yang cocok dengan master siswa.');
+    openImportPreview('Preview Akses Login Siswa',normalized.map(x=>[x.nis,x.name,x.classId,x.active?'Aktif':'Nonaktif']),['NIS','Nama','Kelas','Akses'],skipped,async()=>{
+      const now=new Date().toISOString();
+      for(let i=0;i<normalized.length;i+=350){
+        const batch=writeBatch(db);
+        normalized.slice(i,i+350).forEach(x=>{
+          batch.set(doc(db,'studentAccess',x.nis),{nis:x.nis,studentId:x.studentId,name:x.name,classId:x.classId,passwordHash:x.passwordHash,active:x.active,updatedAt:now,updatedByUid:state.user.uid},{merge:true});
+          batch.set(doc(db,'students',x.studentId),{loginEnabled:x.active,loginUpdatedAt:now},{merge:true});
+        });
+        await batch.commit();
+      }
+      closeEditModal(); e.target.value=''; toast(`Akses login tersimpan: ${normalized.length} siswa`,7000); await master();
+    });
+  }catch(err){console.error(err);toast(err.message||'Upload akses login gagal.');e.target.value='';}
+});
+
 $('#studentImport').addEventListener('change',async e=>{
   const f=e.target.files?.[0]; if(!f)return;
   try{
@@ -2781,67 +2812,123 @@ window.startPakKomApp = async function(core){
 
 
 
-// ===== TUGAS SISWA v1 =====
+// ===== TUGAS SISWA v6 : INDIVIDU + KELOMPOK + DRAF + LINK =====
 function taskStatusLabel(sub){
-  if(!sub)return ['Belum dikumpulkan','warn'];
+  if(!sub)return ['Belum dikerjakan','warn'];
+  if(sub.status==='draft')return ['Draf','neutral'];
   if(sub.status==='revision')return ['Perlu perbaikan','warn'];
   if(sub.status==='graded')return ['Sudah dinilai','ok'];
-  return ['Menunggu penilaian','neutral'];
+  if(sub.status==='submitted')return ['Dikumpulkan','neutral'];
+  return ['Belum dikerjakan','warn'];
+}
+function taskTypeLabel(t){return t.taskType==='group'?'Kelompok':'Individu'}
+function taskIsLate(t){return !!(t.dueDate && todayId()>t.dueDate)}
+function myNis(){return String(state.profile?.loginId||state.profile?.nis||'').trim()}
+function groupForStudent(t){
+  if(t.taskType!=='group')return null;
+  const nis=myNis(), cls=state.profile?.classId;
+  const groups=t.groupAssignments?.[cls]||[];
+  return groups.find(g=>(g.members||[]).some(m=>String(m.nis)===nis))||null;
+}
+function makeAutoGroups(classId,count){
+  const rows=state.students.filter(s=>s.active!==false&&s.classId===classId).slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'id'));
+  const groups=Array.from({length:Math.max(1,count)},(_,i)=>({groupNo:i+1,members:[]}));
+  rows.forEach((st,i)=>groups[i%groups.length].members.push({studentId:st.id,nis:String(st.nis||st.id||''),name:st.name||''}));
+  return groups.filter(g=>g.members.length);
 }
 async function fetchAssignmentsForClass(classId){
   const snap=await getDocs(collection(db,'assignments'));
-  return snap.docs.map(d=>({id:d.id,...d.data()})).filter(a=>a.archived!==true&&a.published===true&&(!Array.isArray(a.targetClasses)||!a.targetClasses.length||a.targetClasses.includes(classId))).sort((a,b)=>String(a.dueDate||'').localeCompare(String(b.dueDate||'')));
+  return snap.docs.map(d=>({id:d.id,...d.data()})).filter(a=>a.archived!==true&&a.published===true&&(!Array.isArray(a.targetClasses)||!a.targetClasses.length||a.targetClasses.includes(classId))).sort((a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999')));
 }
 async function fetchMySubmissions(){
-  const snap=await getDocs(query(collection(db,'taskSubmissions'),where('studentUid','==',state.user.uid)));
-  return snap.docs.map(d=>({id:d.id,...d.data()}));
+  const nis=myNis(), cls=state.profile.classId;
+  const snap=await getDocs(query(collection(db,'taskSubmissions'),where('classId','==',cls)));
+  return snap.docs.map(d=>({id:d.id,...d.data()})).filter(s=>s.nis===nis||(Array.isArray(s.memberNis)&&s.memberNis.includes(nis)));
 }
 async function studentHome(){
   pageMeta('Tugas Saya',`${state.profile.name||'Siswa'} • ${state.profile.classId||'-'}`);
   content.innerHTML='<div class="card"><div class="empty">Memuat tugas...</div></div>';
   const [tasks,subs]=await Promise.all([fetchAssignmentsForClass(state.profile.classId),fetchMySubmissions()]);
-  const sm=new Map(subs.map(x=>[x.taskId,x])); const active=tasks.filter(t=>!t.dueDate||t.dueDate>=todayId());
-  const pending=active.filter(t=>!sm.has(t.id)).length, waiting=subs.filter(s=>s.status==='submitted'||s.status==='revision').length, done=subs.filter(s=>s.status==='graded').length;
+  const sm=new Map(subs.map(x=>[x.taskId,x]));
+  const active=tasks.filter(t=>!t.openDate||t.openDate<=todayId());
+  const pending=active.filter(t=>!sm.has(t.id)).length, drafts=subs.filter(s=>s.status==='draft'||s.status==='revision').length, done=subs.filter(s=>s.status==='graded').length;
   content.innerHTML=`<div class="student-hero"><div><small>Halo,</small><h2>${esc(state.profile.name||'Siswa')} 👋</h2><p>Kelas ${esc(state.profile.classId||'-')}</p></div><div class="student-lock">🔒 Akun siswa</div></div>
-  <div class="grid stats student-task-stats"><div class="stat"><span>Belum</span><strong>${pending}</strong></div><div class="stat"><span>Menunggu</span><strong>${waiting}</strong></div><div class="stat"><span>Selesai</span><strong>${done}</strong></div></div>
-  <div class="section-head"><div><h3>Perlu Kamu Kerjakan</h3><small>Tugas yang belum dikumpulkan ditampilkan lebih dahulu.</small></div></div>
+  <div class="grid stats student-task-stats"><div class="stat"><span>Belum</span><strong>${pending}</strong></div><div class="stat"><span>Draf/Revisi</span><strong>${drafts}</strong></div><div class="stat"><span>Selesai</span><strong>${done}</strong></div></div>
+  <div class="section-head"><div><h3>Tugas Aktif</h3><small>Tugas individu dan kelompokmu.</small></div></div>
   <div class="task-card-list">${active.sort((a,b)=>(sm.has(a.id)?1:0)-(sm.has(b.id)?1:0)).map(t=>studentTaskCard(t,sm.get(t.id))).join('')||'<div class="card empty">Belum ada tugas aktif.</div>'}</div>`;
   document.querySelectorAll('[data-student-task]').forEach(b=>b.onclick=()=>studentTaskDetail(b.dataset.studentTask));
 }
-function studentTaskCard(t,sub){const [label,cls]=taskStatusLabel(sub);return `<button class="task-student-card" data-student-task="${esc(t.id)}"><div><b>${esc(t.title||'Tugas')}</b><small>${t.dueDate?'Batas: '+esc(t.dueDate):'Tanpa batas waktu'}</small><span class="badge ${cls}">${label}</span></div><strong>›</strong></button>`}
+function studentTaskCard(t,sub){
+  const [label,cls]=taskStatusLabel(sub), g=groupForStudent(t);
+  const late=taskIsLate(t)&&!sub;
+  return `<button class="task-student-card" data-student-task="${esc(t.id)}"><div><div class="task-mini-tags"><span class="badge neutral">${taskTypeLabel(t)}</span>${g?`<span class="badge neutral">Kelompok ${g.groupNo}</span>`:''}${late?'<span class="badge warn">Terlambat</span>':''}</div><b>${esc(t.title||'Tugas')}</b><small>${t.dueDate?'Batas: '+esc(t.dueDate):'Tanpa batas waktu'}</small><span class="badge ${cls}">${label}</span></div><strong>›</strong></button>`
+}
 async function studentTasks(){return studentHome()}
-function studentAccount(){pageMeta('Saya','Akun siswa');content.innerHTML=`<div class="card account-card"><div class="account-name">${esc(state.profile.name||'-')}</div><div class="account-details"><div class="account-row"><span>NIS</span><b>${esc(state.profile.loginId||state.profile.nis||'-')}</b></div><div class="account-row"><span>Kelas</span><b>${esc(state.profile.classId||'-')}</b></div><div class="account-row"><span>Password</span><b>Sama dengan NIS • tidak dapat diubah</b></div></div><div class="notice">Akun ini hanya dapat mengakses tugas milikmu.</div><button id="studentLogout" class="btn danger">Keluar</button></div>`;$('#studentLogout').onclick=()=>$('#logoutModal')?.classList.remove('hidden')}
+function studentAccount(){pageMeta('Saya','Akun siswa');content.innerHTML=`<div class="card account-card"><div class="account-name">${esc(state.profile.name||'-')}</div><div class="account-details"><div class="account-row"><span>NIS</span><b>${esc(myNis()||'-')}</b></div><div class="account-row"><span>Kelas</span><b>${esc(state.profile.classId||'-')}</b></div><div class="account-row"><span>Password</span><b>Sama dengan NIS • tidak dapat diubah</b></div></div><div class="notice">Akun ini hanya dapat mengakses tugas milikmu.</div><button id="studentLogout" class="btn danger">Keluar</button></div>`;$('#studentLogout').onclick=()=>$('#logoutModal')?.classList.remove('hidden')}
 async function studentTaskDetail(id){
   const d=await getDoc(doc(db,'assignments',id)); if(!d.exists())return toast('Tugas tidak ditemukan'); const t={id:d.id,...d.data()};
-  const ss=await getDocs(query(collection(db,'taskSubmissions'),where('studentUid','==',state.user.uid))); const sub=ss.docs.map(x=>({id:x.id,...x.data()})).find(x=>x.taskId===id);
-  pageMeta(t.title||'Tugas','Pengumpulan Tugas'); const comps=Array.isArray(t.components)?t.components:[];
-  content.innerHTML=`<button id="backStudentTasks" class="btn ghost">← Tugas Saya</button><div class="card task-detail"><div class="task-deadline">📅 ${t.dueDate?'Batas '+esc(t.dueDate):'Tanpa batas waktu'}</div><h2>${esc(t.title||'Tugas')}</h2><p>${esc(t.description||'')}</p><h3>Yang harus dikumpulkan</h3><form id="studentSubmissionForm">${comps.map((c,i)=>submissionComponentHtml(c,i,sub)).join('')} ${t.requireReflection?`<label class="field-label">${esc(t.reflectionLabel||'Refleksi Akhir')} *</label><textarea class="input-inline task-textarea" name="reflection" maxlength="${Number(t.reflectionMax||500)}" required>${esc(sub?.reflection||'')}</textarea>`:''}<div class="notice">Setiap foto/video wajib disertai deskripsi. File media akan dikirim ke Google Drive setelah integrasi Drive dikonfigurasi Admin.</div><button class="btn primary" type="submit">${sub?'Perbarui Pengumpulan':'Kirim Tugas'}</button></form>${sub?.status==='graded'?`<div class="grade-result"><b>Nilai ${esc(sub.score??'-')}</b><p>${esc(sub.feedback||'')}</p></div>`:''}</div>`;
-  $('#backStudentTasks').onclick=()=>{state.page='studenthome';renderShell()}; $('#studentSubmissionForm').onsubmit=e=>saveStudentSubmission(e,t,sub);
+  const subs=await fetchMySubmissions(), sub=subs.find(x=>x.taskId===id), group=groupForStudent(t);
+  if(t.taskType==='group'&&!group)return toast('Kamu belum masuk kelompok pada tugas ini. Hubungi Admin.');
+  const locked=sub?.status==='graded'; const comps=Array.isArray(t.components)?t.components:[];
+  pageMeta(t.title||'Tugas','Pengumpulan Tugas');
+  content.innerHTML=`<button id="backStudentTasks" class="btn ghost">← Tugas Saya</button><div class="card task-detail"><div class="task-mini-tags"><span class="badge neutral">${taskTypeLabel(t)}</span>${group?`<span class="badge neutral">Kelompok ${group.groupNo}</span>`:''}</div><div class="task-deadline">📅 ${t.dueDate?'Batas '+esc(t.dueDate):'Tanpa batas waktu'}</div><h2>${esc(t.title||'Tugas')}</h2><p>${esc(t.description||'')}</p>${group?`<div class="group-member-box"><b>Anggota Kelompok ${group.groupNo}</b><p>${group.members.map(m=>esc(m.name)).join(' • ')}</p><small>Cukup satu anggota yang mengumpulkan. Semua anggota akan otomatis tercatat.</small></div>`:''}<h3>Yang harus dikumpulkan</h3><form id="studentSubmissionForm">${comps.map((c,i)=>submissionComponentHtml(c,i,sub,locked)).join('')} ${t.requireReflection?`<label class="field-label">${esc(t.reflectionLabel||'Refleksi Akhir')} ${t.reflectionRequired===false?'':'*'}</label><textarea class="input-inline task-textarea" name="reflection" maxlength="${Number(t.reflectionMax||500)}" ${t.reflectionRequired===false?'':'required'} ${locked?'disabled':''}>${esc(sub?.reflection||'')}</textarea>`:''}${locked?'':`<div class="task-submit-actions"><button id="saveDraftTask" class="btn secondary" type="button">Simpan Draf</button><button class="btn primary" type="submit">${sub?.status==='submitted'?'Perbarui Pengumpulan':'Kumpulkan Tugas'}</button></div>`}</form>${sub?.submittedByName&&t.taskType==='group'?`<div class="notice">Terakhir dikumpulkan oleh <b>${esc(sub.submittedByName)}</b>.</div>`:''}${sub?.status==='revision'?`<div class="notice warn"><b>Perlu perbaikan.</b><br>${esc(sub.feedback||'Silakan perbaiki lalu kumpulkan kembali.')}</div>`:''}${sub?.status==='graded'?`<div class="grade-result"><b>${sub.score==null?'Selesai':'Nilai '+esc(sub.score)}</b><p>${esc(sub.feedback||'')}</p></div>`:''}</div>`;
+  $('#backStudentTasks').onclick=()=>{state.page='studenthome';renderShell()};
+  if(!locked){$('#studentSubmissionForm').onsubmit=e=>saveStudentSubmission(e,t,sub,'submitted');$('#saveDraftTask').onclick=()=>saveStudentSubmission({preventDefault(){},target:$('#studentSubmissionForm')},t,sub,'draft')}
 }
-function submissionComponentHtml(c,i,sub){const old=sub?.answers?.[i]||{}; const req=c.required!==false?'required':''; if(['photo','video','document'].includes(c.type))return `<div class="submission-component"><label><b>${esc(c.label||c.type)}</b> ${req?'*':''}</label><input type="file" name="file_${i}" accept="${c.type==='photo'?'image/*':c.type==='video'?'video/*':'.pdf,.doc,.docx'}" ${!old.fileName&&req?'required':''}><label class="field-label">${esc(c.descriptionLabel||'Deskripsi bukti')} *</label><textarea name="desc_${i}" maxlength="${Number(c.descriptionMax||500)}" required>${esc(old.description||'')}</textarea>${old.fileName?`<small>File sebelumnya: ${esc(old.fileName)}</small>`:''}</div>`; return `<div class="submission-component"><label><b>${esc(c.label||'Jawaban')}</b> ${req?'*':''}</label><textarea name="text_${i}" maxlength="${Number(c.maxLength||500)}" ${req}>${esc(old.text||'')}</textarea></div>`}
-async function saveStudentSubmission(e,t,existing){
-  e.preventDefault(); const fd=new FormData(e.target), answers=[]; const comps=t.components||[];
-  for(let i=0;i<comps.length;i++){const c=comps[i],old=existing?.answers?.[i]||{}; if(['photo','video','document'].includes(c.type)){const f=fd.get(`file_${i}`); if(f&&f.size>0){toast('Upload Google Drive belum dikonfigurasi. Admin perlu memasukkan URL Apps Script.');return} answers.push({...old,description:String(fd.get(`desc_${i}`)||'').trim()})}else answers.push({text:String(fd.get(`text_${i}`)||'').trim()})}
-  const now=new Date().toISOString(),ref=existing?doc(db,'taskSubmissions',existing.id):collection(db,'taskSubmissions').doc(); await setDoc(ref,{taskId:t.id,studentUid:state.user.uid,studentId:state.profile.studentId||'',nis:state.profile.loginId||'',studentName:state.profile.name||'',classId:state.profile.classId||'',answers,reflection:String(fd.get('reflection')||''),status:'submitted',submittedAt:existing?.submittedAt||now,updatedAt:now},{merge:true}); toast('Tugas berhasil dikumpulkan'); state.page='studenthome';renderShell();
+function submissionComponentHtml(c,i,sub,locked=false){
+  const old=sub?.answers?.[i]||{}, req=c.required!==false?'required':'';
+  if(c.type==='link')return `<div class="submission-component"><label><b>${esc(c.label||'Link')}</b> ${req?'*':''}</label><input class="input-inline" type="url" name="link_${i}" placeholder="https://..." value="${esc(old.url||'')}" ${req} ${locked?'disabled':''}><label class="field-label">${esc(c.descriptionLabel||'Keterangan link')}</label><textarea name="desc_${i}" maxlength="${Number(c.descriptionMax||500)}" ${locked?'disabled':''}>${esc(old.description||'')}</textarea>${c.linkHint?`<small>${esc(c.linkHint)}</small>`:''}</div>`;
+  if(['photo','video','document'].includes(c.type))return `<div class="submission-component"><label><b>${esc(c.label||c.type)}</b> ${req?'*':''}</label><input type="file" name="file_${i}" accept="${c.type==='photo'?'image/*':c.type==='video'?'video/*':'.pdf,.doc,.docx'}" ${!old.fileName&&req?'required':''} ${locked?'disabled':''}><label class="field-label">${esc(c.descriptionLabel||'Deskripsi bukti')} *</label><textarea name="desc_${i}" maxlength="${Number(c.descriptionMax||500)}" required ${locked?'disabled':''}>${esc(old.description||'')}</textarea>${old.fileName?`<small>File sebelumnya: ${esc(old.fileName)}</small>`:''}</div>`;
+  return `<div class="submission-component"><label><b>${esc(c.label||'Jawaban')}</b> ${req?'*':''}</label><textarea name="text_${i}" maxlength="${Number(c.maxLength||500)}" ${req} ${locked?'disabled':''}>${esc(old.text||'')}</textarea></div>`
+}
+async function saveStudentSubmission(e,t,existing,status){
+  e.preventDefault(); const form=e.target, fd=new FormData(form), answers=[], comps=t.components||[];
+  if(status==='submitted' && taskIsLate(t) && t.allowLate===false){toast('Batas pengumpulan sudah berakhir. Hubungi guru jika perlu dibuka kembali.');return}
+  if(status==='submitted'&&!form.reportValidity())return;
+  for(let i=0;i<comps.length;i++){
+    const c=comps[i],old=existing?.answers?.[i]||{};
+    if(c.type==='link')answers.push({url:String(fd.get(`link_${i}`)||'').trim(),description:String(fd.get(`desc_${i}`)||'').trim()});
+    else if(['photo','video','document'].includes(c.type)){const f=fd.get(`file_${i}`);if(f&&f.size>0){toast('Upload file belum diaktifkan. Untuk video gunakan komponen Link Video/Media Sosial.');return}answers.push({...old,description:String(fd.get(`desc_${i}`)||'').trim()})}
+    else answers.push({text:String(fd.get(`text_${i}`)||'').trim()});
+  }
+  const now=new Date().toISOString(), group=groupForStudent(t), ref=existing?doc(db,'taskSubmissions',existing.id):collection(db,'taskSubmissions').doc();
+  const memberNis=group?group.members.map(m=>String(m.nis)):[];
+  await setDoc(ref,{taskId:t.id,taskType:t.taskType||'individual',studentUid:state.user.uid,studentId:state.profile.studentId||'',nis:myNis(),studentName:state.profile.name||'',classId:state.profile.classId||'',groupNo:group?.groupNo||null,groupKey:group?`${state.profile.classId}-G${group.groupNo}`:'',memberNis,memberNames:group?group.members.map(m=>m.name):[],answers,reflection:String(fd.get('reflection')||''),status,submittedAt:status==='submitted'?now:(existing?.submittedAt||null),submittedByNis:status==='submitted'?myNis():(existing?.submittedByNis||''),submittedByName:status==='submitted'?(state.profile.name||''):(existing?.submittedByName||''),updatedAt:now,updatedByNis:myNis()},{merge:true});
+  toast(status==='draft'?'Draf berhasil disimpan':'Tugas berhasil dikumpulkan'); state.page='studenthome';renderShell();
 }
 async function taskManagementPage(){
   if(state.profile.role==='siswa')return;
-  if(state.profile.role!=='admin' && state.profile.isHomeroom!==true){ toast('Menu Tugas Siswa hanya untuk Admin dan Wali Kelas.'); state.page='home'; return renderShell(); } pageMeta('Tugas Siswa',state.profile.role==='admin'?'Kelola tugas dan pengumpulan':'Periksa dan nilai tugas kelas'); content.innerHTML='<div class="card"><div class="empty">Memuat...</div></div>';
-  const [as,ss]=await Promise.all([getDocs(collection(db,'assignments')),getDocs(collection(db,'taskSubmissions'))]); const tasks=as.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.archived!==true); const subs=ss.docs.map(d=>({id:d.id,...d.data()}));
-  const allowed=state.profile.role==='admin'||!state.profile.isHomeroom?tasks:tasks.filter(t=>!Array.isArray(t.targetClasses)||t.targetClasses.includes(state.profile.homeroomClass));
-  content.innerHTML=`${state.profile.role==='admin'?'<div class="section-head"><div><h3>Kelola Tugas</h3><small>Task Builder fleksibel.</small></div><button id="newAssignment" class="btn primary">+ Buat Tugas</button></div>':''}<div class="task-admin-list">${allowed.map(t=>{const x=subs.filter(s=>s.taskId===t.id&&(state.profile.role==='admin'||s.classId===state.profile.homeroomClass));return `<div class="card task-admin-card"><div><h3>${esc(t.title||'Tugas')}</h3><small>${esc((t.targetClasses||[]).join(', ')||'Semua kelas')} • Batas ${esc(t.dueDate||'-')}</small></div><div class="task-admin-metrics"><span><b>${x.length}</b> dikumpulkan</span><span><b>${x.filter(s=>s.status!=='graded').length}</b> menunggu</span><span><b>${x.filter(s=>s.status==='graded').length}</b> dinilai</span></div><div class="row-actions"><button class="btn secondary" data-review-task="${t.id}">Pengumpulan</button>${state.profile.role==='admin'?`<button class="btn ghost" data-edit-task="${t.id}">Edit</button>`:''}</div></div>`}).join('')||'<div class="card empty">Belum ada tugas.</div>'}</div>`;
-  $('#newAssignment')&&($('#newAssignment').onclick=()=>assignmentBuilder()); document.querySelectorAll('[data-edit-task]').forEach(b=>b.onclick=()=>assignmentBuilder(b.dataset.editTask));document.querySelectorAll('[data-review-task]').forEach(b=>b.onclick=()=>reviewTask(b.dataset.reviewTask));
+  if(state.profile.role!=='admin' && state.profile.isHomeroom!==true){toast('Menu Tugas Siswa hanya untuk Admin dan Wali Kelas.');state.page='home';return renderShell()}
+  pageMeta('Tugas Siswa',state.profile.role==='admin'?'Kelola tugas dan pengumpulan':'Periksa dan nilai tugas kelas');content.innerHTML='<div class="card"><div class="empty">Memuat...</div></div>';
+  const [as,ss]=await Promise.all([getDocs(collection(db,'assignments')),getDocs(collection(db,'taskSubmissions'))]);const tasks=as.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.archived!==true),subs=ss.docs.map(d=>({id:d.id,...d.data()}));
+  const allowed=state.profile.role==='admin'?tasks:tasks.filter(t=>!Array.isArray(t.targetClasses)||t.targetClasses.includes(state.profile.homeroomClass));
+  content.innerHTML=`${state.profile.role==='admin'?'<div class="section-head"><div><h3>Kelola Tugas</h3><small>Individu atau kelompok, dengan komponen fleksibel.</small></div><button id="newAssignment" class="btn primary">+ Buat Tugas</button></div>':''}<div class="task-admin-list">${allowed.map(t=>{const x=subs.filter(s=>s.taskId===t.id&&(state.profile.role==='admin'||s.classId===state.profile.homeroomClass));return `<div class="card task-admin-card"><div><div class="task-mini-tags"><span class="badge neutral">${taskTypeLabel(t)}</span>${t.taskType==='group'?`<span class="badge neutral">${t.groupCount||6} kelompok/kelas</span>`:''}</div><h3>${esc(t.title||'Tugas')}</h3><small>${esc((t.targetClasses||[]).join(', ')||'Semua kelas')} • Batas ${esc(t.dueDate||'-')}</small></div><div class="task-admin-metrics"><span><b>${x.filter(s=>s.status==='submitted'||s.status==='graded').length}</b> dikumpulkan</span><span><b>${x.filter(s=>s.status==='draft'||s.status==='revision').length}</b> draf/revisi</span><span><b>${x.filter(s=>s.status==='graded').length}</b> dinilai</span></div><div class="row-actions"><button class="btn secondary" data-review-task="${t.id}">Pengumpulan</button>${state.profile.role==='admin'?`<button class="btn ghost" data-edit-task="${t.id}">Edit</button>`:''}</div></div>`}).join('')||'<div class="card empty">Belum ada tugas.</div>'}</div>`;
+  $('#newAssignment')&&($('#newAssignment').onclick=()=>assignmentBuilder());document.querySelectorAll('[data-edit-task]').forEach(b=>b.onclick=()=>assignmentBuilder(b.dataset.editTask));document.querySelectorAll('[data-review-task]').forEach(b=>b.onclick=()=>reviewTask(b.dataset.reviewTask));
 }
 async function assignmentBuilder(id=''){
-  if(state.profile.role!=='admin')return; let t={title:'',description:'',targetClasses:[],components:[{type:'photo',label:'Bukti Foto',required:true,descriptionLabel:'Deskripsi bukti',descriptionMax:500}],published:true,requireReflection:false}; if(id){const d=await getDoc(doc(db,'assignments',id));if(d.exists())t={id:d.id,...d.data()}}
-  pageMeta(id?'Edit Tugas':'Buat Tugas','Task Builder'); content.innerHTML=`<div class="card task-builder"><label>Judul Tugas *</label><input id="taskTitle" class="input-inline" value="${esc(t.title)}"><label>Deskripsi / Petunjuk</label><textarea id="taskDescription">${esc(t.description||'')}</textarea><div class="form-grid"><div><label>Tanggal mulai</label><input id="taskOpen" type="date" class="input-inline" value="${esc(t.openDate||todayId())}"></div><div><label>Batas pengumpulan</label><input id="taskDue" type="date" class="input-inline" value="${esc(t.dueDate||'')}"></div></div><label>Kelas Sasaran</label><div class="class-checks">${state.classes.map(c=>`<label><input type="checkbox" data-task-class="${c}" ${t.targetClasses?.includes(c)?'checked':''}> ${c}</label>`).join('')}</div><div class="section-head"><div><h3>Komponen Pengumpulan</h3><small>Tambah/hapus sesuai kebutuhan.</small></div><button id="addTaskComponent" class="btn secondary">+ Komponen</button></div><div id="taskComponents"></div><label class="check-line"><input id="taskReflection" type="checkbox" ${t.requireReflection?'checked':''}> Tambahkan Refleksi Akhir</label><label class="check-line"><input id="taskPublished" type="checkbox" ${t.published!==false?'checked':''}> Terbitkan tugas</label><div class="row-actions"><button id="saveAssignment" class="btn primary">Simpan Tugas</button><button id="cancelAssignment" class="btn ghost">Batal</button></div></div>`;
-  window.taskBuilderComponents=JSON.parse(JSON.stringify(t.components||[])); renderTaskComponents(); $('#addTaskComponent').onclick=addTaskComponent; $('#saveAssignment').onclick=()=>saveAssignment(t); $('#cancelAssignment').onclick=taskManagementPage;
+  if(state.profile.role!=='admin')return;let t={title:'',description:'',taskType:'individual',groupCount:6,targetClasses:[],components:[{type:'link',label:'Link Video / Media Sosial',required:true,descriptionLabel:'Deskripsi kegiatan',descriptionMax:500,linkHint:'Google Drive, YouTube, Instagram, TikTok, atau link lain yang dapat dibuka guru.'}],published:true,requireReflection:false,allowLate:true};if(id){const d=await getDoc(doc(db,'assignments',id));if(d.exists())t={id:d.id,...d.data()}}
+  pageMeta(id?'Edit Tugas':'Buat Tugas','Task Builder');content.innerHTML=`<div class="card task-builder"><label>Judul Tugas *</label><input id="taskTitle" class="input-inline" value="${esc(t.title)}"><label>Deskripsi / Petunjuk</label><textarea id="taskDescription">${esc(t.description||'')}</textarea><div class="form-grid"><div><label>Jenis Tugas</label><select id="taskType" class="input-inline"><option value="individual" ${t.taskType!=='group'?'selected':''}>Individu</option><option value="group" ${t.taskType==='group'?'selected':''}>Kelompok</option></select></div><div id="groupCountWrap" ${t.taskType==='group'?'':'class="hidden"'}><label>Jumlah kelompok per kelas</label><input id="taskGroupCount" type="number" min="2" max="12" class="input-inline" value="${Number(t.groupCount||6)}"><small>Anggota dibagi otomatis merata berdasarkan daftar siswa.</small></div></div><div class="form-grid"><div><label>Tanggal mulai</label><input id="taskOpen" type="date" class="input-inline" value="${esc(t.openDate||todayId())}"></div><div><label>Batas pengumpulan</label><input id="taskDue" type="date" class="input-inline" value="${esc(t.dueDate||'')}"></div></div><label>Kelas Sasaran</label><div class="class-checks">${state.classes.map(c=>`<label><input type="checkbox" data-task-class="${c}" ${t.targetClasses?.includes(c)?'checked':''}> ${c}</label>`).join('')}</div><div id="groupInfo" class="notice ${t.taskType==='group'?'':'hidden'}">Saat disimpan, setiap kelas akan dibagi otomatis menjadi <b>${Number(t.groupCount||6)} kelompok</b>. Satu anggota cukup mengumpulkan untuk seluruh kelompok.</div><div class="section-head"><div><h3>Komponen Pengumpulan</h3><small>Untuk video, gunakan Link agar tidak menghabiskan Drive EcoTrack.</small></div><button id="addTaskComponent" class="btn secondary">+ Komponen</button></div><div id="taskComponents"></div><label class="check-line"><input id="taskReflection" type="checkbox" ${t.requireReflection?'checked':''}> Tambahkan Refleksi Akhir</label><label class="check-line"><input id="taskAllowLate" type="checkbox" ${t.allowLate!==false?'checked':''}> Izinkan pengumpulan setelah deadline</label><label class="check-line"><input id="taskPublished" type="checkbox" ${t.published!==false?'checked':''}> Terbitkan tugas</label><div class="row-actions"><button id="saveAssignment" class="btn primary">Simpan Tugas</button><button id="cancelAssignment" class="btn ghost">Batal</button></div></div>`;
+  window.taskBuilderComponents=JSON.parse(JSON.stringify(t.components||[]));renderTaskComponents();$('#addTaskComponent').onclick=addTaskComponent;$('#saveAssignment').onclick=()=>saveAssignment(t);$('#cancelAssignment').onclick=taskManagementPage;$('#taskType').onchange=()=>{$('#groupCountWrap').classList.toggle('hidden',$('#taskType').value!=='group');$('#groupInfo').classList.toggle('hidden',$('#taskType').value!=='group')};$('#taskGroupCount').oninput=()=>{const b=$('#groupInfo b');if(b)b.textContent=$('#taskGroupCount').value+' kelompok'};
 }
-function renderTaskComponents(){const box=$('#taskComponents');if(!box)return;box.innerHTML=window.taskBuilderComponents.map((c,i)=>`<div class="builder-component"><div class="form-grid"><select data-comp-type="${i}" class="input-inline"><option value="photo" ${c.type==='photo'?'selected':''}>Foto</option><option value="video" ${c.type==='video'?'selected':''}>Video</option><option value="document" ${c.type==='document'?'selected':''}>Dokumen</option><option value="text" ${c.type==='text'?'selected':''}>Jawaban Teks</option><option value="link" ${c.type==='link'?'selected':''}>Link</option></select><input data-comp-label="${i}" class="input-inline" value="${esc(c.label||'')}" placeholder="Judul komponen"></div><div class="form-grid"><input data-comp-desc="${i}" class="input-inline" value="${esc(c.descriptionLabel||'Deskripsi bukti')}" placeholder="Label deskripsi"><label class="check-line"><input data-comp-required="${i}" type="checkbox" ${c.required!==false?'checked':''}> Wajib</label></div><button class="btn-mini danger" data-remove-comp="${i}">Hapus</button></div>`).join(''); document.querySelectorAll('[data-remove-comp]').forEach(b=>b.onclick=()=>{window.taskBuilderComponents.splice(Number(b.dataset.removeComp),1);renderTaskComponents()})}
-function addTaskComponent(){window.taskBuilderComponents.push({type:'photo',label:'Bukti',required:true,descriptionLabel:'Deskripsi bukti',descriptionMax:500});renderTaskComponents()}
-async function saveAssignment(old){document.querySelectorAll('[data-comp-type]').forEach(el=>{const i=Number(el.dataset.compType),c=window.taskBuilderComponents[i];c.type=el.value;c.label=document.querySelector(`[data-comp-label="${i}"]`).value.trim();c.descriptionLabel=document.querySelector(`[data-comp-desc="${i}"]`).value.trim();c.required=document.querySelector(`[data-comp-required="${i}"]`).checked});const title=$('#taskTitle').value.trim();if(!title)return toast('Judul tugas wajib diisi');const ref=old.id?doc(db,'assignments',old.id):collection(db,'assignments').doc();await setDoc(ref,{title,description:$('#taskDescription').value.trim(),openDate:$('#taskOpen').value,dueDate:$('#taskDue').value,targetClasses:[...document.querySelectorAll('[data-task-class]:checked')].map(x=>x.dataset.taskClass),components:window.taskBuilderComponents,requireReflection:$('#taskReflection').checked,published:$('#taskPublished').checked,archived:false,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,createdAt:old.createdAt||new Date().toISOString()},{merge:true});toast('Tugas berhasil disimpan');taskManagementPage()}
-async function reviewTask(taskId){const td=await getDoc(doc(db,'assignments',taskId));if(!td.exists())return;const t={id:td.id,...td.data()};const ss=await getDocs(query(collection(db,'taskSubmissions'),where('taskId','==',taskId)));let subs=ss.docs.map(d=>({id:d.id,...d.data()}));if(state.profile.role!=='admin'&&state.profile.isHomeroom)subs=subs.filter(s=>s.classId===state.profile.homeroomClass);pageMeta(t.title,'Pengumpulan siswa');content.innerHTML=`<button id="backTaskManage" class="btn ghost">← Tugas Siswa</button><div class="card"><div class="table-wrap"><table><thead><tr><th>Siswa</th><th>Kelas</th><th>Status</th><th>Nilai</th><th></th></tr></thead><tbody>${subs.map(s=>`<tr><td><b>${esc(s.studentName||s.nis)}</b></td><td>${esc(s.classId)}</td><td>${taskStatusLabel(s)[0]}</td><td>${esc(s.score??'-')}</td><td><button class="btn-mini edit" data-grade-sub="${s.id}">Periksa</button></td></tr>`).join('')||'<tr><td colspan="5">Belum ada pengumpulan.</td></tr>'}</tbody></table></div></div>`;$('#backTaskManage').onclick=taskManagementPage;document.querySelectorAll('[data-grade-sub]').forEach(b=>b.onclick=()=>gradeSubmission(b.dataset.gradeSub,t))}
-async function gradeSubmission(id,t){const d=await getDoc(doc(db,'taskSubmissions',id));if(!d.exists())return;const s={id:d.id,...d.data()};pageMeta('Penilaian',`${s.studentName||s.nis} • ${s.classId}`);content.innerHTML=`<button id="backReview" class="btn ghost">← Pengumpulan</button><div class="review-layout"><div class="card"><h3>Bukti & Deskripsi</h3>${(s.answers||[]).map((a,i)=>`<div class="review-proof"><b>${esc(t.components?.[i]?.label||'Bukti '+(i+1))}</b>${a.fileName?`<small>${esc(a.fileName)}</small>`:''}<p>${esc(a.description||a.text||'-')}</p></div>`).join('')}${s.reflection?`<div class="review-proof"><b>Refleksi Akhir</b><p>${esc(s.reflection)}</p></div>`:''}</div><div class="card grade-panel"><label>Nilai (0–100)</label><input id="gradeScore" type="number" min="0" max="100" class="input-inline" value="${esc(s.score??'')}"><label>Catatan untuk siswa</label><textarea id="gradeFeedback">${esc(s.feedback||'')}</textarea><button id="saveGrade" class="btn primary">Simpan Penilaian</button></div></div>`;$('#backReview').onclick=()=>reviewTask(t.id);$('#saveGrade').onclick=async()=>{const score=Number($('#gradeScore').value);if(!Number.isFinite(score)||score<0||score>100)return toast('Nilai harus 0–100');await setDoc(doc(db,'taskSubmissions',id),{score,feedback:$('#gradeFeedback').value.trim(),status:'graded',gradedAt:new Date().toISOString(),gradedByUid:state.user.uid,gradedByName:state.profile.name||''},{merge:true});toast('Penilaian tersimpan');reviewTask(t.id)}}
+function renderTaskComponents(){
+  const box=$('#taskComponents');if(!box)return;box.innerHTML=window.taskBuilderComponents.map((c,i)=>`<div class="builder-component"><div class="form-grid"><select data-comp-type="${i}" class="input-inline"><option value="photo" ${c.type==='photo'?'selected':''}>Foto Upload</option><option value="video" ${c.type==='video'?'selected':''}>Video Upload</option><option value="document" ${c.type==='document'?'selected':''}>Dokumen</option><option value="text" ${c.type==='text'?'selected':''}>Jawaban Teks</option><option value="link" ${c.type==='link'?'selected':''}>Link Video / Media Sosial</option></select><input data-comp-label="${i}" class="input-inline" value="${esc(c.label||'')}" placeholder="Judul komponen"></div><div class="form-grid"><input data-comp-desc="${i}" class="input-inline" value="${esc(c.descriptionLabel||'Deskripsi bukti')}" placeholder="Label deskripsi"><label class="check-line"><input data-comp-required="${i}" type="checkbox" ${c.required!==false?'checked':''}> Wajib</label></div><button class="btn-mini danger" data-remove-comp="${i}">Hapus</button></div>`).join('');document.querySelectorAll('[data-remove-comp]').forEach(b=>b.onclick=()=>{window.taskBuilderComponents.splice(Number(b.dataset.removeComp),1);renderTaskComponents()})
+}
+function addTaskComponent(){window.taskBuilderComponents.push({type:'link',label:'Bukti / Link',required:true,descriptionLabel:'Deskripsi bukti',descriptionMax:500});renderTaskComponents()}
+async function saveAssignment(old){
+  document.querySelectorAll('[data-comp-type]').forEach(el=>{const i=Number(el.dataset.compType),c=window.taskBuilderComponents[i];c.type=el.value;c.label=document.querySelector(`[data-comp-label="${i}"]`).value.trim();c.descriptionLabel=document.querySelector(`[data-comp-desc="${i}"]`).value.trim();c.required=document.querySelector(`[data-comp-required="${i}"]`).checked;if(c.type==='link')c.linkHint='Pastikan link dapat dibuka guru tanpa meminta izin akses.'});
+  const title=$('#taskTitle').value.trim();if(!title)return toast('Judul tugas wajib diisi');const targetClasses=[...document.querySelectorAll('[data-task-class]:checked')].map(x=>x.dataset.taskClass);if(!targetClasses.length)return toast('Pilih minimal satu kelas sasaran');
+  const taskType=$('#taskType').value,groupCount=Math.max(2,Math.min(12,Number($('#taskGroupCount').value||6)));let groupAssignments=old.groupAssignments||{};
+  if(taskType==='group'){groupAssignments={};targetClasses.forEach(c=>groupAssignments[c]=makeAutoGroups(c,groupCount))}else groupAssignments={};
+  const ref=old.id?doc(db,'assignments',old.id):collection(db,'assignments').doc();await setDoc(ref,{title,description:$('#taskDescription').value.trim(),taskType,groupCount,groupAssignments,openDate:$('#taskOpen').value,dueDate:$('#taskDue').value,targetClasses,components:window.taskBuilderComponents,requireReflection:$('#taskReflection').checked,allowLate:$('#taskAllowLate').checked,published:$('#taskPublished').checked,archived:false,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,createdAt:old.createdAt||new Date().toISOString()},{merge:true});toast(taskType==='group'?`Tugas tersimpan. ${groupCount} kelompok dibuat otomatis per kelas.`:'Tugas individu berhasil disimpan');taskManagementPage()
+}
+async function reviewTask(taskId){
+  const td=await getDoc(doc(db,'assignments',taskId));if(!td.exists())return;const t={id:td.id,...td.data()};const ss=await getDocs(query(collection(db,'taskSubmissions'),where('taskId','==',taskId)));let subs=ss.docs.map(d=>({id:d.id,...d.data()}));if(state.profile.role!=='admin'&&state.profile.isHomeroom)subs=subs.filter(s=>s.classId===state.profile.homeroomClass);
+  pageMeta(t.title,'Pengumpulan siswa');content.innerHTML=`<button id="backTaskManage" class="btn ghost">← Tugas Siswa</button><div class="card"><div class="table-wrap"><table><thead><tr><th>${t.taskType==='group'?'Kelompok':'Siswa'}</th><th>Kelas</th><th>Status</th><th>Dikumpulkan oleh</th><th>Nilai</th><th></th></tr></thead><tbody>${subs.sort((a,b)=>String(a.classId).localeCompare(String(b.classId))||Number(a.groupNo||0)-Number(b.groupNo||0)).map(s=>`<tr><td><b>${t.taskType==='group'?`Kelompok ${esc(s.groupNo||'-')}`:esc(s.studentName||s.nis)}</b>${t.taskType==='group'?`<small class="table-subline">${(s.memberNames||[]).map(esc).join(', ')}</small>`:''}</td><td>${esc(s.classId)}</td><td>${taskStatusLabel(s)[0]}</td><td>${esc(s.submittedByName||'-')}</td><td>${esc(s.score??'-')}</td><td><button class="btn-mini edit" data-grade-sub="${s.id}">Periksa</button></td></tr>`).join('')||'<tr><td colspan="6">Belum ada pengumpulan.</td></tr>'}</tbody></table></div></div>`;$('#backTaskManage').onclick=taskManagementPage;document.querySelectorAll('[data-grade-sub]').forEach(b=>b.onclick=()=>gradeSubmission(b.dataset.gradeSub,t))
+}
+async function gradeSubmission(id,t){
+  const d=await getDoc(doc(db,'taskSubmissions',id));if(!d.exists())return;const s={id:d.id,...d.data()};pageMeta('Penilaian',`${t.taskType==='group'?'Kelompok '+s.groupNo:s.studentName||s.nis} • ${s.classId}`);content.innerHTML=`<button id="backReview" class="btn ghost">← Pengumpulan</button><div class="review-layout"><div class="card"><h3>Bukti & Deskripsi</h3>${t.taskType==='group'?`<div class="group-member-box"><b>Anggota</b><p>${(s.memberNames||[]).map(esc).join(' • ')}</p></div>`:''}${(s.answers||[]).map((a,i)=>`<div class="review-proof"><b>${esc(t.components?.[i]?.label||'Bukti '+(i+1))}</b>${a.url?`<p><a href="${esc(a.url)}" target="_blank" rel="noopener">Buka Link ↗</a></p>`:''}${a.fileName?`<small>${esc(a.fileName)}</small>`:''}<p>${esc(a.description||a.text||'-')}</p></div>`).join('')}${s.reflection?`<div class="review-proof"><b>Refleksi Akhir</b><p>${esc(s.reflection)}</p></div>`:''}</div><div class="card grade-panel"><label>Nilai (0–100)</label><input id="gradeScore" type="number" min="0" max="100" class="input-inline" value="${esc(s.score??'')}"><label>Catatan untuk siswa</label><textarea id="gradeFeedback">${esc(s.feedback||'')}</textarea><div class="task-grade-actions"><button id="requestRevision" class="btn secondary">Perlu Perbaikan</button><button id="saveGrade" class="btn primary">Simpan Penilaian</button></div></div></div>`;$('#backReview').onclick=()=>reviewTask(t.id);$('#requestRevision').onclick=async()=>{await setDoc(doc(db,'taskSubmissions',id),{feedback:$('#gradeFeedback').value.trim(),status:'revision',gradedAt:null,updatedAt:new Date().toISOString()},{merge:true});toast('Tugas dikembalikan untuk diperbaiki');reviewTask(t.id)};$('#saveGrade').onclick=async()=>{const raw=$('#gradeScore').value.trim(),score=raw===''?null:Number(raw);if(score!==null&&(!Number.isFinite(score)||score<0||score>100))return toast('Nilai harus 0–100');await setDoc(doc(db,'taskSubmissions',id),{score,feedback:$('#gradeFeedback').value.trim(),status:'graded',gradedAt:new Date().toISOString(),gradedByUid:state.user.uid,gradedByName:state.profile.name||''},{merge:true});toast('Penilaian tersimpan');reviewTask(t.id)}
+}
+
 function studentAccessStats(){
   const active=state.students.filter(s=>s.active!==false);
   const loginActive=active.filter(s=>!!s.authUid);
@@ -3087,7 +3174,11 @@ async function syncStudentLoginProfiles(){
       'auth/user-disabled':'Akun dinonaktifkan.',
       'auth/operation-not-allowed':'Login Email/Password belum diaktifkan di Firebase.',
       'auth/network-request-failed':'Koneksi ke Firebase gagal.',
-      'auth/too-many-requests':'Terlalu banyak percobaan login. Coba lagi beberapa saat.'
+      'auth/too-many-requests':'Terlalu banyak percobaan login. Coba lagi beberapa saat.',
+      'student/access-not-found':'NIS belum memiliki akses login.',
+      'student/access-disabled':'Akses login siswa belum aktif.',
+      'student/wrong-password':'NIS atau password salah.',
+      'student/master-not-found':'Data siswa tidak ditemukan.'
     };
     return map[code] || (err && err.message) || 'Login gagal.';
   }
@@ -3106,7 +3197,11 @@ async function syncStudentLoginProfiles(){
   }
 
   var auth=firebase.auth();
-  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(){});
+  if(window.PAKKOM_STUDENT_PORTAL===true){
+    auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(function(){});
+  }else{
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(){});
+  }
   var db=firebase.firestore();
   // Portal is determined by the page: root = staff, /siswa/ = student.
   var studentPortal=window.PAKKOM_STUDENT_PORTAL===true;
@@ -3179,7 +3274,15 @@ async function syncStudentLoginProfiles(){
     }
   },1800);
 
+  window.PAKKOM_STUDENT_LOGIN_IN_PROGRESS=false;
+
   auth.onAuthStateChanged(function(user){
+    if(window.PAKKOM_STUDENT_PORTAL===true && window.PAKKOM_STUDENT_LOGIN_IN_PROGRESS===true){
+      // Anonymous sign-in fires this observer before NIS/password verification
+      // and before the temporary student profile is created. Do not render
+      // the dashboard until the login promise explicitly finishes.
+      return;
+    }
     if(window.PAKKOM_COMPAT_CORE.intentionalLogout){
       window.PAKKOM_COMPAT_CORE.intentionalLogout=false;
       bootResolved=true; clearTimeout(bootTimer);
@@ -3231,16 +3334,33 @@ async function syncStudentLoginProfiles(){
     window.PAKKOM_COMPAT_CORE.startedUid=null;
     var signInPromise;
     if(window.PAKKOM_STUDENT_PORTAL===true){
-      signInPromise=auth.signInWithEmailAndPassword(loginEmail(id),'S'+password)
-        .catch(function(err){
-          var code=err&&err.code?err.code:'';
-          if(code==='auth/invalid-credential'||code==='auth/wrong-password'){
-            return auth.signInWithEmailAndPassword(loginEmail(id),password);
-          }
-          throw err;
+      // v5.1.2: keep the auth observer quiet until NIS/password verification
+      // and the temporary student profile are fully ready.
+      window.PAKKOM_STUDENT_LOGIN_IN_PROGRESS=true;
+      signInPromise=auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
+        .then(function(){ return auth.signInAnonymously(); })
+        .then(async function(cred){
+          const accessSnap=await db.collection('studentAccess').doc(id).get();
+          if(!accessSnap.exists) throw Object.assign(new Error('NIS belum memiliki akses login.'),{code:'student/access-not-found'});
+          const access=accessSnap.data()||{};
+          if(access.active!==true) throw Object.assign(new Error('Akses login siswa belum aktif.'),{code:'student/access-disabled'});
+          const enteredHash=await window.pakkomSha256Text(password);
+          if(enteredHash!==String(access.passwordHash||'')) throw Object.assign(new Error('NIS atau password salah.'),{code:'student/wrong-password'});
+          const studentSnap=await db.collection('students').doc(String(access.studentId||id)).get();
+          if(!studentSnap.exists) throw Object.assign(new Error('Data siswa tidak ditemukan.'),{code:'student/master-not-found'});
+          const st=studentSnap.data()||{};
+          const profile={
+            role:'siswa',active:true,approved:true,name:st.name||access.name||'',
+            loginId:id,nis:id,studentId:studentSnap.id,classId:st.classId||access.classId||'',
+            sessionType:'anonymous',createdAt:new Date().toISOString()
+          };
+          await db.collection('users').doc(cred.user.uid).set(profile,{merge:false});
+          window.PAKKOM_STUDENT_LOGIN_IN_PROGRESS=false;
+          return cred;
         });
     }else{
-      signInPromise=auth.signInWithEmailAndPassword(loginEmail(id),password);
+      signInPromise=auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+        .then(function(){ return auth.signInWithEmailAndPassword(loginEmail(id),password); });
     }
     signInPromise
       .then(function(cred){
@@ -3251,6 +3371,7 @@ async function syncStudentLoginProfiles(){
         return startAuthenticatedUser(cred.user);
       })
       .catch(function(err){
+        window.PAKKOM_STUDENT_LOGIN_IN_PROGRESS=false;
         console.error('LOGIN ERROR',err);
         auth.signOut().catch(function(){});
         qs('#loginView').classList.remove('hidden');

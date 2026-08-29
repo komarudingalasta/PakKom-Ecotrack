@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#0f766e" />
   <title>PakKom EcoTrack • Tugas Siswa</title>
-  <link rel="stylesheet" href="../styles.css?v=3.3.8" />
+  <link rel="stylesheet" href="../styles.css?v=5.1.2" />
 
   <script>
     window.pakkomTogglePassword = function(inputId, button) {
@@ -21,8 +21,9 @@
       input.focus();
     };
   </script>
+<meta name="theme-color" content="#0f766e">
 </head>
-<body>
+<body class="student-portal-login">
   <div id="logoutModal" class="modal hidden">
     <div class="modal-card logout-confirm-card">
       <div class="logout-confirm-icon"><svg viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zm9-14H9c-1.1 0-2 .9-2 2v3h2V5h10v14H9v-3H7v3c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg></div>
@@ -37,8 +38,7 @@
   <section id="bootView" class="boot-view">
     <div class="boot-brand"><div class="boot-logo">🌿</div><strong>PakKom Eco Track</strong><span>Menyiapkan halaman...</span><div class="boot-loader"></div></div>
   </section>
-
-  <section id="loginView" class="login-shell">
+<section id="loginView" class="login-shell">
     <div class="login-visual">
       <div class="visual-badge">🌱 Sekolah Hijau</div>
       <div class="visual-copy"><h2>Tugas Sekolah,<br>Lebih Terarah</h2><p>Lihat tugas, unggah bukti, tulis deskripsi, dan pantau status pengumpulan dalam satu tempat.</p></div>
@@ -88,6 +88,7 @@
 
   <div id="editModal" class="modal hidden"><div class="modal-card"><div class="modal-head"><h3 id="editModalTitle">Edit Data</h3><button id="editModalClose" class="modal-x">×</button></div><div id="editModalBody" class="modal-body"></div><div class="modal-actions"><button id="editModalCancel" class="btn ghost">Batal</button><button id="editModalSave" class="btn primary">Simpan</button></div></div></div>
   <input id="studentImport" type="file" accept=".xlsx,.xls,.csv" hidden />
+  <input id="studentAccessImport" type="file" accept=".xlsx,.xls,.csv" hidden />
   <input id="teacherImport" type="file" accept=".xlsx,.xls,.csv" hidden />
   <input id="attendanceImport" type="file" accept=".xlsx,.xls,.csv" hidden />
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -97,6 +98,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
   <script>window.PAKKOM_STUDENT_PORTAL=true;</script>
   <script src="../firebase-config.js"></script>
-  <script src="../main.js?v=3.3.8"></script>
+  <script src="../main.js?v=5.1.2"></script>
 </body>
 </html>
