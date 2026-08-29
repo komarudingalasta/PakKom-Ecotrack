@@ -144,7 +144,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null, chatUnread:0, chatGroup:null, chatUnsub:null, chatReactionUnsub:null, chatNotifyTimer:null, chatUnreadInitialized:false };
 
-const APP_VERSION='5.1.2';
+const APP_VERSION='6.4.0';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -512,36 +512,35 @@ function renderShell(){
   if($('#profileMenuName')) $('#profileMenuName').textContent=displayName;
   if($('#profileMenuRole')) $('#profileMenuRole').textContent=chipRole;
   $('#nav').innerHTML=navItems().map(([k,l])=>`<button class="nav-btn ${state.page===k?'active':''}" data-page="${k}">${l}</button>`).join('');
-  document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{
-    state.page=b.dataset.page;
-    if(state.page==='chat'){
-      state.selectedClass=null;
-      return openEcoChatRoot();
-    }
-    state.selectedClass=null;
-    window.scrollTo({top:0,left:0,behavior:'instant'});
-    document.documentElement.scrollTop=0;
-    document.body.scrollTop=0;
-    renderShell();
-    document.querySelector('.sidebar')?.classList.remove('open');
-  });
+  document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>navigateToPage(b.dataset.page));
   renderPage();
 }
-// v6.3: delegated navigation fallback. This keeps Tugas usable even if a nav button
-// is re-rendered after its direct onclick binding was attached.
-if(!window.__pakkomTaskNavFallback){
-  window.__pakkomTaskNavFallback=true;
-  document.addEventListener('click',(e)=>{
-    const nav=e.target.closest?.('[data-page="tasks"]');
-    const more=e.target.closest?.('[data-more-go="tasks"]');
-    if(!nav && !more) return;
-    e.preventDefault();
-    e.stopPropagation();
-    state.page='tasks';
+
+// v6.4 Task Core Stable: satu pintu navigasi untuk mencegah route Tugas
+// berhenti karena handler lama / DOM yang dirender ulang.
+function navigateToPage(page){
+  const next=String(page||'home');
+  if(next==='chat'){
     state.selectedClass=null;
-    window.scrollTo(0,0);
-    renderShell();
-  },true);
+    return openEcoChatRoot();
+  }
+  state.page=next;
+  state.selectedClass=null;
+  try{ window.scrollTo({top:0,left:0,behavior:'instant'}); }catch(_){ window.scrollTo(0,0); }
+  document.documentElement.scrollTop=0;
+  document.body.scrollTop=0;
+  renderShell();
+  document.querySelector('.sidebar')?.classList.remove('open');
+}
+
+if(!window.__pakkomTaskNavStable){
+  window.__pakkomTaskNavStable=true;
+  document.addEventListener('click',(e)=>{
+    const trigger=e.target.closest?.('[data-page="tasks"],[data-more-go="tasks"]');
+    if(!trigger) return;
+    e.preventDefault();
+    navigateToPage('tasks');
+  });
 }
 
 function renderPage(){
@@ -2933,38 +2932,69 @@ async function saveStudentSubmission(e,t,existing,status){
   await setDoc(ref,{taskId:t.id,taskType:t.taskType||'individual',studentUid:state.user.uid,studentId:state.profile.studentId||'',nis:myNis(),studentName:state.profile.name||'',classId:state.profile.classId||'',groupNo:group?.groupNo||null,groupKey:group?`${state.profile.classId}-G${group.groupNo}`:'',memberNis,memberNames:group?group.members.map(m=>m.name):[],answers,reflection:String(fd.get('reflection')||''),status,submittedAt:status==='submitted'?now:(existing?.submittedAt||null),submittedByNis:status==='submitted'?myNis():(existing?.submittedByNis||''),submittedByName:status==='submitted'?(state.profile.name||''):(existing?.submittedByName||''),updatedAt:now,updatedByNis:myNis()},{merge:true});
   toast(status==='draft'?'Draf berhasil disimpan':'Tugas berhasil dikumpulkan'); state.page='studenthome';renderShell();
 }
-async function taskManagementPage(){
-  if(state.profile.role==='siswa')return;
-  if(state.profile.role!=='admin' && state.profile.isHomeroom!==true){toast('Menu Tugas Siswa hanya untuk Admin dan Wali Kelas.');state.page='home';return renderShell()}
-  pageMeta('Tugas Siswa',state.profile.role==='admin'?'Kelola tugas dan pengumpulan':'Periksa dan nilai tugas kelas');
-  // Tombol utama dirender lebih dulu sehingga Admin tetap dapat membuat tugas meski
-  // pembacaan submission mengalami masalah Rules/jaringan.
-  content.innerHTML=`${state.profile.role==='admin'?'<div class="section-head"><div><h3>Kelola Tugas</h3><small>Individu atau kelompok, dengan komponen fleksibel.</small></div><button id="newAssignment" class="btn primary">+ Buat Tugas</button></div>':''}<div id="taskAdminLoad" class="task-admin-list"><div class="card"><div class="empty">Memuat daftar tugas...</div></div></div>`;
-  $('#newAssignment')&&($('#newAssignment').onclick=()=>assignmentBuilder());
+function taskManagementPage(){
+  if(state.profile?.role==='siswa') return navigateToPage('studenthome');
+  if(state.profile?.role!=='admin' && state.profile?.isHomeroom!==true){
+    toast('Menu Tugas Siswa hanya untuk Admin dan Wali Kelas.');
+    return navigateToPage('home');
+  }
+
+  const admin=state.profile?.role==='admin';
+  pageMeta('Tugas Siswa',admin?'Kelola tugas dan pengumpulan':'Periksa dan nilai tugas kelas');
+
+  // LANDING SELALU DIRENDER SECARA SINKRON.
+  // Jadi halaman Tugas dan tombol Buat Tugas tetap muncul walau Firestore belum siap.
+  content.innerHTML=`<div class="task-core-banner"><div><span class="badge ok">Task Core v6.4</span><h3>${admin?'Kelola Tugas':'Tugas Kelas Saya'}</h3><small>${admin?'Buat tugas individu/kelompok dan pantau pengumpulan.':'Periksa pengumpulan siswa kelas Anda.'}</small></div>${admin?'<button id="newAssignment" class="btn primary" type="button">+ Buat Tugas</button>':''}</div><div id="taskCoreStatus" class="notice">Modul Tugas aktif. Memuat data tugas...</div><div id="taskAdminLoad" class="task-admin-list"><div class="card"><div class="empty">Memuat daftar tugas...</div></div></div>`;
+
+  const makeBtn=$('#newAssignment');
+  if(makeBtn) makeBtn.addEventListener('click',(e)=>{
+    e.preventDefault();
+    assignmentBuilder('');
+  });
+
+  // Pembacaan Firestore dipisahkan dari render halaman utama.
+  Promise.resolve().then(loadTaskManagementList).catch(err=>{
+    console.error('Task list loader fatal error',err);
+    const status=$('#taskCoreStatus');
+    if(status){status.className='notice warn';status.textContent='Halaman Tugas aktif, tetapi daftar tugas belum dapat dimuat.';}
+  });
+}
+
+async function loadTaskManagementList(){
+  const admin=state.profile?.role==='admin';
+  const box=$('#taskAdminLoad');
+  if(!box) return;
   try{
     const as=await getDocs(collection(db,'assignments'));
     const tasks=as.docs.map(d=>({id:d.id,...d.data()})).filter(t=>t.archived!==true);
     let subs=[];
     try{
-      const ss=state.profile.role==='admin'
+      const ss=admin
         ? await getDocs(collection(db,'taskSubmissions'))
         : await getDocs(query(collection(db,'taskSubmissions'),where('classId','==',state.profile.homeroomClass)));
       subs=ss.docs.map(d=>({id:d.id,...d.data()}));
     }catch(subErr){
       console.error('Task submissions read error',subErr);
-      // Daftar tugas dan Task Builder tetap dapat digunakan walau submission belum terbaca.
     }
-    const allowed=state.profile.role==='admin'?tasks:tasks.filter(t=>!Array.isArray(t.targetClasses)||t.targetClasses.includes(state.profile.homeroomClass));
-    const box=$('#taskAdminLoad'); if(!box)return;
-    box.innerHTML=allowed.map(t=>{const x=subs.filter(s=>s.taskId===t.id&&(state.profile.role==='admin'||s.classId===state.profile.homeroomClass));return `<div class="card task-admin-card"><div><div class="task-mini-tags"><span class="badge neutral">${taskTypeLabel(t)}</span>${t.taskType==='group'?`<span class="badge neutral">${t.groupCount||6} kelompok/kelas</span>`:''}</div><h3>${esc(t.title||'Tugas')}</h3><small>${esc((t.targetClasses||[]).join(', ')||'Semua kelas')} • Batas ${esc(t.dueDate||'-')}</small></div><div class="task-admin-metrics"><span><b>${x.filter(s=>s.status==='submitted'||s.status==='graded').length}</b> dikumpulkan</span><span><b>${x.filter(s=>s.status==='draft'||s.status==='revision').length}</b> draf/revisi</span><span><b>${x.filter(s=>s.status==='graded').length}</b> dinilai</span></div><div class="row-actions"><button class="btn secondary" data-review-task="${t.id}">Pengumpulan</button>${state.profile.role==='admin'?`<button class="btn ghost" data-edit-task="${t.id}">Edit</button>`:''}</div></div>`}).join('')||'<div class="card empty">Belum ada tugas. Tekan <b>+ Buat Tugas</b> untuk membuat tugas pertama.</div>';
+    const allowed=admin?tasks:tasks.filter(t=>!Array.isArray(t.targetClasses)||t.targetClasses.includes(state.profile.homeroomClass));
+    box.innerHTML=allowed.map(t=>{
+      const x=subs.filter(s=>s.taskId===t.id&&(admin||s.classId===state.profile.homeroomClass));
+      return `<div class="card task-admin-card"><div><div class="task-mini-tags"><span class="badge neutral">${taskTypeLabel(t)}</span>${t.taskType==='group'?`<span class="badge neutral">${t.groupCount||6} kelompok/kelas</span>`:''}</div><h3>${esc(t.title||'Tugas')}</h3><small>${esc((t.targetClasses||[]).join(', ')||'Semua kelas')} • Batas ${esc(t.dueDate||'-')}</small></div><div class="task-admin-metrics"><span><b>${x.filter(s=>s.status==='submitted'||s.status==='graded').length}</b> dikumpulkan</span><span><b>${x.filter(s=>s.status==='draft'||s.status==='revision').length}</b> draf/revisi</span><span><b>${x.filter(s=>s.status==='graded').length}</b> dinilai</span></div><div class="row-actions"><button class="btn secondary" data-review-task="${t.id}">Pengumpulan</button>${admin?`<button class="btn ghost" data-edit-task="${t.id}">Edit</button>`:''}</div></div>`;
+    }).join('')||'<div class="card empty">Belum ada tugas. Tekan <b>+ Buat Tugas</b> untuk membuat tugas pertama.</div>';
+    const status=$('#taskCoreStatus');
+    if(status){status.className='notice ok';status.textContent=`Modul Tugas aktif • ${allowed.length} tugas ditemukan.`;}
     document.querySelectorAll('[data-edit-task]').forEach(b=>b.onclick=()=>assignmentBuilder(b.dataset.editTask));
     document.querySelectorAll('[data-review-task]').forEach(b=>b.onclick=()=>reviewTask(b.dataset.reviewTask));
   }catch(e){
     console.error('Task management error',e);
-    const box=$('#taskAdminLoad');
-    if(box)box.innerHTML=`<div class="card"><div class="empty"><b>Daftar tugas belum dapat dimuat.</b><br><small>${esc(e?.message||'Periksa Firestore Rules Tugas Siswa v6.1.')}</small></div></div>`;
+    const status=$('#taskCoreStatus');
+    if(status){status.className='notice warn';status.textContent='Modul Tugas aktif, tetapi Firestore belum dapat dibaca.';}
+    box.innerHTML=`<div class="card"><div class="empty"><b>Daftar tugas belum dapat dimuat.</b><br><small>${esc(e?.message||'Periksa koneksi dan Firestore Rules.')}</small><br><br>${admin?'<button id="newAssignmentFallback" class="btn primary" type="button">+ Buat Tugas</button>':''}</div></div>`;
+    const fallback=$('#newAssignmentFallback');
+    if(fallback) fallback.onclick=()=>assignmentBuilder('');
   }
 }
+
 async function assignmentBuilder(id=''){
   try{
     if(String(state.profile?.role||'').toLowerCase()!=='admin'){

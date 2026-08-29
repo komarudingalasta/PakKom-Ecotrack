@@ -1398,3 +1398,9 @@ body.student-portal-login #appView.hidden{
 .notice.warn{border-left:4px solid currentColor}
 .review-proof a{font-weight:700;text-decoration:none}
 @media(max-width:640px){.task-submit-actions .btn,.task-grade-actions .btn{flex:1}.task-builder .form-grid{grid-template-columns:1fr}}
+
+
+/* ===== Task Core Stable v6.4 ===== */
+.task-core-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;margin-bottom:14px;border:1px solid rgba(23,107,91,.16);border-radius:18px;background:linear-gradient(135deg,rgba(221,246,237,.82),rgba(255,255,255,.96));box-shadow:0 8px 24px rgba(23,107,91,.07)}
+.task-core-banner h3{margin:7px 0 3px;font-size:1.18rem}.task-core-banner small{display:block;color:var(--muted,#64748b)}
+@media(max-width:640px){.task-core-banner{align-items:stretch;flex-direction:column}.task-core-banner .btn{width:100%}}
