@@ -2918,8 +2918,10 @@ async function syncStudentLoginProfiles(){
   var auth=firebase.auth();
   auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(){});
   var db=firebase.firestore();
-  // Shared portal flag for session restore and login submit handler.
+  // Portal is determined by the page: root = staff, /siswa/ = student.
   var studentPortal=window.PAKKOM_STUDENT_PORTAL===true;
+  var startingUid=null;
+  var startingPromise=null;
 
   window.PAKKOM_COMPAT_CORE={
     auth:auth,
@@ -2939,7 +2941,9 @@ async function syncStudentLoginProfiles(){
   function startAuthenticatedUser(user){
     if(!user) return Promise.resolve();
     if(window.PAKKOM_COMPAT_CORE.startedUid===user.uid) return Promise.resolve();
-    return db.collection('users').doc(user.uid).get().then(function(snap){
+    if(startingUid===user.uid && startingPromise) return startingPromise;
+    startingUid=user.uid;
+    startingPromise=db.collection('users').doc(user.uid).get().then(function(snap){
       if(!snap.exists) throw new Error('Profil pengguna tidak ditemukan di Firestore.');
       var profile=Object.assign({uid:user.uid},snap.data());
       if(profile.rejected===true) throw new Error('Pendaftaran akun tidak disetujui Admin.');
@@ -2951,8 +2955,9 @@ async function syncStudentLoginProfiles(){
         throw new Error('Halaman ini khusus siswa. Guru/Admin silakan masuk dari halaman utama EcoTrack.');
       }
       if(!studentPortal && profile.role==='siswa'){
-        window.location.href='siswa/';
-        return;
+        // Firebase Auth persistence is shared by the root and /siswa/ on the same origin.
+        // Clear a leftover student session so ADMIN/Guru can still reach the staff login.
+        throw new Error('Sesi siswa terdeteksi. Silakan masuk dengan akun Guru/Admin.');
       }
 
       window.PAKKOM_COMPAT_CORE.user=user;
@@ -2966,7 +2971,10 @@ async function syncStudentLoginProfiles(){
         throw new Error('Application Core tidak tersedia.');
       }
       return window.startPakKomApp(window.PAKKOM_COMPAT_CORE);
+    }).finally(function(){
+      if(startingUid===user.uid){ startingUid=null; startingPromise=null; }
     });
+    return startingPromise;
   }
 
   // Pulihkan sesi secara diam-diam setelah refresh. Tidak ada splash "memeriksa sesi".
@@ -3031,24 +3039,20 @@ async function syncStudentLoginProfiles(){
     btn.textContent='MEMERIKSA...';
 
     window.PAKKOM_COMPAT_CORE.startedUid=null;
-    auth.signOut().catch(function(){})
-      .then(function(){
-        if(!studentPortal){
-          return auth.signInWithEmailAndPassword(loginEmail(id),password);
-        }
-        // Student UX remains NIS + password=NIS. Firebase receives S+NIS internally
-        // so 5-digit NIS works despite Firebase's 6-character minimum password.
-        return auth.signInWithEmailAndPassword(loginEmail(id),'S'+password)
-          .catch(function(err){
-            // Backward compatibility for any older 6+ digit student account
-            // that may already have been created with raw NIS as Firebase password.
-            var code=err&&err.code?err.code:'';
-            if(code==='auth/invalid-credential'||code==='auth/wrong-password'){
-              return auth.signInWithEmailAndPassword(loginEmail(id),password);
-            }
-            throw err;
-          });
-      })
+    var signInPromise;
+    if(window.PAKKOM_STUDENT_PORTAL===true){
+      signInPromise=auth.signInWithEmailAndPassword(loginEmail(id),'S'+password)
+        .catch(function(err){
+          var code=err&&err.code?err.code:'';
+          if(code==='auth/invalid-credential'||code==='auth/wrong-password'){
+            return auth.signInWithEmailAndPassword(loginEmail(id),password);
+          }
+          throw err;
+        });
+    }else{
+      signInPromise=auth.signInWithEmailAndPassword(loginEmail(id),password);
+    }
+    signInPromise
       .then(function(cred){
         if(id.toUpperCase()==='ADMIN' &&
            String(cred.user.email||'').toLowerCase()!==ADMIN_EMAIL.toLowerCase()){
