@@ -24,7 +24,8 @@ async function resolveStudentProfile(u){
   const aSnap=await db.collection('studentAccess').doc(nis).get();
   if(!aSnap.exists)throw new Error('Akses login siswa tidak ditemukan.');
   const a=aSnap.data()||{};
-  if(a.active!==true)throw new Error('Akses siswa sedang tidak aktif.');
+  if(a.active!==true)throw new Error('Status siswa tidak aktif.');
+  if(a.loginEnabled===false)throw new Error('Akses login siswa dinonaktifkan oleh Admin.');
   const classId=norm(a.classId||raw.classId);
   if(!classId)throw new Error('Kelas siswa belum terisi.');
   sessionStorage.setItem('pakkomStudentNis',nis);

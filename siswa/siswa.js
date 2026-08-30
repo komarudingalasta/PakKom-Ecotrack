@@ -37,7 +37,7 @@ $('#loginForm').onsubmit=async e=>{e.preventDefault();loginInProgress=true;const
   const cred=await auth.signInAnonymously();
   const accessSnap=await db.collection('studentAccess').doc(nis).get();
   if(!accessSnap.exists)throw new Error('NIS belum memiliki akses login.');
-  const a=accessSnap.data()||{};if(a.active!==true)throw new Error('Akses siswa belum aktif.');
+  const a=accessSnap.data()||{};if(a.active!==true)throw new Error('Status siswa tidak aktif.');if(a.loginEnabled===false)throw new Error('Akses login dinonaktifkan oleh Admin.');
   if(await sha256(pwd)!==String(a.passwordHash||''))throw new Error('NIS atau password salah.');
   const c=normClass(a.classId);if(!c)throw new Error('Kelas siswa belum terisi pada data akses.');
   profile={role:'siswa',active:true,approved:true,name:a.name||'Siswa',loginId:nis,nis,studentId:String(a.studentId||''),classId:c,sessionType:'anonymous',createdAt:new Date().toISOString()};

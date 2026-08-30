@@ -1675,8 +1675,15 @@ async function master(){
   if(state.profile.role!=='admin'){state.page='home';return renderShell()}
   pageMeta('Kelola Data','Khusus Administrator');
   content.innerHTML='<div class="card"><div class="empty">Memuat data master...</div></div>';
-  const [stuSnap,userSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users'))]);
-  state.students=stuSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));
+  const [stuSnap,userSnap,accessSnap]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'users')),getDocs(collection(db,'studentAccess'))]);
+  const accessByNis=new Map(accessSnap.docs.map(d=>[String(d.id),{id:d.id,...d.data()}]));
+  state.students=stuSnap.docs.map(d=>{
+    const base={id:d.id,...d.data()};
+    const nis=String(base.nis||d.id||'').trim();
+    const access=accessByNis.get(nis)||null;
+    return {...base,accessExists:!!access,loginEnabled:access?access.loginEnabled!==false:(base.loginEnabled===true)};
+  }).sort((a,b)=>(a.classId||'').localeCompare(b.classId||'')||(a.name||'').localeCompare(b.name||''));
+  window.studentAccessByNis=accessByNis;
   window.masterUsers=userSnap.docs.map(d=>({uid:d.id,...d.data()}));
   const activeStudents=state.students.filter(s=>s.active!==false);
   const teachers=window.masterUsers.filter(u=>u.role==='guru');
@@ -1853,7 +1860,7 @@ function renderStudentMasterTable(){
   const rows=filteredMasterStudents(); window.selectedStudentIds=window.selectedStudentIds||new Set();
   const activeCount=rows.filter(s=>s.loginEnabled===true).length;
   const pendingCount=rows.filter(s=>s.loginEnabled!==true&&s.active!==false).length;
-  target.innerHTML=`<div class="teacher-list-summary"><span><b>${activeCount}</b> akses login aktif</span><span><b>${pendingCount}</b> belum aktif</span></div><div class="bulk-summary"><span><b>${window.selectedStudentIds.size}</b> siswa dipilih</span><small>Centang siswa hanya untuk pengelolaan data/hapus. Akses login dikelola melalui file Excel.</small></div><div class="table-wrap"><table class="student-master"><thead><tr><th class="check-col"><input id="selectAllStudents" type="checkbox" aria-label="Pilih semua"></th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status Data</th><th>Akses Login</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(st=>`<tr><td class="check-col"><input class="student-check" type="checkbox" data-student-id="${esc(st.id)}" ${window.selectedStudentIds.has(st.id)?'checked':''}></td><td><b>${esc(st.nis||st.id)}</b></td><td>${esc(st.name||'-')}</td><td>${esc(st.classId||'-')}</td><td><span class="badge ${st.active===false?'warn':'ok'}">${st.active===false?'Nonaktif':'Aktif'}</span></td><td>${st.loginEnabled===true?'<span class="badge ok">Login Aktif</span>':'<span class="badge warn">Belum Aktif</span>'}</td><td><div class="row-actions"><button class="btn-mini edit" data-edit-student="${esc(st.id)}">Edit</button><button class="btn-mini danger" data-delete-student="${esc(st.id)}">Hapus</button></div></td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
+  target.innerHTML=`<div class="teacher-list-summary"><span><b>${activeCount}</b> akses login aktif</span><span><b>${pendingCount}</b> belum aktif</span></div><div class="bulk-summary"><span><b>${window.selectedStudentIds.size}</b> siswa dipilih</span><small>Status siswa dan akses login dapat diubah dari tombol Edit. File Excel tetap dapat digunakan untuk pengaturan massal.</small></div><div class="table-wrap"><table class="student-master"><thead><tr><th class="check-col"><input id="selectAllStudents" type="checkbox" aria-label="Pilih semua"></th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status Data</th><th>Akses Login</th><th>Aksi</th></tr></thead><tbody>${rows.slice(0,500).map(st=>`<tr><td class="check-col"><input class="student-check" type="checkbox" data-student-id="${esc(st.id)}" ${window.selectedStudentIds.has(st.id)?'checked':''}></td><td><b>${esc(st.nis||st.id)}</b></td><td>${esc(st.name||'-')}</td><td>${esc(st.classId||'-')}</td><td><span class="badge ${st.active===false?'warn':'ok'}">${st.active===false?'Nonaktif':'Aktif'}</span></td><td>${st.loginEnabled===true?'<span class="badge ok">Login Aktif</span>':(st.accessExists?'<span class="badge warn">Login Nonaktif</span>':'<span class="badge neutral">Belum Dibuat</span>')}</td><td><div class="row-actions"><button class="btn-mini edit" data-edit-student="${esc(st.id)}">Edit</button><button class="btn-mini danger" data-delete-student="${esc(st.id)}">Hapus</button></div></td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">Tidak ada siswa yang cocok.</div></td></tr>'}</tbody></table></div>${rows.length>500?`<p class="demo-note">Menampilkan 500 dari ${rows.length} siswa. Gunakan pencarian/filter kelas.</p>`:''}`;
   document.querySelectorAll('[data-edit-student]').forEach(b=>b.onclick=()=>editStudent(b.dataset.editStudent));
   document.querySelectorAll('[data-delete-student]').forEach(b=>b.onclick=()=>deleteStudentMaster(b.dataset.deleteStudent));
   document.querySelectorAll('.student-check').forEach(c=>c.onchange=()=>{c.checked?window.selectedStudentIds.add(c.dataset.studentId):window.selectedStudentIds.delete(c.dataset.studentId);updateBulkStudentButton();});
@@ -2102,10 +2109,32 @@ async function ensureClassesFromStudents(){
 
 async function editStudent(id){
   const st=state.students.find(x=>x.id===id); if(!st)return;
-  openEditModal('Edit Siswa',`<label>NIS<input value="${esc(st.nis||st.id)}" disabled></label><label>Nama<input id="mName" value="${esc(st.name||'')}"></label><label>Kelas<select id="mClass">${state.classes.map(c=>`<option value="${c}" ${st.classId===c?'selected':''}>${c}</option>`).join('')}</select></label><label>Status<select id="mActive"><option value="true" ${st.active!==false?'selected':''}>Aktif</option><option value="false" ${st.active===false?'selected':''}>Nonaktif</option></select></label>`,async()=>{
-    const name=$('#mName').value.trim(), classId=$('#mClass').value, active=$('#mActive').value==='true'; if(!name||!classId)return toast('Nama dan kelas wajib diisi');
-    await setDoc(doc(db,'students',id),{name,classId,active,updatedAt:new Date().toISOString(),updatedByUid:state.user.uid,updatedByName:state.profile.name},{merge:true}); closeEditModal(); toast('Data siswa diperbarui'); await master();
+  const nis=String(st.nis||st.id||'').trim();
+  const access=window.studentAccessByNis?.get(nis)||null;
+  const loginEnabled=access ? access.loginEnabled!==false : st.loginEnabled===true;
+  openEditModal('Edit Siswa',`<label>NIS<input value="${esc(nis)}" disabled></label><label>Nama<input id="mName" value="${esc(st.name||'')}"></label><label>Kelas<select id="mClass">${state.classes.map(c=>`<option value="${c}" ${st.classId===c?'selected':''}>${c}</option>`).join('')}</select></label><label>Status Siswa<select id="mActive"><option value="true" ${st.active!==false?'selected':''}>Aktif</option><option value="false" ${st.active===false?'selected':''}>Tidak Aktif</option></select></label><label>Akses Login<select id="mLoginEnabled" ${access?'':'disabled'}><option value="true" ${loginEnabled?'selected':''}>Aktif Login</option><option value="false" ${!loginEnabled?'selected':''}>Nonaktif Login</option></select></label>${access?'':'<div class="notice">Akses login siswa ini belum dibuat. Gunakan <b>Upload Akses Login</b> terlebih dahulu jika ingin mengaktifkan login.</div>'}<div id="studentStatusHint" class="notice">Status Siswa mengatur keaktifan data siswa. Akses Login hanya mengatur izin masuk ke Portal Siswa.</div>`,async()=>{
+    const name=$('#mName').value.trim(), classId=$('#mClass').value, active=$('#mActive').value==='true';
+    let canLogin=access ? $('#mLoginEnabled').value==='true' : false;
+    if(!name||!classId)return toast('Nama dan kelas wajib diisi');
+    if(!active) canLogin=false;
+    const now=new Date().toISOString();
+    const batch=writeBatch(db);
+    batch.set(doc(db,'students',id),{name,classId,active,loginEnabled:canLogin,updatedAt:now,updatedByUid:state.user.uid,updatedByName:state.profile.name},{merge:true});
+    if(access){
+      batch.set(doc(db,'studentAccess',nis),{name,classId,active:active,loginEnabled:canLogin,updatedAt:now,updatedByUid:state.user.uid},{merge:true});
+    }
+    await batch.commit();
+    closeEditModal();
+    toast(!active?'Siswa dinonaktifkan dan login ikut dinonaktifkan':(canLogin?'Data siswa dan login diaktifkan':'Data siswa aktif, login dinonaktifkan'));
+    await master();
   });
+  const syncLoginControl=()=>{
+    const active=$('#mActive')?.value==='true', login=$('#mLoginEnabled');
+    if(!login)return;
+    if(!active){login.value='false';login.disabled=true;$('#studentStatusHint').innerHTML='<b>Siswa Tidak Aktif:</b> akses login otomatis dinonaktifkan.';}
+    else {login.disabled=!access;$('#studentStatusHint').textContent=access?'Status Siswa dan Akses Login dapat diatur secara terpisah.':'Akses login belum dibuat untuk siswa ini.';}
+  };
+  $('#mActive')?.addEventListener('change',syncLoginControl); syncLoginControl();
 }
 
 async function addStudentLocal(){
@@ -2135,9 +2164,10 @@ function downloadStudentAccessTemplate(){
       Nama:String(st.name||''),
       Kelas:String(st.classId||''),
       Password:String(st.nis||st.id||''),
-      Aktif:st.active===false?'TIDAK':'YA'
+      Aktif:st.active===false?'TIDAK':'YA',
+      Login:st.loginEnabled===true?'AKTIF':'NONAKTIF'
     }));
-  const ws=XLSX.utils.json_to_sheet(rows,{header:['NIS','Nama','Kelas','Password','Aktif']});
+  const ws=XLSX.utils.json_to_sheet(rows,{header:['NIS','Nama','Kelas','Password','Aktif','Login']});
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Akses Login Siswa');
   XLSX.writeFile(wb,'akses-login-siswa-pakkom-ecotrack.xlsx');
 }
@@ -2153,18 +2183,19 @@ $('#studentAccessImport')?.addEventListener('change',async e=>{
       const nis=String(r.NIS||r.nis||'').trim();
       const password=String(r.Password||r.password||nis).trim();
       const active=['ya','y','yes','1','true','aktif'].includes(String(r.Aktif||r.aktif||'YA').trim().toLowerCase());
+      const loginEnabled=active && !['nonaktif','tidak','tidak aktif','0','false','off'].includes(String(r.Login||r.login||'AKTIF').trim().toLowerCase());
       const st=master.get(nis);
       if(!nis||!password||!st){skipped++;continue;}
-      normalized.push({nis,studentId:st.id,name:st.name||'',classId:st.classId||'',active,passwordHash:await sha256Text(password)});
+      normalized.push({nis,studentId:st.id,name:st.name||'',classId:st.classId||'',active,loginEnabled,passwordHash:await sha256Text(password)});
     }
     if(!normalized.length)throw new Error('Tidak ada baris akses yang cocok dengan master siswa.');
-    openImportPreview('Preview Akses Login Siswa',normalized.map(x=>[x.nis,x.name,x.classId,x.active?'Aktif':'Nonaktif']),['NIS','Nama','Kelas','Akses'],skipped,async()=>{
+    openImportPreview('Preview Akses Login Siswa',normalized.map(x=>[x.nis,x.name,x.classId,x.active?'Aktif':'Tidak Aktif',x.loginEnabled?'Aktif Login':'Nonaktif Login']),['NIS','Nama','Kelas','Status Siswa','Akses Login'],skipped,async()=>{
       const now=new Date().toISOString();
       for(let i=0;i<normalized.length;i+=350){
         const batch=writeBatch(db);
         normalized.slice(i,i+350).forEach(x=>{
-          batch.set(doc(db,'studentAccess',x.nis),{nis:x.nis,studentId:x.studentId,name:x.name,classId:x.classId,passwordHash:x.passwordHash,active:x.active,updatedAt:now,updatedByUid:state.user.uid},{merge:true});
-          batch.set(doc(db,'students',x.studentId),{loginEnabled:x.active,loginUpdatedAt:now},{merge:true});
+          batch.set(doc(db,'studentAccess',x.nis),{nis:x.nis,studentId:x.studentId,name:x.name,classId:x.classId,passwordHash:x.passwordHash,active:x.active,loginEnabled:x.loginEnabled,updatedAt:now,updatedByUid:state.user.uid},{merge:true});
+          batch.set(doc(db,'students',x.studentId),{loginEnabled:x.loginEnabled,loginUpdatedAt:now},{merge:true});
         });
         await batch.commit();
       }
@@ -3041,7 +3072,8 @@ async function syncStudentLoginProfiles(){
           const accessSnap=await db.collection('studentAccess').doc(id).get();
           if(!accessSnap.exists) throw Object.assign(new Error('NIS belum memiliki akses login.'),{code:'student/access-not-found'});
           const access=accessSnap.data()||{};
-          if(access.active!==true) throw Object.assign(new Error('Akses login siswa belum aktif.'),{code:'student/access-disabled'});
+          if(access.active!==true) throw Object.assign(new Error('Status siswa tidak aktif.'),{code:'student/access-disabled'});
+          if(access.loginEnabled===false) throw Object.assign(new Error('Akses login siswa dinonaktifkan oleh Admin.'),{code:'student/access-disabled'});
           const enteredHash=await window.pakkomSha256Text(password);
           if(enteredHash!==String(access.passwordHash||'')) throw Object.assign(new Error('NIS atau password salah.'),{code:'student/wrong-password'});
           const studentSnap=await db.collection('students').doc(String(access.studentId||id)).get();

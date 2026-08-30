@@ -23,7 +23,11 @@ service cloud.firestore {
     }
     function isStudent(){
       return hasStudentAccess()
-        && get(/databases/$(database)/documents/studentAccess/$(userDoc().data.loginId)).data.active == true;
+        && get(/databases/$(database)/documents/studentAccess/$(userDoc().data.loginId)).data.active == true
+        && (
+          !('loginEnabled' in get(/databases/$(database)/documents/studentAccess/$(userDoc().data.loginId)).data)
+          || get(/databases/$(database)/documents/studentAccess/$(userDoc().data.loginId)).data.loginEnabled == true
+        );
     }
 
     match /studentAccess/{nis} {
