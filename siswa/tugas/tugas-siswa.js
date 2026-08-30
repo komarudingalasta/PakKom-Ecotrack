@@ -1,5 +1,5 @@
-const app=firebase.apps.length?firebase.app():firebase.initializeApp(window.PAKKOM_FIREBASE_CONFIG);
-const auth=firebase.auth(),db=firebase.firestore();
+const app=(firebase.apps.find(a=>a.name==='PAKKOM_STUDENT')||firebase.initializeApp(window.PAKKOM_FIREBASE_CONFIG,'PAKKOM_STUDENT'));
+const auth=app.auth(),db=app.firestore();
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const norm=v=>String(v||'').toUpperCase().replace(/KELAS/g,'').replace(/\s+/g,'').trim();
 let user=null,profile=null,tasks=[],subs=[],groups=[],programs=[],activeFilter='all',assessmentCuts=[69,79,89];
@@ -9,7 +9,8 @@ function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove
 function close(){ $('#modal').classList.add('hidden'); $('#modalBody').innerHTML=''; }
 $('#closeModal').onclick=close;
 $('#logout').onclick=async()=>{try{await db.collection('users').doc(user.uid).delete()}catch(_){}sessionStorage.removeItem('pakkomStudentNis');await auth.signOut();location.href='../'};
-function groupForTask(taskId){return groups.find(g=>g.taskId===taskId&&Array.isArray(g.memberNis)&&g.memberNis.map(String).includes(String(profile.loginId)))}
+function groupScope(t){return String(t.programId||t.id||'')}
+function groupForTask(taskId){const t=tasks.find(x=>x.id===taskId);if(!t)return null;const scope=groupScope(t);return groups.find(g=>String(g.programId||g.taskId)===scope&&Array.isArray(g.memberNis)&&g.memberNis.map(String).includes(String(profile.loginId)))}
 function subForTask(t){if(t.taskType==='group'){const g=groupForTask(t.id);return g?subs.find(s=>s.groupKey===g.groupKey):null}return subs.find(s=>s.taskId===t.id&&String(s.nis)===String(profile.loginId))}
 function statusOf(t){const s=subForTask(t);if(t.taskType==='group'&&!groupForTask(t.id))return 'nogroup';if(!s)return 'todo';if(s.status==='revision')return 'revision';if(s.status==='graded')return 'graded';if(s.status==='submitted')return 'submitted';return 'draft'}
 function statusLabel(k){return ({nogroup:'Belum Punya Kelompok',todo:'Belum Dikerjakan',draft:'Draf',submitted:'Sudah Dikumpulkan',revision:'Perlu Perbaikan',graded:'Sudah Dinilai'})[k]||k}
@@ -56,29 +57,31 @@ function answerKey(ci,ii){return `${ci}_${ii}`}
 async function openTask(id){const t=tasks.find(x=>x.id===id);if(!t)return;let g=t.taskType==='group'?groupForTask(t.id):null;if(t.taskType==='group'&&!g)return openCreateGroup(t);const s=subForTask(t),st=statusOf(t),locked=st==='graded'||st==='submitted',components=taskComponents(t),oldAnswers=Array.isArray(s?.answers)?s.answers:[];const fields=components.map((c,ci)=>Array.from({length:Math.max(1,Number(c.count)||1)},(_,ii)=>{const old=oldAnswers.find(a=>Number(a.componentIndex)===ci&&Number(a.itemIndex)===ii)||{},key=answerKey(ci,ii),label=`${c.label||'Jawaban'}${Number(c.count)>1?' '+(ii+1):''}`;if(c.type==='text')return `<div class="field"><label>${esc(label)} ${c.required?'*':''}</label><textarea data-answer="${key}" ${locked?'disabled':''}>${esc(old.text||'')}</textarea></div>`;return `<div class="field"><label>${esc(label)} ${c.required?'*':''}</label><input data-answer="${key}" type="url" placeholder="https://..." value="${esc(old.url||'')}" ${locked?'disabled':''}><small>${c.type==='photo'?'Link foto':c.type==='video'?'Link video':c.type==='document'?'Link dokumen':'Link'}</small><textarea data-description="${key}" placeholder="Keterangan ${c.requireDescription?'(wajib)':''}" ${locked?'disabled':''}>${esc(old.description||'')}</textarea></div>`}).join('')).join('');modal(`<h2>${esc(t.title)}</h2>${g?`<div class="notice"><b>Kelompok ${esc(g.groupNo||'-')}</b><br>${esc((g.memberNames||[]).join(', '))}<br><small>Kelompok dibuat oleh siswa. Cukup satu anggota mengumpulkan dan seluruh anggota melihat status yang sama.</small></div>`:''}<p>${esc(t.description||'')}</p><div class="meta">Batas: ${esc(dueText(t))}</div>${fields}<div class="notice"><small>Foto, video, dan dokumen dikumpulkan melalui link. Jika menggunakan Google Drive, pastikan guru dapat membuka file tanpa meminta izin akses.</small></div>${s?.feedback?`<div class="notice"><b>Catatan guru:</b> ${esc(s.feedback)}</div>`:''}${st==='graded'?`<div class="card"><b>Nilai: ${esc(s.score??'-')}</b><div class="meta">Kategori: <b>${esc(scoreCategory(s.score)||'-')}</b></div></div>`:st==='submitted'?`<div class="notice"><b>Sudah dikumpulkan oleh ${esc(s.submittedByName||'anggota kelompok')}.</b><br><small>${esc(s.submittedAt||'')}</small></div>`:`<div class="actions"><button id="draft" class="secondary">Simpan Draf</button><button id="submit" class="primary">${st==='revision'?'Kumpulkan Ulang':'Kumpulkan'}</button></div>`}`);if(!locked){$('#draft').onclick=()=>save(t,s,g,'draft');$('#submit').onclick=()=>save(t,s,g,'submitted')}}
 async function openCreateGroup(t){
   try{
-    const classId=norm(profile.classId),nis=String(profile.loginId);
+    const classId=norm(profile.classId),nis=String(profile.loginId),programId=String(t.programId||''),scope=programId||t.id;
+    const groupQuery=programId
+      ? db.collection('taskGroups').where('programId','==',programId).where('classId','==',classId)
+      : db.collection('taskGroups').where('taskId','==',t.id).where('classId','==',classId);
     const [ss,gs]=await Promise.all([
-      db.collection('students').where('classId','==',classId).get(),
-      db.collection('taskGroups').where('taskId','==',t.id).where('classId','==',classId).get()
+      db.collection('students').where('classId','==',classId).get(), groupQuery.get()
     ]);
     const allStudents=ss.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.active!==false).map(x=>({nis:String(x.nis||x.id),name:String(x.name||x.nis||x.id)})).sort((a,b)=>a.name.localeCompare(b.name));
     const existing=gs.docs.map(d=>({id:d.id,...d.data()}));
     const myExisting=existing.find(g=>Array.isArray(g.memberNis)&&g.memberNis.map(String).includes(nis));
-    if(myExisting){groups.push(myExisting);close();draw();return openTask(t.id)}
+    if(myExisting){groups=groups.filter(x=>x.id!==myExisting.id).concat(myExisting);close();draw();return openTask(t.id)}
     const used=new Set(existing.flatMap(g=>(g.memberNis||[]).map(String)));
-    const available=allStudents.filter(s=>s.nis===nis||!used.has(s.nis));
-    modal(`<h2>Buat Kelompok</h2><p><b>${esc(t.title)}</b></p><div class="notice">Pilih anggota kelompok dari kelas ${esc(classId)}. Anda otomatis menjadi anggota. Kelompok berisi <b>2–6 siswa</b>.</div><div class="field"><label>Anggota Kelompok</label><div class="classes">${available.map(s=>`<label class="classcheck"><input type="checkbox" data-member="${esc(s.nis)}" data-name="${esc(s.name)}" ${s.nis===nis?'checked disabled':''}> ${esc(s.name)} <small>(${esc(s.nis)})</small></label>`).join('')}</div></div><div class="actions"><button id="createGroup" class="primary">Buat Kelompok</button></div>`);
+    const available=allStudents.filter(st=>st.nis===nis||!used.has(st.nis));
+    const p=programs.find(x=>x.id===programId);
+    modal(`<h2>Buat Kelompok Kokurikuler</h2><p><b>${esc(p?.name||t.title)}</b></p><div class="notice">Kelompok ini berlaku untuk <b>semua tugas kelompok dalam ${programId?'Tema/Program Kokurikuler yang sama':'tugas ini'}</b>. Pilih 2–6 siswa dari kelas ${esc(classId)}. Anda otomatis menjadi anggota.</div><div class="field"><label>Anggota Kelompok</label><div class="classes">${available.map(st=>`<label class="classcheck"><input type="checkbox" data-member="${esc(st.nis)}" data-name="${esc(st.name)}" ${st.nis===nis?'checked disabled':''}> ${esc(st.name)} <small>(${esc(st.nis)})</small></label>`).join('')}</div></div><div class="actions"><button id="createGroup" class="primary">Buat Kelompok</button></div>`);
     $('#createGroup').onclick=async()=>{
       const selected=[...document.querySelectorAll('[data-member]')].filter(x=>x.checked).map(x=>({nis:String(x.dataset.member),name:String(x.dataset.name)}));
       if(selected.length<2||selected.length>6)return alert('Kelompok harus terdiri dari 2 sampai 6 siswa.');
       try{
-        const fresh=await db.collection('taskGroups').where('taskId','==',t.id).where('classId','==',classId).get();
-        const current=fresh.docs.map(d=>({id:d.id,...d.data()}));
-        const conflict=current.find(g=>(g.memberNis||[]).some(x=>selected.some(s=>s.nis===String(x))));
-        if(conflict)return alert('Salah satu siswa yang dipilih sudah tergabung dalam kelompok. Muat ulang dan pilih anggota lain.');
+        const fresh=await groupQuery.get(),current=fresh.docs.map(d=>({id:d.id,...d.data()}));
+        const conflict=current.find(g=>(g.memberNis||[]).some(x=>selected.some(st=>st.nis===String(x))));
+        if(conflict)return alert('Salah satu siswa yang dipilih sudah tergabung dalam kelompok untuk program ini. Muat ulang dan pilih anggota lain.');
         const usedNos=new Set(current.map(g=>Number(g.groupNo)||0)),groupNo=Array.from({length:99},(_,i)=>i+1).find(n=>!usedNos.has(n))||current.length+1;
         const ref=db.collection('taskGroups').doc(),groupKey=ref.id,now=new Date().toISOString();
-        const data={taskId:t.id,classId,groupNo,groupKey,memberNis:selected.map(x=>x.nis),memberNames:selected.map(x=>x.name),createdByUid:user.uid,createdByNis:nis,createdByName:profile.name||'',createdAt:now,updatedAt:now};
+        const data={programId,taskId:programId?'':t.id,sourceTaskId:t.id,classId,groupNo,groupKey,memberNis:selected.map(x=>x.nis),memberNames:selected.map(x=>x.name),createdByUid:user.uid,createdByNis:nis,createdByName:profile.name||'',createdAt:now,updatedAt:now};
         await ref.set(data);groups.push({id:ref.id,...data});close();draw();openTask(t.id);
       }catch(e){alert('Kelompok belum dapat dibuat: '+(e.message||e))}
     };

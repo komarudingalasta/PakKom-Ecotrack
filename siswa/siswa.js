@@ -1,7 +1,7 @@
 (()=>{'use strict';
 const $=s=>document.querySelector(s), cfg=window.PAKKOM_FIREBASE_CONFIG||{};
-if(!firebase.apps.length) firebase.initializeApp(cfg);
-const auth=firebase.auth(), db=firebase.firestore();
+const app=(firebase.apps.find(a=>a.name==='PAKKOM_STUDENT')||firebase.initializeApp(cfg,'PAKKOM_STUDENT'));
+const auth=app.auth(), db=app.firestore();
 let user=null, profile=null, tasks=[], subs=[], loginInProgress=false;
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const normClass=s=>String(s||'').trim().toUpperCase().replace(/^KELAS\s*/,'').replace(/\s+/g,'');

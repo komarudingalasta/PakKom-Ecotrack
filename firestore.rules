@@ -125,19 +125,17 @@ service cloud.firestore {
     }
 
     match /taskGroups/{groupKey} {
-      // Staff dapat monitoring semua kelompok.
       allow get: if isStaff()
         || (isStudent() && resource.data.classId == userDoc().data.classId);
-      // Siswa perlu membaca kelompok satu kelas pada tugas yang sama
-      // agar tidak memilih anggota yang sudah tergabung.
       allow list: if isStaff()
         || (isStudent() && resource.data.classId == userDoc().data.classId);
 
-      // Kelompok dibuat sendiri oleh siswa, 2-6 anggota, kelas harus sama
-      // dengan kelas siswa dan tugas memang bertipe group.
+      // Siswa membentuk kelompok. Jika tugas terhubung Program Kokurikuler,
+      // kelompok disimpan pada programId dan dipakai ulang oleh semua tugas
+      // kelompok dalam program/tema yang sama.
       allow create: if isAdmin()
         || (isStudent()
-          && request.resource.data.taskId is string
+          && request.resource.data.sourceTaskId is string
           && request.resource.data.classId == userDoc().data.classId
           && request.resource.data.groupKey is string
           && request.resource.data.memberNis is list
@@ -147,13 +145,12 @@ service cloud.firestore {
           && request.resource.data.memberNames.size() == request.resource.data.memberNis.size()
           && userDoc().data.loginId in request.resource.data.memberNis
           && request.resource.data.createdByNis == userDoc().data.loginId
-          && exists(/databases/$(database)/documents/assignments/$(request.resource.data.taskId))
-          && get(/databases/$(database)/documents/assignments/$(request.resource.data.taskId)).data.taskType == 'group'
-          && get(/databases/$(database)/documents/assignments/$(request.resource.data.taskId)).data.targetClasses is list
-          && userDoc().data.classId in get(/databases/$(database)/documents/assignments/$(request.resource.data.taskId)).data.targetClasses);
+          && exists(/databases/$(database)/documents/assignments/$(request.resource.data.sourceTaskId))
+          && get(/databases/$(database)/documents/assignments/$(request.resource.data.sourceTaskId)).data.taskType == 'group'
+          && get(/databases/$(database)/documents/assignments/$(request.resource.data.sourceTaskId)).data.targetClasses is list
+          && userDoc().data.classId in get(/databases/$(database)/documents/assignments/$(request.resource.data.sourceTaskId)).data.targetClasses
+          && request.resource.data.programId == get(/databases/$(database)/documents/assignments/$(request.resource.data.sourceTaskId)).data.programId);
 
-      // Untuk sekarang anggota kelompok dikunci setelah dibuat agar tidak
-      // berubah diam-diam. Perubahan/hapus hanya Admin.
       allow update, delete: if isAdmin();
     }
 
@@ -171,7 +168,10 @@ service cloud.firestore {
           || (request.resource.data.taskType == 'group'
               && request.resource.data.groupKey is string
               && exists(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey))
-              && get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.taskId == request.resource.data.taskId
+              && (get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.taskId == request.resource.data.taskId
+                || (get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.programId is string
+                  && get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.programId != ''
+                  && get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.programId == get(/databases/$(database)/documents/assignments/$(request.resource.data.taskId)).data.programId))
               && get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.classId == userDoc().data.classId
               && get(/databases/$(database)/documents/taskGroups/$(request.resource.data.groupKey)).data.memberNis == request.resource.data.memberNis
               && userDoc().data.loginId in request.resource.data.memberNis));
