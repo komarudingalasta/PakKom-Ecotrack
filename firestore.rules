@@ -9,6 +9,7 @@ service cloud.firestore {
     function isTeacher(){ return activeUser() && userDoc().data.role == 'guru'; }
     function isStaff(){ return isAdmin() || isTeacher(); }
     function isHomeroom(){ return isTeacher() && userDoc().data.isHomeroom == true; }
+    function isTaskStaff(){ return isAdmin() || isHomeroom(); }
     function isAnonymous(){ return signedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous'; }
 
     // Siswa dianggap aktif berdasarkan sumber utama studentAccess,
@@ -115,23 +116,23 @@ service cloud.firestore {
     }
 
     match /cocurricularPrograms/{programId} {
-      allow get: if isStaff() || (isStudent() && resource.data.active == true);
-      allow list: if isStaff() || (isStudent() && resource.data.active == true);
+      allow get: if isTaskStaff() || (isStudent() && resource.data.active == true);
+      allow list: if isTaskStaff() || (isStudent() && resource.data.active == true);
       allow create, update, delete: if isAdmin();
     }
 
     match /assignments/{taskId} {
-      allow get: if isStaff() || (isStudent()
+      allow get: if isTaskStaff() || (isStudent()
         && resource.data.targetClasses is list
         && userDoc().data.classId in resource.data.targetClasses);
-      allow list: if isStaff() || isStudent();
+      allow list: if isTaskStaff() || isStudent();
       allow create, update, delete: if isAdmin();
     }
 
     match /taskGroups/{groupKey} {
-      allow get: if isStaff()
+      allow get: if isTaskStaff()
         || (isStudent() && resource.data.classId == userDoc().data.classId);
-      allow list: if isStaff()
+      allow list: if isTaskStaff()
         || (isStudent() && resource.data.classId == userDoc().data.classId);
 
       // Siswa membentuk kelompok. Jika tugas terhubung Program Kokurikuler,
@@ -159,7 +160,7 @@ service cloud.firestore {
     }
 
     match /taskSubmissions/{id} {
-      allow read: if isStaff()
+      allow read: if isTaskStaff()
         || (isStudent()
           && (resource.data.nis == userDoc().data.loginId
             || (resource.data.memberNis is list && userDoc().data.loginId in resource.data.memberNis)));
@@ -181,6 +182,9 @@ service cloud.firestore {
               && userDoc().data.loginId in request.resource.data.memberNis));
 
       allow update: if (isStudent()
+        // Siswa boleh memperbaiki/kirim ulang selama tugas belum dinilai.
+        && resource.data.status != 'graded'
+        && request.resource.data.status in ['draft','submitted']
         && resource.data.classId == userDoc().data.classId
         && (resource.data.nis == userDoc().data.loginId
           || (resource.data.memberNis is list && userDoc().data.loginId in resource.data.memberNis))
@@ -192,8 +196,8 @@ service cloud.firestore {
         && request.resource.data.memberNis == resource.data.memberNis
         && request.resource.data.memberNames == resource.data.memberNames
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'answers','reflection','status','submittedAt','submittedByNis','submittedByName',
-          'updatedAt','updatedByNis','studentUid','studentId','nis','studentName'
+          'answers','reflection','status','submittedAt','firstSubmittedAt','lastSubmittedAt','resubmissionCount',
+          'submittedByNis','submittedByName','updatedAt','updatedByNis','studentUid','studentId','nis','studentName'
         ]))
         || ((isAdmin() || (isHomeroom() && resource.data.classId == userDoc().data.homeroomClass))
         && request.resource.data.taskId == resource.data.taskId
@@ -202,6 +206,12 @@ service cloud.firestore {
           'score','feedback','status','gradedAt','gradedByUid','gradedByName','updatedAt'
         ]));
       allow delete: if isAdmin();
+    }
+
+    // Riwayat aktivitas tugas hanya untuk Admin.
+    match /taskActivity/{id} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
     }
 
     match /{document=**} {
