@@ -22,36 +22,96 @@ async function review(id){
   const t=tasks.find(x=>x.id===id);
   try{
     const wali=profile.role==='guru'&&profile.isHomeroom===true,readOnly=profile.role==='guru'&&!wali;
-    const allowedClasses=wali?[normClass(profile.homeroomClass||'')]:(t.targetClasses||[]).map(normClass);
-    let q=db.collection('taskSubmissions').where('taskId','==',id);
-    if(wali)q=q.where('classId','==',allowedClasses[0]);
-    const s=await q.get(),submissions=s.docs.map(d=>({id:d.id,...d.data()}));
-    let rows=[],ungrouped=[];
+    const allowedClasses=(wali?[profile.homeroomClass]:(t.targetClasses||[])).map(normClass).filter(Boolean);
+    const normNis=v=>String(v??'').trim().replace(/\s+/g,'');
+    const statusRank={graded:5,revision:4,submitted:3,draft:2,not_submitted:1};
+    const pickLatest=(a,b)=>{
+      if(!a)return b;if(!b)return a;
+      const ta=String(a.updatedAt||a.submittedAt||''),tb=String(b.updatedAt||b.submittedAt||'');
+      if(tb!==ta)return tb>ta?b:a;
+      return (statusRank[b.status]||0)>(statusRank[a.status]||0)?b:a;
+    };
+
+    // Ambil semua submission tugas terlebih dahulu. Wali difilter berdasarkan kelas secara
+    // client-side setelah normalisasi agar data lama seperti "9 F" tetap terbaca sebagai "9F".
+    const s=await db.collection('taskSubmissions').where('taskId','==',id).get();
+    const submissions=s.docs.map(d=>({id:d.id,...d.data()}))
+      .filter(x=>allowedClasses.includes(normClass(x.classId)));
+
+    // Ambil master siswa sekali saja dan cocokkan kelas setelah normalisasi. Ini menghindari
+    // data siswa lama yang format classId-nya tidak persis sama dengan data tugas.
+    const ss=await db.collection('students').get();
+    const studentDocs=ss.docs.map(d=>({sid:d.id,...d.data()}))
+      .map(st=>({...st,classId:normClass(st.classId)}))
+      .filter(st=>st.active!==false&&allowedClasses.includes(st.classId));
+
+    let rows=[],ungrouped=[],orphanCount=0;
     if(t.taskType==='group'){
       let gq=t.programId?db.collection('taskGroups').where('programId','==',t.programId):db.collection('taskGroups').where('taskId','==',id);
-      if(wali)gq=gq.where('classId','==',allowedClasses[0]);
-      const gs=await gq.get(),allGroups=gs.docs.map(d=>({id:d.id,...d.data()})).filter(g=>allowedClasses.includes(normClass(g.classId)));
-      const byKey=new Map(submissions.map(x=>[x.groupKey,x]));
-      rows=allGroups.map(g=>byKey.get(g.groupKey)||({...g,id:'',status:'not_submitted',score:null,feedback:''}));
-      for(const c of allowedClasses){
-        const ss=await db.collection('students').where('classId','==',c).get();
-        const used=new Set(allGroups.filter(g=>normClass(g.classId)===c).flatMap(g=>(g.memberNis||[]).map(String)));
-        ss.docs.map(d=>({sid:d.id,...d.data()})).filter(st=>st.active!==false&&!used.has(String(st.nis||st.sid))).forEach(st=>ungrouped.push({nis:String(st.nis||st.sid),name:st.name||st.nis||st.sid,classId:c}));
-      }
+      const gs=await gq.get();
+      const allGroups=gs.docs.map(d=>({id:d.id,...d.data()}))
+        .filter(g=>allowedClasses.includes(normClass(g.classId)))
+        .map(g=>({...g,classId:normClass(g.classId)}));
+
+      const subByGroup=new Map();
+      submissions.forEach(x=>{
+        const k=String(x.groupKey||'').trim();
+        if(k)subByGroup.set(k,pickLatest(subByGroup.get(k),x));
+      });
+      const matchedIds=new Set();
+      rows=allGroups.map(g=>{
+        const found=subByGroup.get(String(g.groupKey||g.id||'').trim());
+        if(found){matchedIds.add(found.id);return {...g,...found,classId:normClass(found.classId||g.classId),memberNis:found.memberNis||g.memberNis||[],memberNames:found.memberNames||g.memberNames||[]};}
+        return {...g,id:'',status:'not_submitted',score:null,feedback:''};
+      });
+
+      // Submission yang benar-benar ada di Firestore tidak boleh hilang hanya karena dokumen
+      // taskGroups lama/bermasalah. Tampilkan sebagai baris pemulihan agar Admin/Wali tetap bisa menilai.
+      submissions.filter(x=>!matchedIds.has(x.id)).forEach(x=>{
+        rows.push({...x,_unmapped:true,classId:normClass(x.classId)});
+        orphanCount++;
+      });
+
+      // Anggota dianggap sudah berkelompok bila ditemukan di taskGroups ATAU di submission kelompok.
+      const used=new Set();
+      allGroups.forEach(g=>(g.memberNis||[]).forEach(n=>used.add(normNis(n))));
+      submissions.forEach(x=>(x.memberNis||[]).forEach(n=>used.add(normNis(n))));
+      studentDocs.filter(st=>!used.has(normNis(st.nis||st.sid))).forEach(st=>ungrouped.push({nis:normNis(st.nis||st.sid),name:st.name||st.nis||st.sid,classId:st.classId}));
     }else{
-      const studentDocs=[];
-      for(const c of allowedClasses){const ss=await db.collection('students').where('classId','==',c).get();ss.docs.forEach(d=>studentDocs.push({sid:d.id,...d.data(),classId:normClass(d.data().classId||c)}))}
-      const byNis=new Map(submissions.map(x=>[String(x.nis),x]));
-      rows=studentDocs.filter(x=>x.active!==false).map(st=>byNis.get(String(st.nis||st.sid))||{id:'',nis:String(st.nis||st.sid),studentName:st.name||st.nis||st.sid,classId:st.classId,status:'not_submitted',score:null});
+      const byNis=new Map();
+      submissions.forEach(x=>{
+        // Dukungan dokumen lama: coba NIS utama, submittedByNis, lalu studentId.
+        [x.nis,x.submittedByNis,x.studentId].map(normNis).filter(Boolean).forEach(k=>byNis.set(k,pickLatest(byNis.get(k),x)));
+      });
+      const matchedIds=new Set();
+      rows=studentDocs.map(st=>{
+        const keys=[st.nis,st.sid,st.studentId].map(normNis).filter(Boolean);
+        const found=keys.map(k=>byNis.get(k)).find(Boolean);
+        if(found){matchedIds.add(found.id);return {...found,studentName:found.studentName||st.name||st.nis||st.sid,classId:normClass(found.classId||st.classId)};}
+        return {id:'',nis:normNis(st.nis||st.sid),studentName:st.name||st.nis||st.sid,classId:st.classId,status:'not_submitted',score:null};
+      });
+
+      // Jangan sembunyikan submission hanya karena NIS/master siswa tidak berhasil dipasangkan.
+      submissions.filter(x=>!matchedIds.has(x.id)).forEach(x=>{
+        rows.push({...x,_unmapped:true,classId:normClass(x.classId),studentName:x.studentName||x.submittedByName||x.nis||'Data submission'});
+        orphanCount++;
+      });
     }
-    const counts={done:rows.filter(r=>['submitted','graded','revision'].includes(r.status)).length,missing:rows.filter(r=>!r.id||r.status==='draft').length,revision:rows.filter(r=>r.status==='revision').length,graded:rows.filter(r=>r.status==='graded').length};
+
+    const counts={
+      done:rows.filter(r=>r.id&&['submitted','graded','revision'].includes(r.status)).length,
+      missing:rows.filter(r=>!r.id||r.status==='draft').length,
+      revision:rows.filter(r=>r.status==='revision').length,
+      graded:rows.filter(r=>r.status==='graded').length
+    };
     if(t.taskType==='group')counts.missing+=ungrouped.length;
-    modal(`<h2>Monitoring • ${esc(t.title)}</h2><div class="notice"><b>${counts.done} sudah mengumpulkan • ${counts.missing} belum • ${counts.revision} perbaikan • ${counts.graded} dinilai</b><br><small>Rentang Nilai: ${esc(rangeText())}</small></div>${t.taskType==='group'&&ungrouped.length?`<div class="notice"><b>${ungrouped.length} siswa belum membentuk kelompok</b><br><small>${esc(ungrouped.map(x=>`${x.name} (${x.classId})`).join(', '))}</small></div>`:''}<div class="tablewrap"><table class="table"><thead><tr><th>${t.taskType==='group'?'Kelompok':'Siswa'}</th><th>Kelas</th><th>Status</th><th>Nilai</th><th>Kategori</th><th></th></tr></thead><tbody>${rows.sort((a,b)=>String(a.classId||'').localeCompare(String(b.classId||''))||Number(a.groupNo||0)-Number(b.groupNo||0)||String(a.studentName||'').localeCompare(String(b.studentName||''))).map(r=>{const st=r.status||'not_submitted',label=st==='revision'?'Belum Diperbaiki':st==='submitted'?'Sudah Mengumpulkan':st==='graded'?'Sudah Dinilai':st==='draft'?'Draf':'Belum Mengumpulkan';let action='<span class="tag">Monitoring</span>';if(!readOnly){action=!r.id?'<span class="tag">Belum masuk</span>':st==='revision'?'<span class="tag">Menunggu siswa</span>':`<button class="secondary" data-grade="${r.id}">${st==='graded'?'Lihat':'Periksa'}</button>`}return `<tr><td>${t.taskType==='group'?`<b>Kelompok ${esc(r.groupNo||'-')}</b><small style="display:block">${esc((r.memberNames||[]).join(', '))}</small>`:esc(r.studentName||r.nis)}</td><td>${esc(r.classId)}</td><td>${esc(label)}</td><td>${esc(r.score??'-')}</td><td>${esc(scoreCategory(r.score)||'-')}</td><td>${action}</td></tr>`}).join('')||'<tr><td colspan="6">Belum ada kelompok/pengumpulan.</td></tr>'}</tbody></table></div>`);
+    const recovery=orphanCount?`<div class="notice"><b>${orphanCount} pengumpulan ditemukan dari data aktual Firestore</b><br><small>Data ini belum dapat dipasangkan sempurna dengan master ${t.taskType==='group'?'kelompok':'siswa'}, tetapi tetap ditampilkan agar tidak hilang dari monitoring.</small></div>`:'';
+    modal(`<h2>Monitoring • ${esc(t.title)}</h2><div class="notice"><b>${counts.done} sudah mengumpulkan • ${counts.missing} belum • ${counts.revision} perbaikan • ${counts.graded} dinilai</b><br><small>Rentang Nilai: ${esc(rangeText())}</small></div>${recovery}${t.taskType==='group'&&ungrouped.length?`<div class="notice"><b>${ungrouped.length} siswa belum membentuk kelompok</b><br><small>${esc(ungrouped.map(x=>`${x.name} (${x.classId})`).join(', '))}</small></div>`:''}<div class="tablewrap"><table class="table"><thead><tr><th>${t.taskType==='group'?'Kelompok':'Siswa'}</th><th>Kelas</th><th>Status</th><th>Nilai</th><th>Kategori</th><th></th></tr></thead><tbody>${rows.sort((a,b)=>String(a.classId||'').localeCompare(String(b.classId||''))||Number(a.groupNo||0)-Number(b.groupNo||0)||String(a.studentName||'').localeCompare(String(b.studentName||''))).map(r=>{const st=r.status||'not_submitted',label=st==='revision'?'Belum Diperbaiki':st==='submitted'?'Sudah Mengumpulkan':st==='graded'?'Sudah Dinilai':st==='draft'?'Draf':'Belum Mengumpulkan';let action='<span class="tag">Monitoring</span>';if(!readOnly){action=!r.id?'<span class="tag">Belum masuk</span>':st==='revision'?'<span class="tag">Menunggu siswa</span>':`<button class="secondary" data-grade="${r.id}">${st==='graded'?'Lihat':'Periksa'}</button>`}const recoveryTag=r._unmapped?'<small style="display:block">Data aktual pengumpulan</small>':'';return `<tr><td>${t.taskType==='group'?`<b>Kelompok ${esc(r.groupNo||'-')}</b><small style="display:block">${esc((r.memberNames||[]).join(', '))}</small>${recoveryTag}`:`${esc(r.studentName||r.nis)}${recoveryTag}`}</td><td>${esc(r.classId)}</td><td>${esc(label)}</td><td>${esc(r.score??'-')}</td><td>${esc(scoreCategory(r.score)||'-')}</td><td>${action}</td></tr>`}).join('')||'<tr><td colspan="6">Belum ada kelompok/pengumpulan.</td></tr>'}</tbody></table></div>`);
     if(!readOnly)document.querySelectorAll('[data-grade]').forEach(b=>b.onclick=()=>grade(b.dataset.grade,t));
-  }catch(err){modal(`<h2>Monitoring belum dapat dimuat</h2><p>${esc(err.message)}</p><div class="notice">Pastikan Firestore Rules v9.7.3 sudah dipublikasikan.</div>`)}
+  }catch(err){modal(`<h2>Monitoring belum dapat dimuat</h2><p>${esc(err.message)}</p><div class="notice">Rules tidak berubah pada v9.7.5. Gunakan Firestore Rules v9.7.4 yang sudah dipublikasikan.</div>`)}
 }
 async function grade(id,t){const d=await db.collection('taskSubmissions').doc(id).get(),s={id:d.id,...d.data()};modal(`<h2>Periksa • ${esc(t.title)}</h2><p><b>${esc(t.taskType==='group'?`Kelompok ${s.groupNo}`:(s.studentName||s.nis))}</b> • ${esc(s.classId)}</p>${t.taskType==='group'?`<div class="notice"><b>Anggota:</b> ${esc((s.memberNames||[]).join(', '))}<br><small>Dikumpulkan oleh ${esc(s.submittedByName||'-')}</small></div>`:''}${(s.answers||[]).map(a=>`<div class="answer"><b>${esc(a.label||'Jawaban')}</b>${a.url?`<div><a href="${esc(a.url)}" target="_blank" rel="noopener">${a.type==='photo'?'Buka Foto':a.type==='video'?'Tonton Video':a.type==='document'?'Buka Dokumen':'Buka Link'} ↗</a></div>`:''}${a.text?`<p>${esc(a.text)}</p>`:''}${a.description?`<p><small>Keterangan:</small> ${esc(a.description)}</p>`:''}</div>`).join('')}<div class="notice"><b>Kategori Nilai</b><br>${esc(rangeText())}</div><div class="field"><label>Nilai 0–100</label><input id="score" type="number" min="0" max="100" value="${esc(s.score??'')}"><div id="scoreCategory" class="notice" style="margin-top:8px">${s.score!==null&&s.score!==undefined&&s.score!==''?`Kategori: <b>${esc(scoreCategory(s.score))}</b>`:'Masukkan nilai untuk melihat kategori.'}</div></div><div class="field"><label>Catatan</label><textarea id="feedback">${esc(s.feedback||'')}</textarea></div><div class="actions"><button id="revision" class="secondary">Perlu Perbaikan</button><button id="saveGrade" class="primary">Simpan Nilai</button></div>`);const scoreEl=$('#score'),catEl=$('#scoreCategory');scoreEl.oninput=()=>{const raw=scoreEl.value,n=Number(raw);catEl.innerHTML=raw!==''&&Number.isFinite(n)&&n>=0&&n<=100?`Kategori: <b>${esc(scoreCategory(n))}</b>`:'Masukkan nilai 0–100 untuk melihat kategori.'};$('#revision').onclick=()=>saveGrade(id,'revision');$('#saveGrade').onclick=()=>saveGrade(id,'graded')}
 async function saveGrade(id,status){const feedback=$('#feedback')?.value.trim()||'',scoreRaw=$('#score')?.value??'',score=status==='graded'?Number(scoreRaw):null;if(status==='graded'&&(scoreRaw===''||!Number.isFinite(score)||score<0||score>100))return alert('Nilai wajib 0–100.');try{await db.collection('taskSubmissions').doc(id).set({score,feedback,status,gradedAt:status==='graded'?new Date().toISOString():null,gradedByUid:user.uid,gradedByName:profile.name||'',updatedAt:new Date().toISOString()},{merge:true});close();await load();alert(status==='graded'?'Nilai berhasil disimpan.':'Tugas dikembalikan untuk diperbaiki.')}catch(e){alert('Gagal menyimpan: '+e.message)}}
 function showErr(msg){$('#loading').classList.add('hidden');$('#app').classList.add('hidden');$('#error').classList.remove('hidden');$('#error').innerHTML=`<h2>Tugas belum dapat dibuka</h2><p>${esc(msg)}</p><p><a href="../">Kembali ke EcoTrack</a></p>`}
 $('#newTask').onclick=()=>openBuilder();
-auth.onAuthStateChanged(async u=>{if(!u)return showErr('Sesi Admin/Guru tidak ditemukan. Silakan login dari EcoTrack terlebih dahulu.');user=u;try{const d=await db.collection('users').doc(u.uid).get();if(!d.exists)throw new Error('Profil akun tidak ditemukan.');profile=d.data();if(profile.active!==true)throw new Error('Akun tidak aktif.');if(profile.role!=='admin'&&profile.role!=='guru')throw new Error('Tugas hanya dapat diakses Admin/Guru.');profile.homeroomClass=normClass(profile.homeroomClass||'');$('#loading').classList.add('hidden');$('#error').classList.add('hidden');$('#app').classList.remove('hidden');$('#roleLabel').textContent=profile.role==='admin'?'ADMIN':profile.isHomeroom===true?'WALI KELAS':'GURU • MONITORING';$('#profileLabel').textContent=profile.name+(profile.homeroomClass?' • '+profile.homeroomClass:'');$('#taskVersion').textContent=profile.role==='admin'?'Tugas Siswa • v9.7.3':'Tugas Siswa';if(profile.role==='admin')$('#newTask').classList.remove('hidden');await load()}catch(e){showErr(e.message)}});
+auth.onAuthStateChanged(async u=>{if(!u)return showErr('Sesi Admin/Guru tidak ditemukan. Silakan login dari EcoTrack terlebih dahulu.');user=u;try{const d=await db.collection('users').doc(u.uid).get();if(!d.exists)throw new Error('Profil akun tidak ditemukan.');profile=d.data();if(profile.active!==true)throw new Error('Akun tidak aktif.');if(profile.role!=='admin'&&profile.role!=='guru')throw new Error('Tugas hanya dapat diakses Admin/Guru.');profile.homeroomClass=normClass(profile.homeroomClass||'');$('#loading').classList.add('hidden');$('#error').classList.add('hidden');$('#app').classList.remove('hidden');$('#roleLabel').textContent=profile.role==='admin'?'ADMIN':profile.isHomeroom===true?'WALI KELAS':'GURU • MONITORING';$('#profileLabel').textContent=profile.name+(profile.homeroomClass?' • '+profile.homeroomClass:'');$('#taskVersion').textContent=profile.role==='admin'?'Tugas Siswa • v9.7.5':'Tugas Siswa';if(profile.role==='admin')$('#newTask').classList.remove('hidden');await load()}catch(e){showErr(e.message)}});
