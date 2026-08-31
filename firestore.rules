@@ -196,8 +196,18 @@ service cloud.firestore {
         && resource.data.status != 'graded'
         && request.resource.data.status in ['draft','submitted']
         && resource.data.classId == userDoc().data.classId
-        && (resource.data.nis == userDoc().data.loginId
-          || (resource.data.memberNis is list && userDoc().data.loginId in resource.data.memberNis))
+        && (
+          resource.data.nis == userDoc().data.loginId
+          || (resource.data.memberNis is list && userDoc().data.loginId in resource.data.memberNis)
+          || (
+            resource.data.taskType == 'group'
+            && resource.data.groupKey is string
+            && exists(/databases/$(database)/documents/taskGroups/$(resource.data.groupKey))
+            && get(/databases/$(database)/documents/taskGroups/$(resource.data.groupKey)).data.classId == userDoc().data.classId
+            && get(/databases/$(database)/documents/taskGroups/$(resource.data.groupKey)).data.memberNis is list
+            && userDoc().data.loginId in get(/databases/$(database)/documents/taskGroups/$(resource.data.groupKey)).data.memberNis
+          )
+        )
         && request.resource.data.taskId == resource.data.taskId
         && request.resource.data.classId == resource.data.classId
         && request.resource.data.taskType == resource.data.taskType
