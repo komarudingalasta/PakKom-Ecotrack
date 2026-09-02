@@ -12,6 +12,12 @@ service cloud.firestore {
     function isTaskStaff(){ return isAdmin() || isHomeroom(); }
     function isAnonymous(){ return signedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous'; }
 
+    function taskGroupMaxMembers(){
+      return exists(/databases/$(database)/documents/settings/taskGroup)
+        ? get(/databases/$(database)/documents/settings/taskGroup).data.maxMembers
+        : 6;
+    }
+
     // Siswa dianggap aktif berdasarkan sumber utama studentAccess,
     // bukan hanya field active pada users/{anonymousUid}.
     // Ini mencegah sesi siswa yang valid tertolak karena profil sesi lama/stale.
@@ -90,7 +96,7 @@ service cloud.firestore {
     }
 
     match /settings/{id} {
-      allow read: if isStaff() || (isStudent() && id == 'taskAssessment');
+      allow read: if isStaff() || (isStudent() && id in ['taskAssessment','taskGroup']);
       allow write: if isAdmin();
     }
 
@@ -146,7 +152,7 @@ service cloud.firestore {
           && request.resource.data.memberNis is list
           && request.resource.data.memberNames is list
           && request.resource.data.memberNis.size() >= 2
-          && request.resource.data.memberNis.size() <= 6
+          && request.resource.data.memberNis.size() <= taskGroupMaxMembers()
           && request.resource.data.memberNames.size() == request.resource.data.memberNis.size()
           && userDoc().data.loginId in request.resource.data.memberNis
           && request.resource.data.createdByNis == userDoc().data.loginId
