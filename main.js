@@ -968,7 +968,7 @@ function inputPage(){
 
   if(!state.selectedClass){
     content.innerHTML=`
-      ${admin?`<div class="card admin-date-panel"><div><b>📅 Tanggal Pendataan Admin</b><small>Admin dapat mengisi atau memperbaiki data pada tanggal apa pun, termasuk hari libur dan tanggal lampau.</small></div><input id="adminWadahDate" class="input-inline" type="date" max="${todayKey()}" value="${wadahDateKey()}"></div>`:''}
+      ${admin?`<div class="card admin-date-panel"><div><b>📅 Pendataan Admin</b><small>Gunakan input harian untuk satu tanggal atau Input Massal untuk beberapa hari sekaligus.</small></div><div class="row-actions"><input id="adminWadahDate" class="input-inline" type="date" max="${todayKey()}" value="${wadahDateKey()}"><button id="openBulkWadah" class="btn primary">▦ Input Massal</button></div></div>`:''}
       ${closed?`<div class="card wadah-closed-banner"><div class="lock-icon">🔒</div><div><h3>Pendataan Hari Ini Sudah Ditutup</h3><p>Waktu pengisian berakhir pukul <b>${esc(wt.label)}</b>. Data yang sudah masuk tetap dapat dilihat, tetapi Guru/Wali Kelas tidak dapat membuat atau mengedit pendataan lagi.</p></div></div>`:
       `<div class="wadah-open-info">🟢 Pendataan dibuka sampai <b>${esc(wt.label)}</b></div>`}
       <div class="card"><h3>Pilih Kelas</h3><div class="grid class-grid">${state.classes.map(c=>{
@@ -976,7 +976,7 @@ function inputPage(){
         return `<button class="class-btn ${r?'done':'pending'} ${closed&&!r?'locked':''}" data-class="${c}" ${closed&&!r?'disabled':''}><b>${c}</b><small>${r?'Sudah didata':closed?'🔒 Ditutup':'Belum didata'}</small></button>`;
       }).join('')}</div></div>`;
     bindClassButtons();
-    if($('#adminWadahDate')) $('#adminWadahDate').onchange=e=>changeAdminWadahDate(e.target.value);
+    if($('#adminWadahDate')) $('#adminWadahDate').onchange=e=>changeAdminWadahDate(e.target.value); if($('#openBulkWadah')) $('#openBulkWadah').onclick=renderBulkWadahPage;
     return;
   }
   loadClassForm(state.selectedClass);
@@ -1095,6 +1095,50 @@ async function saveClass(c){
 }
 
 
+
+
+function dateKeysBetween(start,end){
+  const out=[],a=new Date(start+'T00:00:00'),b=new Date(end+'T00:00:00');
+  if(!start||!end||a>b)return out;
+  for(let d=new Date(a);d<=b;d.setDate(d.getDate()+1)) out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+  return out;
+}
+function renderBulkWadahPage(){
+  if(state.profile.role!=='admin'){toast('Khusus Admin');return;}
+  pageMeta('Input Massal Wadah & Tumbler','Isi beberapa hari sekaligus tanpa Excel');
+  const end=todayKey(), d=new Date(); d.setDate(d.getDate()-4); const start=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Input Massal</h3><small>Nama siswa otomatis dari Data Siswa. Pilih kelas dan periode.</small></div><button id="bulkBack" class="btn ghost">← Input Harian</button></div>
+  <div class="card bulk-wadah-filter"><label>Kelas<select id="bulkClass" class="input-inline">${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></label><label>Dari<input id="bulkStart" class="input-inline" type="date" max="${end}" value="${start}"></label><label>Sampai<input id="bulkEnd" class="input-inline" type="date" max="${end}" value="${end}"></label><button id="bulkLoad" class="btn primary">Tampilkan</button></div><div id="bulkWorkspace"><div class="empty">Pilih kelas dan periode lalu tekan Tampilkan.</div></div>`;
+  $('#bulkBack').onclick=()=>{state.selectedClass=null;inputPage()}; $('#bulkLoad').onclick=loadBulkWadah;
+}
+async function loadBulkWadah(){
+  const cls=$('#bulkClass').value,start=$('#bulkStart').value,end=$('#bulkEnd').value,dates=dateKeysBetween(start,end),box=$('#bulkWorkspace');
+  if(!dates.length){toast('Periode tidak valid');return;} if(dates.length>31){toast('Maksimal 31 hari sekali input');return;}
+  box.innerHTML='<div class="card"><div class="empty">Memuat siswa dan pendataan...</div></div>';
+  try{
+    const [ss,rs]=await Promise.all([getDocs(query(collection(db,'students'),where('classId','==',cls))),getDocs(query(collection(db,'records'),where('date','>=',start),where('date','<=',end)))]);
+    const students=ss.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.active!==false).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    const records=rs.docs.map(d=>({id:d.id,...d.data()})).filter(r=>r.classId===cls), byDate=new Map(records.map(r=>[r.date,r]));
+    window.bulkWadah={cls,dates,students,byDate,data:{}};
+    dates.forEach(date=>{const r=byDate.get(date),m=new Map((r?.items||[]).map(i=>[String(i.studentId||i.nis),i]));window.bulkWadah.data[date]=students.map(st=>{const old=m.get(String(st.id))||m.get(String(st.nis||st.id));return old?{...old,studentId:st.id,nis:st.nis||st.id,name:st.name}:{studentId:st.id,nis:st.nis||st.id,name:st.name,presence:'hadir',food:true,tumbler:true};});});
+    renderBulkWadahMatrix();
+  }catch(e){console.error(e);box.innerHTML='<div class="empty">Gagal memuat data.</div>';}
+}
+function renderBulkWadahMatrix(){
+  const b=window.bulkWadah,box=$('#bulkWorkspace'); if(!b||!box)return;
+  box.innerHTML=`<div class="card"><div class="section-head"><div><h3>Kelas ${esc(b.cls)}</h3><small>${b.students.length} siswa • ${b.dates.length} hari. Data lama akan ditampilkan dan dapat dikoreksi.</small></div><button id="bulkSaveAll" class="btn primary">Simpan Semua Hari</button></div><div class="bulk-day-list">${b.dates.map((date,di)=>{const items=b.data[date],hadir=items.filter(i=>i.presence==='hadir'),food=hadir.filter(i=>i.food).length,tumb=hadir.filter(i=>i.tumbler).length;return `<section class="bulk-day-card"><div class="bulk-day-head"><div><b>${idDateShort(date)}</b><small>${b.byDate.has(date)?'Data tersimpan • dapat dikoreksi':'Data baru'} • Hadir ${hadir.length} • Wadah ${hadir.length?Math.round(food/hadir.length*100):0}% • Tumbler ${hadir.length?Math.round(tumb/hadir.length*100):0}%</small></div><div class="row-actions"><button class="btn-mini" data-bulkall="${di}">Semua lengkap</button>${di?`<button class="btn-mini" data-copyday="${di}">Salin sebelumnya</button>`:''}<button class="btn-mini" data-resetday="${di}">Reset</button></div></div><div class="bulk-student-list">${items.map((i,si)=>`<div class="bulk-student-row"><div class="bulk-student-name"><b>${si+1}. ${esc(i.name)}</b><small>${esc(i.nis||i.studentId)}</small></div><select data-pres="${di}:${si}"><option value="hadir" ${i.presence==='hadir'?'selected':''}>Hadir</option><option value="izin" ${i.presence==='izin'?'selected':''}>Izin</option><option value="sakit" ${i.presence==='sakit'?'selected':''}>Sakit</option><option value="alpa" ${i.presence==='alpa'?'selected':''}>Alpa</option></select><label class="bulk-check"><input type="checkbox" data-food="${di}:${si}" ${i.food&&i.presence==='hadir'?'checked':''} ${i.presence!=='hadir'?'disabled':''}>🥡</label><label class="bulk-check"><input type="checkbox" data-tumb="${di}:${si}" ${i.tumbler&&i.presence==='hadir'?'checked':''} ${i.presence!=='hadir'?'disabled':''}>💧</label></div>`).join('')}</div></section>`}).join('')}</div></div>`;
+  document.querySelectorAll('[data-pres]').forEach(x=>x.onchange=()=>{const [d,i]=x.dataset.pres.split(':').map(Number),it=b.data[b.dates[d]][i];it.presence=x.value;if(x.value!=='hadir'){it.food=false;it.tumbler=false;}renderBulkWadahMatrix();});
+  document.querySelectorAll('[data-food]').forEach(x=>x.onchange=()=>{const [d,i]=x.dataset.food.split(':').map(Number);b.data[b.dates[d]][i].food=x.checked;});
+  document.querySelectorAll('[data-tumb]').forEach(x=>x.onchange=()=>{const [d,i]=x.dataset.tumb.split(':').map(Number);b.data[b.dates[d]][i].tumbler=x.checked;});
+  document.querySelectorAll('[data-bulkall]').forEach(x=>x.onclick=()=>{const di=+x.dataset.bulkall;b.data[b.dates[di]].forEach(i=>{i.presence='hadir';i.food=true;i.tumbler=true});renderBulkWadahMatrix();});
+  document.querySelectorAll('[data-copyday]').forEach(x=>x.onclick=()=>{const di=+x.dataset.copyday,prev=b.data[b.dates[di-1]];b.data[b.dates[di]]=b.students.map((st,i)=>({...prev[i],studentId:st.id,nis:st.nis||st.id,name:st.name}));renderBulkWadahMatrix();});
+  document.querySelectorAll('[data-resetday]').forEach(x=>x.onclick=()=>{const di=+x.dataset.resetday;b.data[b.dates[di]].forEach(i=>{i.presence='hadir';i.food=true;i.tumbler=true});renderBulkWadahMatrix();});
+  $('#bulkSaveAll').onclick=saveBulkWadah;
+}
+async function saveBulkWadah(){
+  const b=window.bulkWadah,btn=$('#bulkSaveAll'); if(!b)return; btn.disabled=true;btn.textContent='Menyimpan...';
+  try{for(const date of b.dates){const old=b.byDate.get(date),now=new Date(),audit=[...(old?.audit||[])];if(old)audit.push({editedAt:now.toISOString(),editedByUid:state.user.uid,editedByName:state.profile.name,source:'input-massal'});const payload={date,classId:b.cls,items:b.data[date],createdByUid:old?.createdByUid||state.user.uid,createdByName:old?.createdByName||state.profile.name,createdAt:old?.createdAt||now.toISOString(),teacherEditCount:Number(old?.teacherEditCount||0),teacherEditedAt:old?.teacherEditedAt||null,lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),audit};await setDoc(doc(db,'records',`${date}_${b.cls}`),payload,{merge:false});}toast(`${b.dates.length} hari kelas ${b.cls} berhasil disimpan`);await loadBulkWadah();}catch(e){console.error(e);toast(e.message||'Gagal menyimpan data massal');btn.disabled=false;btn.textContent='Simpan Semua Hari';}
+}
 
 function wadahTimeInfo(){
   const n=new Date(),d=n.getDay(),m=n.getHours()*60+n.getMinutes();
@@ -1311,34 +1355,23 @@ function recap(){
   renderWadahRecap();
 }
 function renderWadahRecap(){
-  const panel=$('#recapPanel'); panel.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap Wadah Makan & Tumbler</h3><small>Pilih tanggal dan kelas.</small></div><div class="row-actions"><input id="recapDate" class="input-inline" type="date" value="${todayKey()}"><select id="recapClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div><div id="recapBody"><div class="empty">Memuat...</div></div></div>`;
-  $('#recapDate').onchange=loadRecapDate; $('#recapClass').onchange=loadRecapDate; loadRecapDate();
+  const panel=$('#recapPanel'), end=todayKey(),d=new Date();d.setDate(d.getDate()-29);const start=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  panel.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap & Tren Wadah Makan dan Tumbler</h3><small>Pilih periode custom dan kelas. Persentase dihitung dari siswa hadir.</small></div></div><div class="trend-filter"><label>Dari<input id="trendStart" class="input-inline" type="date" value="${start}" max="${end}"></label><label>Sampai<input id="trendEnd" class="input-inline" type="date" value="${end}" max="${end}"></label><label>Kelas<select id="trendClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></label><button id="trendShow" class="btn primary">Tampilkan</button></div><div id="trendBody"><div class="empty">Memuat...</div></div></div>`;
+  $('#trendShow').onclick=loadWadahTrend;loadWadahTrend();
 }
-async function loadRecapDate(){
-  const target=$('#recapBody'); if(!target)return;
-  const date=$('#recapDate').value||todayKey(), cls=$('#recapClass').value||'';
-  try{
-    const [snap,prevSnap]=await Promise.all([
-      getDocs(query(collection(db,'records'),where('date','==',date))),
-      getDocs(query(collection(db,'records'),where('date','<',date)))
-    ]);
-    const records=snap.docs.map(d=>({id:d.id,...d.data()}));
-    const older=prevSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const prevDates=[...new Set(older.map(r=>r.date).filter(Boolean))].sort();
-    const prevDate=prevDates.length?prevDates[prevDates.length-1]:null;
-    const prevRecords=prevDate?older.filter(r=>r.date===prevDate):[];
-    const aggregate=rs=>{let hadir=0,food=0,tumb=0,both=0;rs.forEach(r=>(r.items||[]).forEach(i=>{if(i.presence==='hadir'){hadir++;if(i.food)food++;if(i.tumbler)tumb++;if(i.food&&i.tumbler)both++;}}));return {hadir,food:hadir?Math.round(food/hadir*100):null,tumb:hadir?Math.round(tumb/hadir*100):null,both:hadir?Math.round(both/hadir*100):null};};
-    const cur=aggregate(records), prev=aggregate(prevRecords);
-    const delta=(a,b)=>a==null||b==null?null:a-b;
-    const deltaHtml=d=>d==null?'<span class="badge neutral">Belum ada pembanding</span>':d>0?`<span class="badge ok">↑ ${d} poin</span>`:d<0?`<span class="badge bad">↓ ${Math.abs(d)} poin</span>`:'<span class="badge neutral">→ Tetap</span>';
-    const coverage=records.filter(r=>state.classes.includes(r.classId)).length;
-    const summary=!cls?`<div class="daily-school-summary"><div class="section-head"><div><h3>Analisis Harian Seluruh Kelas</h3><small>${idDateShort(date)} dibanding ${prevDate?idDateShort(prevDate):'belum ada hari pendataan sebelumnya'}</small></div><span class="badge ${coverage===state.classes.length?'ok':'fair'}">${coverage}/${state.classes.length} kelas • ${coverage===state.classes.length?'Data lengkap':'Data belum lengkap'}</span></div><div class="daily-metric-grid"><div><span>🥡 Wadah Makan</span><b>${cur.food??'-'}${cur.food==null?'':'%'}</b>${deltaHtml(delta(cur.food,prev.food))}</div><div><span>💧 Tumbler</span><b>${cur.tumb??'-'}${cur.tumb==null?'':'%'}</b>${deltaHtml(delta(cur.tumb,prev.tumb))}</div><div><span>🌿 Wadah + Tumbler</span><b>${cur.both??'-'}${cur.both==null?'':'%'}</b>${deltaHtml(delta(cur.both,prev.both))}</div></div><small class="metric-footnote">Persentase dihitung dari seluruh siswa hadir pada kelas yang sudah didata, sehingga kelas dengan jumlah siswa berbeda tetap dihitung proporsional.</small></div>`:'';
-    const classes=cls?[cls]:state.classes;
-    const cards=classes.map(c=>{const r=records.find(x=>x.classId===c);if(!r)return {c,status:'Belum',hadir:0,food:0,tumb:0,both:0,by:'-'};const hadir=(r.items||[]).filter(i=>i.presence==='hadir');const pct=f=>hadir.length?Math.round(hadir.filter(f).length/hadir.length*100):0;return {c,status:'Selesai',hadir:hadir.length,food:pct(i=>i.food),tumb:pct(i=>i.tumbler),both:pct(i=>i.food&&i.tumbler),by:r.lastEditedByName||r.createdByName||'Guru'};});
-    target.innerHTML=summary+`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah Makan</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th>${state.profile.role==='admin'?'<th>Aksi Admin</th>':''}</tr></thead><tbody>${cards.map(x=>{const rec=records.find(r=>r.classId===x.c);return `<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'neutral'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td>${state.profile.role==='admin'?`<td>${rec?`<button class="btn-mini danger" data-reset-wadah="${esc(rec.id)}">Reset → Belum</button>`:'-'}</td>`:''}</tr>`}).join('')}</tbody></table></div>`;
-    document.querySelectorAll('[data-reset-wadah]').forEach(b=>b.onclick=()=>resetWadahRecord(b.dataset.resetWadah));
-  }catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap.</div>';}
+function aggregateWadahRecords(rs){let hadir=0,food=0,tumb=0,both=0;rs.forEach(r=>(r.items||[]).forEach(i=>{if(i.presence==='hadir'){hadir++;if(i.food)food++;if(i.tumbler)tumb++;if(i.food&&i.tumbler)both++;}}));return {hadir,food:hadir?Math.round(food/hadir*100):null,tumb:hadir?Math.round(tumb/hadir*100):null,both:hadir?Math.round(both/hadir*100):null};}
+function deltaLabel(v){return v==null?'—':v>0?`↑ ${v} poin`:v<0?`↓ ${Math.abs(v)} poin`:'→ Tetap';}
+function trendSvg(rows,key,label){if(!rows.length)return '<div class="empty">Belum ada data.</div>';const vals=rows.map(r=>r[key]),w=900,h=250,p=42,step=rows.length>1?(w-p*2)/(rows.length-1):0,pts=vals.map((v,i)=>`${p+i*step},${h-p-(Number(v)||0)*(h-p*2)/100}`).join(' ');return `<div class="trend-chart"><div class="trend-chart-title"><b>${label}</b><small>0–100%</small></div><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${label}"><line x1="${p}" y1="${h-p}" x2="${w-p}" y2="${h-p}" class="axis"/><line x1="${p}" y1="${p}" x2="${p}" y2="${h-p}" class="axis"/><line x1="${p}" y1="${h/2}" x2="${w-p}" y2="${h/2}" class="gridline"/><polyline points="${pts}" class="trend-line"/>${vals.map((v,i)=>`<circle cx="${p+i*step}" cy="${h-p-(Number(v)||0)*(h-p*2)/100}" r="5" class="trend-dot"><title>${idDateShort(rows[i].date)}: ${v}%</title></circle>`).join('')}<text x="6" y="${p+5}">100%</text><text x="18" y="${h-p+5}">0%</text></svg><div class="trend-labels"><span>${idDateShort(rows[0].date)}</span><span>${rows.length>1?idDateShort(rows[rows.length-1].date):''}</span></div></div>`;}
+async function loadWadahTrend(){
+  const box=$('#trendBody');if(!box)return;const start=$('#trendStart').value,end=$('#trendEnd').value,cls=$('#trendClass').value||'';if(!start||!end||start>end){toast('Periode tidak valid');return;}box.innerHTML='<div class="empty">Menghitung rekap...</div>';
+  try{const snap=await getDocs(query(collection(db,'records'),where('date','>=',start),where('date','<=',end)));let records=snap.docs.map(d=>({id:d.id,...d.data()}));if(cls)records=records.filter(r=>r.classId===cls);const dates=[...new Set(records.map(r=>r.date))].sort(),daily=dates.map(date=>({date,...aggregateWadahRecords(records.filter(r=>r.date===date))}));let prev=null;daily.forEach(r=>{r.dFood=prev?r.food-prev.food:null;r.dTumb=prev?r.tumb-prev.tumb:null;r.dBoth=prev?r.both-prev.both:null;prev=r;});const overall=aggregateWadahRecords(records),first=daily[0],last=daily[daily.length-1],change=(a,b)=>a==null||b==null?null:b-a;const byClass=(cls?[cls]:state.classes).map(c=>({classId:c,...aggregateWadahRecords(records.filter(r=>r.classId===c))})).filter(x=>x.hadir);window.wadahTrendExport={start,end,cls,daily,byClass,overall,records};
+  box.innerHTML=`<div class="trend-actions"><div class="analysis-kpis"><div class="analysis-kpi"><span>🥡 Rata-rata Wadah</span><strong>${overall.food??'-'}${overall.food==null?'':'%'}</strong><small>${deltaLabel(change(first?.food,last?.food))}</small></div><div class="analysis-kpi"><span>💧 Rata-rata Tumbler</span><strong>${overall.tumb??'-'}${overall.tumb==null?'':'%'}</strong><small>${deltaLabel(change(first?.tumb,last?.tumb))}</small></div><div class="analysis-kpi"><span>🌿 Keduanya</span><strong>${overall.both??'-'}${overall.both==null?'':'%'}</strong><small>${deltaLabel(change(first?.both,last?.both))}</small></div></div><div class="row-actions"><button id="downloadTrendXlsx" class="btn secondary">↓ Excel</button><button id="downloadTrendPdf" class="btn secondary">↓ PDF</button></div></div><div class="trend-grid">${trendSvg(daily,'food','Tren Wadah Makan')}${trendSvg(daily,'tumb','Tren Tumbler')}${trendSvg(daily,'both','Tren Wadah + Tumbler')}</div><div class="card inner-card"><h3>Perbandingan per Kelas</h3><div class="class-bar-list">${byClass.map(x=>`<div class="class-bar-row"><b>${esc(x.classId)}</b><span>🥡 ${x.food}%</span><div class="mini-bar"><i style="width:${x.food}%"></i></div><span>💧 ${x.tumb}%</span><div class="mini-bar"><i style="width:${x.tumb}%"></i></div></div>`).join('')||'<div class="empty">Belum ada data.</div>'}</div></div><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Hadir</th><th>Wadah</th><th>Δ</th><th>Tumbler</th><th>Δ</th><th>Keduanya</th><th>Δ</th></tr></thead><tbody>${daily.map(r=>`<tr><td>${idDateShort(r.date)}</td><td>${r.hadir}</td><td>${r.food}%</td><td>${deltaLabel(r.dFood)}</td><td>${r.tumb}%</td><td>${deltaLabel(r.dTumb)}</td><td>${r.both}%</td><td>${deltaLabel(r.dBoth)}</td></tr>`).join('')}</tbody></table></div>`;
+  $('#downloadTrendXlsx').onclick=downloadWadahTrendXlsx;$('#downloadTrendPdf').onclick=downloadWadahTrendPdf;
+  }catch(e){console.error(e);box.innerHTML='<div class="empty">Gagal memuat rekap periode.</div>';}
 }
+function downloadWadahTrendXlsx(){const x=window.wadahTrendExport;if(!x||!window.XLSX)return toast('Data belum siap');const wb=XLSX.utils.book_new(),summary=[['REKAP WADAH MAKAN & TUMBLER'],['Periode',x.start,x.end],['Kelas',x.cls||'Semua Kelas'],[],['Metrik','Persentase'],['Wadah Makan',x.overall.food],['Tumbler',x.overall.tumb],['Keduanya',x.overall.both]],daily=x.daily.map(r=>({'Tanggal':r.date,'Hadir':r.hadir,'Wadah (%)':r.food,'Perubahan Wadah (poin)':r.dFood,'Tumbler (%)':r.tumb,'Perubahan Tumbler (poin)':r.dTumb,'Keduanya (%)':r.both,'Perubahan Keduanya (poin)':r.dBoth})),classes=x.byClass.map(r=>({'Kelas':r.classId,'Hadir':r.hadir,'Wadah (%)':r.food,'Tumbler (%)':r.tumb,'Keduanya (%)':r.both}));XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(summary),'Ringkasan');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(daily),'Tren Harian');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(classes),'Rekap per Kelas');const detail=[];x.records.forEach(r=>(r.items||[]).forEach(i=>detail.push({'Tanggal':r.date,'Kelas':r.classId,'NIS':i.nis||i.studentId,'Nama':i.name,'Kehadiran':i.presence,'Wadah':i.presence==='hadir'?(i.food?'Ya':'Tidak'):'-','Tumbler':i.presence==='hadir'?(i.tumbler?'Ya':'Tidak'):'-'})));XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(detail),'Data Detail');XLSX.writeFile(wb,`Rekap-Wadah-Tumbler-${x.start}-${x.end}.xlsx`);}
+function downloadWadahTrendPdf(){const x=window.wadahTrendExport;if(!x)return toast('Data belum siap');if(!window.jspdf?.jsPDF)return toast('Generator PDF belum termuat');const {jsPDF}=window.jspdf,pdf=new jsPDF({orientation:'landscape'});pdf.setFontSize(16);pdf.text('Rekap Wadah Makan & Tumbler',14,16);pdf.setFontSize(10);pdf.text(`Periode: ${x.start} s.d. ${x.end} | Kelas: ${x.cls||'Semua Kelas'}`,14,24);pdf.text(`Wadah: ${x.overall.food??'-'}%   Tumbler: ${x.overall.tumb??'-'}%   Keduanya: ${x.overall.both??'-'}%`,14,31);let y=42;pdf.setFontSize(9);pdf.text('Tanggal',14,y);pdf.text('Hadir',55,y);pdf.text('Wadah',80,y);pdf.text('Perubahan',110,y);pdf.text('Tumbler',155,y);pdf.text('Perubahan',188,y);pdf.text('Keduanya',235,y);y+=6;x.daily.slice(0,22).forEach(r=>{pdf.text(String(r.date),14,y);pdf.text(String(r.hadir),55,y);pdf.text(`${r.food}%`,80,y);pdf.text(deltaLabel(r.dFood),110,y);pdf.text(`${r.tumb}%`,155,y);pdf.text(deltaLabel(r.dTumb),188,y);pdf.text(`${r.both}%`,235,y);y+=6;});pdf.save(`Rekap-Wadah-Tumbler-${x.start}-${x.end}.pdf`);}
+
 function renderCleanRecap(){
   const panel=$('#recapPanel'); panel.innerHTML=`<div class="card"><div class="section-head"><div><h3>Rekap Kebersihan Kelas</h3><small>Hanya pemeriksaan yang sudah dilakukan yang ditampilkan.</small></div><div class="row-actions"><input id="cleanRecapDate" class="input-inline" type="date" value="${todayKey()}"><select id="cleanRecapClass" class="input-inline"><option value="">Semua kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div><div id="cleanRecapBody"><div class="empty">Memuat...</div></div></div>`; $('#cleanRecapDate').onchange=loadCleanRecap;$('#cleanRecapClass').onchange=loadCleanRecap;loadCleanRecap();
 }
