@@ -38,100 +38,78 @@ function openGroupSettings(){
 }
 
 function openBuilder(t={}){const cls=['7A','7B','7C','7D','7E','7F','7G','7H','7I','8A','8B','8C','8D','8E','8F','8G','8H','8I','9A','9B','9C','9D','9E','9F','9G','9H','9I'];let components=Array.isArray(t.components)&&t.components.length?t.components.map(x=>({...x})):[{type:t.answerType||'link',label:'Jawaban',required:true,count:1,requireDescription:(t.answerType||'link')==='link'}];modal(`<h2>${t.id?'Edit':'Buat'} Tugas</h2><form id="taskForm"><div class="field"><label>Program Kokurikuler</label><select id="programId"><option value="">Tanpa Program</option>${programs.map(p=>`<option value="${p.id}" ${t.programId===p.id?'selected':''}>${esc(p.name||'Kokurikuler')} — ${esc(p.theme||'')} / ${esc(p.topic||'')}</option>`).join('')}</select></div><div class="field"><label>Judul</label><input id="title" required value="${esc(t.title||'')}"></div><div class="field"><label>Petunjuk</label><textarea id="desc">${esc(t.description||'')}</textarea></div><div class="field"><label>Jenis</label><select id="type"><option value="individual">Individu</option><option value="group" ${t.taskType==='group'?'selected':''}>Kelompok</option></select><small>Untuk tugas kelompok, kelompok tidak dibuat otomatis. Siswa membentuk kelompok sendiri dari teman sekelas. Satu anggota cukup mengumpulkan untuk seluruh kelompok.</small></div><div class="field"><label>Kelas sasaran</label><div class="classes">${cls.map(c=>`<label class="classcheck"><input type="checkbox" data-cls="${c}" ${(t.targetClasses||[]).map(normClass).includes(c)?'checked':''}> ${c}</label>`).join('')}</div></div><div class="field"><label>Batas pengumpulan</label><input id="due" type="date" value="${esc(t.dueDate||'')}"></div><div class="field"><label>Komponen pengumpulan</label><div id="components"></div><button id="addComponent" class="secondary" type="button">+ Tambah Komponen</button><small>Foto, video, dan dokumen dikumpulkan sebagai link agar penyimpanan Firebase tetap ringan.</small></div><label><input id="published" type="checkbox" ${t.published!==false?'checked':''}> Terbitkan</label><div class="actions"><button class="primary" type="submit">Simpan Tugas</button></div></form>`);function renderComponents(){const box=$('#components');box.innerHTML=components.map((c,i)=>`<div class="card" style="margin:8px 0;padding:12px"><div class="field"><label>Jenis komponen</label><select data-ctype="${i}"><option value="text" ${c.type==='text'?'selected':''}>Jawaban Teks</option><option value="link" ${c.type==='link'?'selected':''}>Link</option><option value="photo" ${c.type==='photo'?'selected':''}>Foto</option><option value="video" ${c.type==='video'?'selected':''}>Video</option><option value="document" ${c.type==='document'?'selected':''}>Dokumen</option></select></div><div class="field"><label>Judul/label</label><input data-clabel="${i}" value="${esc(c.label)}"></div><div class="field"><label>Jumlah item</label><input data-ccount="${i}" type="number" min="1" max="10" value="${c.count}"></div><label><input data-crequired="${i}" type="checkbox" ${c.required?'checked':''}> Wajib</label>${['link','photo','video','document'].includes(c.type)?`<label><input data-cdesc="${i}" type="checkbox" ${c.requireDescription?'checked':''}> Keterangan wajib</label>`:''}<button type="button" class="secondary" data-remove-component="${i}">Hapus</button></div>`).join('');box.querySelectorAll('[data-ctype]').forEach(el=>el.onchange=()=>{components[+el.dataset.ctype].type=el.value;renderComponents()});box.querySelectorAll('[data-clabel]').forEach(el=>el.oninput=()=>components[+el.dataset.clabel].label=el.value);box.querySelectorAll('[data-ccount]').forEach(el=>el.oninput=()=>components[+el.dataset.ccount].count=Math.max(1,Math.min(10,Number(el.value)||1)));box.querySelectorAll('[data-crequired]').forEach(el=>el.onchange=()=>components[+el.dataset.crequired].required=el.checked);box.querySelectorAll('[data-cdesc]').forEach(el=>el.onchange=()=>components[+el.dataset.cdesc].requireDescription=el.checked);box.querySelectorAll('[data-remove-component]').forEach(el=>el.onclick=()=>{components.splice(+el.dataset.removeComponent,1);renderComponents()})}renderComponents();$('#addComponent').onclick=()=>{components.push({type:'photo',label:'Foto Dokumentasi',required:true,count:1,requireDescription:true});renderComponents()};$('#taskForm').onsubmit=async e=>{e.preventDefault();const targetClasses=[...document.querySelectorAll('[data-cls]:checked')].map(x=>normClass(x.dataset.cls));if(!targetClasses.length)return alert('Pilih minimal satu kelas.');if(!components.length)return alert('Tambahkan minimal satu komponen pengumpulan.');components=components.map(c=>({...c,label:String(c.label||'').trim()||({photo:'Foto',video:'Video',document:'Dokumen',text:'Jawaban Teks',link:'Link'}[c.type]||'Jawaban')}));const now=new Date().toISOString(),payload={programId:$('#programId').value||'',title:$('#title').value.trim(),description:$('#desc').value.trim(),taskType:$('#type').value,targetClasses,dueDate:$('#due').value,components,answerType:components.length===1&&['link','text'].includes(components[0].type)?components[0].type:'media',published:$('#published').checked,archived:false,updatedAt:now,updatedByUid:user.uid,createdAt:t.createdAt||now};try{let taskId=t.id;if(taskId)await db.collection('assignments').doc(taskId).set(payload,{merge:true});else{const ref=db.collection('assignments').doc();taskId=ref.id;await ref.set(payload)}if(payload.taskType!=='group'&&t.id&&t.taskType==='group'&&!t.programId){const old=await db.collection('taskGroups').where('taskId','==',taskId).get();const b=db.batch();old.docs.forEach(d=>b.delete(d.ref));await b.commit()}close();await load();if(payload.taskType==='group')alert('Tugas kelompok berhasil disimpan. Kelompok dibuat sendiri oleh siswa dan berlaku untuk semua tugas kelompok dalam Program Kokurikuler yang sama.')}catch(err){alert('Gagal menyimpan: '+err.message)}}}
-async function review(id){
-  const t=tasks.find(x=>x.id===id);
-  try{
-    const wali=profile.role==='guru'&&profile.isHomeroom===true,readOnly=profile.role==='guru'&&!wali;
-    const allowedClasses=(wali?[profile.homeroomClass]:(t.targetClasses||[])).map(normClass).filter(Boolean);
-    const normNis=v=>String(v??'').trim().replace(/\s+/g,'');
-    const statusRank={graded:5,revision:4,submitted:3,draft:2,not_submitted:1};
-    const pickLatest=(a,b)=>{
-      if(!a)return b;if(!b)return a;
-      const ta=String(a.updatedAt||a.submittedAt||''),tb=String(b.updatedAt||b.submittedAt||'');
-      if(tb!==ta)return tb>ta?b:a;
-      return (statusRank[b.status]||0)>(statusRank[a.status]||0)?b:a;
-    };
-
-    // Ambil semua submission tugas terlebih dahulu. Wali difilter berdasarkan kelas secara
-    // client-side setelah normalisasi agar data lama seperti "9 F" tetap terbaca sebagai "9F".
-    const s=await db.collection('taskSubmissions').where('taskId','==',id).get();
-    const submissions=s.docs.map(d=>({id:d.id,...d.data()}))
-      .filter(x=>allowedClasses.includes(normClass(x.classId)));
-
-    // Ambil master siswa sekali saja dan cocokkan kelas setelah normalisasi. Ini menghindari
-    // data siswa lama yang format classId-nya tidak persis sama dengan data tugas.
-    const ss=await db.collection('students').get();
-    const studentDocs=ss.docs.map(d=>({sid:d.id,...d.data()}))
-      .map(st=>({...st,classId:normClass(st.classId)}))
-      .filter(st=>st.active!==false&&allowedClasses.includes(st.classId));
-
-    let rows=[],ungrouped=[],orphanCount=0;
-    if(t.taskType==='group'){
-      let gq=t.programId?db.collection('taskGroups').where('programId','==',t.programId):db.collection('taskGroups').where('taskId','==',id);
-      const gs=await gq.get();
-      const allGroups=gs.docs.map(d=>({id:d.id,...d.data()}))
-        .filter(g=>allowedClasses.includes(normClass(g.classId)))
-        .map(g=>({...g,classId:normClass(g.classId)}));
-
-      const subByGroup=new Map();
-      submissions.forEach(x=>{
-        const k=String(x.groupKey||'').trim();
-        if(k)subByGroup.set(k,pickLatest(subByGroup.get(k),x));
-      });
-      const matchedIds=new Set();
-      rows=allGroups.map(g=>{
-        const found=subByGroup.get(String(g.groupKey||g.id||'').trim());
-        if(found){matchedIds.add(found.id);return {...g,...found,classId:normClass(found.classId||g.classId),memberNis:found.memberNis||g.memberNis||[],memberNames:found.memberNames||g.memberNames||[]};}
-        return {...g,id:'',status:'not_submitted',score:null,feedback:''};
-      });
-
-      // Submission yang benar-benar ada di Firestore tidak boleh hilang hanya karena dokumen
-      // taskGroups lama/bermasalah. Tampilkan sebagai baris pemulihan agar Admin/Wali tetap bisa menilai.
-      submissions.filter(x=>!matchedIds.has(x.id)).forEach(x=>{
-        rows.push({...x,_unmapped:true,classId:normClass(x.classId)});
-        orphanCount++;
-      });
-
-      // Anggota dianggap sudah berkelompok bila ditemukan di taskGroups ATAU di submission kelompok.
-      const used=new Set();
-      allGroups.forEach(g=>(g.memberNis||[]).forEach(n=>used.add(normNis(n))));
-      submissions.forEach(x=>(x.memberNis||[]).forEach(n=>used.add(normNis(n))));
-      studentDocs.filter(st=>!used.has(normNis(st.nis||st.sid))).forEach(st=>ungrouped.push({nis:normNis(st.nis||st.sid),name:st.name||st.nis||st.sid,classId:st.classId}));
-    }else{
-      const byNis=new Map();
-      submissions.forEach(x=>{
-        // Dukungan dokumen lama: coba NIS utama, submittedByNis, lalu studentId.
-        [x.nis,x.submittedByNis,x.studentId].map(normNis).filter(Boolean).forEach(k=>byNis.set(k,pickLatest(byNis.get(k),x)));
-      });
-      const matchedIds=new Set();
-      rows=studentDocs.map(st=>{
-        const keys=[st.nis,st.sid,st.studentId].map(normNis).filter(Boolean);
-        const found=keys.map(k=>byNis.get(k)).find(Boolean);
-        if(found){matchedIds.add(found.id);return {...found,studentName:found.studentName||st.name||st.nis||st.sid,classId:normClass(found.classId||st.classId)};}
-        return {id:'',nis:normNis(st.nis||st.sid),studentName:st.name||st.nis||st.sid,classId:st.classId,status:'not_submitted',score:null};
-      });
-
-      // Jangan sembunyikan submission hanya karena NIS/master siswa tidak berhasil dipasangkan.
-      submissions.filter(x=>!matchedIds.has(x.id)).forEach(x=>{
-        rows.push({...x,_unmapped:true,classId:normClass(x.classId),studentName:x.studentName||x.submittedByName||x.nis||'Data submission'});
-        orphanCount++;
-      });
-    }
-
-    const counts={
-      done:rows.filter(r=>r.id&&['submitted','graded','revision'].includes(r.status)).length,
-      missing:rows.filter(r=>!r.id||r.status==='draft').length,
-      revision:rows.filter(r=>r.status==='revision').length,
-      graded:rows.filter(r=>r.status==='graded').length
-    };
-    if(t.taskType==='group')counts.missing+=ungrouped.length;
-    const recovery=orphanCount?`<div class="notice"><b>${orphanCount} pengumpulan ditemukan dari data aktual Firestore</b><br><small>Data ini belum dapat dipasangkan sempurna dengan master ${t.taskType==='group'?'kelompok':'siswa'}, tetapi tetap ditampilkan agar tidak hilang dari monitoring.</small></div>`:'';
-    modal(`<h2>Monitoring • ${esc(t.title)}</h2><div class="notice"><b>${counts.done} sudah mengumpulkan • ${counts.missing} belum • ${counts.revision} perbaikan • ${counts.graded} dinilai</b><br><small>Rentang Nilai: ${esc(rangeText())}</small></div>${recovery}${t.taskType==='group'&&ungrouped.length?`<div class="notice"><b>${ungrouped.length} siswa belum membentuk kelompok</b><br><small>${esc(ungrouped.map(x=>`${x.name} (${x.classId})`).join(', '))}</small></div>`:''}<div class="tablewrap"><table class="table"><thead><tr><th>${t.taskType==='group'?'Kelompok':'Siswa'}</th><th>Kelas</th><th>Status</th><th>Nilai</th><th>Kategori</th><th></th></tr></thead><tbody>${rows.sort((a,b)=>String(a.classId||'').localeCompare(String(b.classId||''))||Number(a.groupNo||0)-Number(b.groupNo||0)||String(a.studentName||'').localeCompare(String(b.studentName||''))).map(r=>{const st=r.status||'not_submitted',label=st==='revision'?'Belum Diperbaiki':st==='submitted'?'Sudah Mengumpulkan':st==='graded'?'Sudah Dinilai':st==='draft'?'Draf':'Belum Mengumpulkan';let action='<span class="tag">Monitoring</span>';if(!readOnly){action=!r.id?'<span class="tag">Belum masuk</span>':st==='revision'?'<span class="tag">Menunggu siswa</span>':`<button class="secondary" data-grade="${r.id}">${st==='graded'?'Lihat':'Periksa'}</button>`}const recoveryTag=r._unmapped?'<small style="display:block">Data aktual pengumpulan</small>':'';return `<tr><td>${t.taskType==='group'?`<b>Kelompok ${esc(r.groupNo||'-')}</b><small style="display:block">${esc((r.memberNames||[]).join(', '))}</small>${recoveryTag}`:`${esc(r.studentName||r.nis)}${recoveryTag}`}</td><td>${esc(r.classId)}</td><td>${esc(label)}</td><td>${esc(r.score??'-')}</td><td>${esc(scoreCategory(r.score)||'-')}</td><td>${action}</td></tr>`}).join('')||'<tr><td colspan="6">Belum ada kelompok/pengumpulan.</td></tr>'}</tbody></table></div>`);
-    if(!readOnly)document.querySelectorAll('[data-grade]').forEach(b=>b.onclick=()=>grade(b.dataset.grade,t));
-  }catch(err){modal(`<h2>Monitoring belum dapat dimuat</h2><p>${esc(err.message)}</p><div class="notice">Firestore Rules v9.7.6 perlu dipublikasikan karena pengumpulan siswa sekarang dapat diperbaiki sampai dinilai.</div>`)}
+let reviewState=null;
+function reviewStatusLabel(st){return st==='revision'?'Perlu Perbaikan':st==='submitted'?'Periksa':st==='graded'?'Sudah Dinilai':st==='draft'?'Draf':'Belum Mengumpulkan'}
+function reviewStatusClass(st){return st==='graded'?'ok':st==='revision'?'warn':st==='submitted'?'ready':st==='draft'?'draft':'missing'}
+async function buildReviewRows(t,allowedClasses){
+  const statusRank={graded:5,revision:4,submitted:3,draft:2,not_submitted:1};
+  const pickLatest=(a,b)=>{if(!a)return b;if(!b)return a;const ta=String(a.updatedAt||a.submittedAt||''),tb=String(b.updatedAt||b.submittedAt||'');if(tb!==ta)return tb>ta?b:a;return(statusRank[b.status]||0)>(statusRank[a.status]||0)?b:a};
+  const s=await db.collection('taskSubmissions').where('taskId','==',t.id).get();
+  const submissions=s.docs.map(d=>({id:d.id,...d.data()})).filter(x=>allowedClasses.includes(normClass(x.classId)));
+  const ss=await db.collection('students').get();
+  const studentDocs=ss.docs.map(d=>({sid:d.id,...d.data(),classId:normClass(d.data().classId)})).filter(st=>st.active!==false&&allowedClasses.includes(st.classId));
+  let rows=[],ungrouped=[],orphanCount=0;
+  if(t.taskType==='group'){
+    const gs=await (t.programId?db.collection('taskGroups').where('programId','==',t.programId):db.collection('taskGroups').where('taskId','==',t.id)).get();
+    const allGroups=gs.docs.map(d=>({id:d.id,...d.data()})).filter(g=>allowedClasses.includes(normClass(g.classId))).map(g=>({...g,classId:normClass(g.classId)}));
+    const subByGroup=new Map();submissions.forEach(x=>{const k=String(x.groupKey||'').trim();if(k)subByGroup.set(k,pickLatest(subByGroup.get(k),x))});
+    const matchedIds=new Set();
+    rows=allGroups.map(g=>{const found=subByGroup.get(String(g.groupKey||g.id||'').trim());if(found){matchedIds.add(found.id);return {...g,...found,classId:normClass(found.classId||g.classId),memberNis:found.memberNis||g.memberNis||[],memberNames:found.memberNames||g.memberNames||[]}}return {...g,id:'',status:'not_submitted',score:null,feedback:''}});
+    submissions.filter(x=>!matchedIds.has(x.id)).forEach(x=>{rows.push({...x,_unmapped:true,classId:normClass(x.classId)});orphanCount++});
+    const used=new Set();allGroups.forEach(g=>(g.memberNis||[]).forEach(n=>used.add(normNis(n))));submissions.forEach(x=>(x.memberNis||[]).forEach(n=>used.add(normNis(n))));studentDocs.filter(st=>!used.has(normNis(st.nis||st.sid))).forEach(st=>ungrouped.push({nis:normNis(st.nis||st.sid),name:st.name||st.nis||st.sid,classId:st.classId}));
+  }else{
+    const byNis=new Map();submissions.forEach(x=>[x.nis,x.submittedByNis,x.studentId].map(normNis).filter(Boolean).forEach(k=>byNis.set(k,pickLatest(byNis.get(k),x))));
+    const matchedIds=new Set();rows=studentDocs.map(st=>{const keys=[st.nis,st.sid,st.studentId].map(normNis).filter(Boolean),found=keys.map(k=>byNis.get(k)).find(Boolean);if(found){matchedIds.add(found.id);return {...found,studentName:found.studentName||st.name||st.nis||st.sid,classId:normClass(found.classId||st.classId)}}return{id:'',nis:normNis(st.nis||st.sid),studentName:st.name||st.nis||st.sid,classId:st.classId,status:'not_submitted',score:null}});
+    submissions.filter(x=>!matchedIds.has(x.id)).forEach(x=>{rows.push({...x,_unmapped:true,classId:normClass(x.classId),studentName:x.studentName||x.submittedByName||x.nis||'Data submission'});orphanCount++});
+  }
+  rows.sort((a,b)=>String(a.classId||'').localeCompare(String(b.classId||''))||Number(a.groupNo||0)-Number(b.groupNo||0)||String(a.studentName||'').localeCompare(String(b.studentName||'')));
+  return{rows,ungrouped,orphanCount};
 }
-async function grade(id,t){const d=await db.collection('taskSubmissions').doc(id).get(),s={id:d.id,...d.data()};modal(`<h2>Periksa • ${esc(t.title)}</h2><p><b>${esc(t.taskType==='group'?`Kelompok ${s.groupNo}`:(s.studentName||s.nis))}</b> • ${esc(s.classId)}</p>${t.taskType==='group'?`<div class="notice"><b>Anggota:</b> ${esc((s.memberNames||[]).join(', '))}<br><small>Dikumpulkan oleh ${esc(s.submittedByName||'-')}</small></div>`:''}${(s.answers||[]).map(a=>`<div class="answer"><b>${esc(a.label||'Jawaban')}</b>${a.url?`<div><a href="${esc(a.url)}" target="_blank" rel="noopener">${a.type==='photo'?'Buka Foto':a.type==='video'?'Tonton Video':a.type==='document'?'Buka Dokumen':'Buka Link'} ↗</a></div>`:''}${a.text?`<p>${esc(a.text)}</p>`:''}${a.description?`<p><small>Keterangan:</small> ${esc(a.description)}</p>`:''}</div>`).join('')}<div class="notice"><b>Kategori Nilai</b><br>${esc(rangeText())}</div><div class="field"><label>Nilai 0–100</label><input id="score" type="number" min="0" max="100" value="${esc(s.score??'')}"><div id="scoreCategory" class="notice" style="margin-top:8px">${s.score!==null&&s.score!==undefined&&s.score!==''?`Kategori: <b>${esc(scoreCategory(s.score))}</b>`:'Masukkan nilai untuk melihat kategori.'}</div></div><div class="field"><label>Catatan</label><textarea id="feedback">${esc(s.feedback||'')}</textarea></div><div class="actions"><button id="revision" class="secondary">Perlu Perbaikan</button><button id="saveGrade" class="primary">Simpan Nilai</button></div>`);const scoreEl=$('#score'),catEl=$('#scoreCategory');scoreEl.oninput=()=>{const raw=scoreEl.value,n=Number(raw);catEl.innerHTML=raw!==''&&Number.isFinite(n)&&n>=0&&n<=100?`Kategori: <b>${esc(scoreCategory(n))}</b>`:'Masukkan nilai 0–100 untuk melihat kategori.'};$('#revision').onclick=()=>saveGrade(id,'revision');$('#saveGrade').onclick=()=>saveGrade(id,'graded')}
-async function saveGrade(id,status){const feedback=$('#feedback')?.value.trim()||'',scoreRaw=$('#score')?.value??'',score=status==='graded'?Number(scoreRaw):null;if(status==='graded'&&(scoreRaw===''||!Number.isFinite(score)||score<0||score>100))return alert('Nilai wajib 0–100.');try{await db.collection('taskSubmissions').doc(id).set({score,feedback,status,gradedAt:status==='graded'?new Date().toISOString():null,gradedByUid:user.uid,gradedByName:profile.name||'',updatedAt:new Date().toISOString()},{merge:true});close();await load();alert(status==='graded'?'Nilai berhasil disimpan.':'Tugas dikembalikan untuk diperbaiki.')}catch(e){alert('Gagal menyimpan: '+e.message)}}
+async function review(id){
+  const t=tasks.find(x=>x.id===id);if(!t)return;
+  try{
+    const wali=profile.role==='guru'&&profile.isHomeroom===true;
+    const classes=(wali?[profile.homeroomClass]:(t.targetClasses||[])).map(normClass).filter(Boolean);
+    if(!classes.length)return alert('Tugas belum memiliki kelas sasaran.');
+    reviewState={task:t,classes,classId:classes[0],filter:'all',rows:[],ungrouped:[],orphanCount:0,selectedId:null};
+    modal(`<div class="review-shell"><div class="review-top"><div><button id="backTaskList" class="ghost">← Daftar Tugas</button><small>MONITORING & PENILAIAN</small><h2>${esc(t.title)}</h2></div>${!wali&&classes.length>1?`<label class="class-select">Kelas<select id="reviewClass">${classes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></label>`:`<span class="class-badge">Kelas ${esc(classes[0])}</span>`}</div><div id="reviewWorkspace"><div class="empty">Memuat daftar kelas…</div></div></div>`);
+    $('.modalbox').classList.add('review-modalbox');
+    $('#backTaskList').onclick=close;
+    if($('#reviewClass'))$('#reviewClass').onchange=async e=>{reviewState.classId=normClass(e.target.value);reviewState.selectedId=null;await refreshReview()};
+    await refreshReview();
+  }catch(err){modal(`<h2>Monitoring belum dapat dimuat</h2><p>${esc(err.message)}</p>`)}
+}
+async function refreshReview(keepSelected=true){
+  const st=reviewState;if(!st)return;
+  const data=await buildReviewRows(st.task,[st.classId]);st.rows=data.rows;st.ungrouped=data.ungrouped;st.orphanCount=data.orphanCount;
+  if(!keepSelected)st.selectedId=null;
+  renderReviewWorkspace();
+}
+function renderReviewWorkspace(){
+  const st=reviewState,t=st.task,rows=st.rows;
+  const counts={total:rows.length+(t.taskType==='group'?st.ungrouped.length:0),submitted:rows.filter(r=>r.status==='submitted').length,missing:rows.filter(r=>!r.id||r.status==='not_submitted'||r.status==='draft').length,revision:rows.filter(r=>r.status==='revision').length,graded:rows.filter(r=>r.status==='graded').length};
+  const filtered=rows.filter(r=>st.filter==='all'||(st.filter==='missing'?(!r.id||['not_submitted','draft'].includes(r.status)):st.filter==='check'?r.status==='submitted':st.filter==='revision'?r.status==='revision':st.filter==='graded'?r.status==='graded':true));
+  $('#reviewWorkspace').innerHTML=`<div class="review-summary"><div><b>${counts.total}</b><span>${t.taskType==='group'?'kelompok/data':'siswa'}</span></div><div><b>${counts.submitted}</b><span>periksa</span></div><div><b>${counts.missing}</b><span>belum/draf</span></div><div><b>${counts.revision}</b><span>perbaikan</span></div><div><b>${counts.graded}</b><span>dinilai</span></div></div>${st.orphanCount?`<div class="notice">${st.orphanCount} pengumpulan aktual belum terpasang sempurna ke master, tetapi tetap ditampilkan.</div>`:''}${t.taskType==='group'&&st.ungrouped.length?`<details class="notice"><summary><b>${st.ungrouped.length} siswa belum membentuk kelompok</b></summary><small>${esc(st.ungrouped.map(x=>x.name).join(', '))}</small></details>`:''}<div class="review-filters"><button data-rfilter="all" class="${st.filter==='all'?'active':''}">Semua</button><button data-rfilter="check" class="${st.filter==='check'?'active':''}">Periksa (${counts.submitted})</button><button data-rfilter="missing" class="${st.filter==='missing'?'active':''}">Belum (${counts.missing})</button><button data-rfilter="revision" class="${st.filter==='revision'?'active':''}">Perbaikan (${counts.revision})</button><button data-rfilter="graded" class="${st.filter==='graded'?'active':''}">Dinilai (${counts.graded})</button></div><div class="review-grid"><section class="review-list"><div class="review-list-head"><b>Daftar ${t.taskType==='group'?'Kelompok':'Siswa'} • ${esc(st.classId)}</b><small>Klik baris untuk melihat tugas dan menilai.</small></div><div class="review-rows">${filtered.map(r=>reviewRowHtml(r,t)).join('')||'<div class="empty">Tidak ada data pada filter ini.</div>'}</div></section><section id="reviewDetail" class="review-detail"><div class="empty"><b>Pilih ${t.taskType==='group'?'kelompok':'siswa'}</b><br>Pengumpulan dan form penilaian akan tampil di sini.</div></section></div>`;
+  document.querySelectorAll('[data-rfilter]').forEach(b=>b.onclick=()=>{st.filter=b.dataset.rfilter;renderReviewWorkspace()});
+  document.querySelectorAll('[data-reviewrow]').forEach(b=>b.onclick=()=>openReviewDetail(b.dataset.reviewrow));
+  if(st.selectedId&&rows.some(r=>String(r.id||'')===String(st.selectedId)))openReviewDetail(st.selectedId,false);
+}
+function reviewRowHtml(r,t){const status=r.status||'not_submitted',name=t.taskType==='group'?`Kelompok ${r.groupNo||'-'}`:(r.studentName||r.nis||'Siswa'),sub=t.taskType==='group'?(r.memberNames||[]).join(', '):(r.nis||'');return `<button class="review-row ${String(r.id||'')===String(reviewState.selectedId)?'selected':''}" data-reviewrow="${esc(r.id||'')}"><span class="review-person"><b>${esc(name)}</b><small>${esc(sub)}</small></span><span class="status-chip ${reviewStatusClass(status)}">${esc(reviewStatusLabel(status))}</span><span class="review-score">${r.score!==null&&r.score!==undefined&&r.score!==''?`<b>${esc(r.score)}</b><small>${esc(scoreCategory(r.score))}</small>`:'<small>—</small>'}</span></button>`}
+async function openReviewDetail(id,rerenderList=true){
+  const st=reviewState;if(!st)return;const r=st.rows.find(x=>String(x.id||'')===String(id||''));
+  st.selectedId=id||null;if(rerenderList){document.querySelectorAll('.review-row').forEach(x=>x.classList.toggle('selected',String(x.dataset.reviewrow)===String(id)))}
+  const box=$('#reviewDetail');box.classList.add('detail-open');box.onclick=e=>{if(e.target===box&&window.innerWidth<=760)box.classList.remove('detail-open')};if(!r||!r.id){box.innerHTML='<div class="empty"><b>Belum ada pengumpulan.</b><br>Siswa/kelompok ini belum dapat dinilai.</div>';return}
+  let s=r;try{const d=await db.collection('taskSubmissions').doc(r.id).get();if(d.exists)s={id:d.id,...d.data()}}catch(_){}
+  const canAssess=s.status!=='revision'&&s.status!=='draft'&&s.status!=='not_submitted';
+  box.innerHTML=`<div class="detail-head"><div><small>${esc(st.classId)} • ${esc(reviewStatusLabel(s.status))}</small><h3>${esc(st.task.taskType==='group'?`Kelompok ${s.groupNo}`:(s.studentName||s.nis))}</h3></div><span class="status-chip ${reviewStatusClass(s.status)}">${esc(reviewStatusLabel(s.status))}</span></div>${st.task.taskType==='group'?`<div class="notice"><b>Anggota:</b> ${esc((s.memberNames||[]).join(', '))}<br><small>Dikumpulkan oleh ${esc(s.submittedByName||'-')}</small></div>`:''}<div class="answer-list">${(s.answers||[]).map(a=>`<div class="answer"><b>${esc(a.label||'Jawaban')}</b>${a.url?`<div><a href="${esc(a.url)}" target="_blank" rel="noopener">${a.type==='photo'?'Buka Foto':a.type==='video'?'Tonton Video':a.type==='document'?'Buka Dokumen':'Buka Link'} ↗</a></div>`:''}${a.text?`<p>${esc(a.text)}</p>`:''}${a.description?`<p><small>Keterangan:</small> ${esc(a.description)}</p>`:''}</div>`).join('')||'<div class="notice">Belum ada isi jawaban.</div>'}</div>${s.status==='revision'?`<div class="notice"><b>Menunggu perbaikan siswa.</b><br><small>Pengumpulan tetap dapat dilihat, tetapi penilaian dilanjutkan setelah siswa mengirim ulang.</small></div>`:`<div class="assessment-panel"><div class="field"><label>Nilai 0–100</label><input id="score" type="number" min="0" max="100" value="${esc(s.score??'')}" ${canAssess?'':'disabled'}><div id="scoreCategory" class="mini-category">${s.score!==null&&s.score!==undefined&&s.score!==''?`Kategori: <b>${esc(scoreCategory(s.score))}</b>`:'Masukkan nilai untuk melihat kategori.'}</div></div><div class="field"><label>Catatan / Umpan Balik</label><textarea id="feedback" ${canAssess?'':'disabled'}>${esc(s.feedback||'')}</textarea></div><div class="assessment-actions"><button id="revision" class="secondary" ${canAssess?'':'disabled'}>Perlu Perbaikan</button><button id="saveGrade" class="primary" ${canAssess?'':'disabled'}>${s.status==='graded'?'Perbarui Nilai':'Simpan Nilai'}</button></div></div>`}`;
+  if(!canAssess||s.status==='revision')return;
+  const scoreEl=$('#score'),catEl=$('#scoreCategory');scoreEl.oninput=()=>{const raw=scoreEl.value,n=Number(raw);catEl.innerHTML=raw!==''&&Number.isFinite(n)&&n>=0&&n<=100?`Kategori: <b>${esc(scoreCategory(n))}</b>`:'Masukkan nilai 0–100 untuk melihat kategori.'};
+  $('#revision').onclick=()=>saveGradeInline(s.id,'revision');$('#saveGrade').onclick=()=>saveGradeInline(s.id,'graded');
+}
+async function saveGradeInline(id,status){
+  const feedback=$('#feedback')?.value.trim()||'',scoreRaw=$('#score')?.value??'',score=status==='graded'?Number(scoreRaw):null;if(status==='graded'&&(scoreRaw===''||!Number.isFinite(score)||score<0||score>100))return alert('Nilai wajib 0–100.');
+  try{await db.collection('taskSubmissions').doc(id).set({score,feedback,status,gradedAt:status==='graded'?new Date().toISOString():null,gradedByUid:user.uid,gradedByName:profile.name||'',updatedAt:new Date().toISOString()},{merge:true});await refreshReview(true);const box=$('#reviewDetail');if(box){const msg=document.createElement('div');msg.className='save-toast';msg.textContent=status==='graded'?'Nilai berhasil disimpan.':'Tugas dikembalikan untuk diperbaiki.';box.prepend(msg);setTimeout(()=>msg.remove(),2200)}}catch(e){alert('Gagal menyimpan: '+e.message)}
+}
 
 async function logTaskActivity(action,data={}){try{await db.collection('taskActivity').add({action,...data,actorUid:user.uid,actorName:profile.name||'',actorRole:profile.role,createdAt:new Date().toISOString()})}catch(e){console.warn('activity log',e)}}
 async function openActivityLog(){try{const q=await db.collection('taskActivity').orderBy('createdAt','desc').limit(100).get();const rows=q.docs.map(d=>d.data());modal(`<h2>Riwayat Aktivitas Tugas</h2><p class="meta">100 aktivitas terbaru untuk membantu penelusuran perubahan tugas dan kelompok.</p><div class="activity-list">${rows.map(x=>`<div class="activity-item"><b>${esc(x.actorName||'Sistem')}</b> • ${esc(x.action||'-')}<small>${esc(x.detail||'')} ${x.classId?'• Kelas '+esc(x.classId):''}<br>${esc(String(x.createdAt||'').replace('T',' ').slice(0,16))}</small></div>`).join('')||'<div class="empty">Belum ada aktivitas.</div>'}</div>`)}catch(e){alert('Riwayat belum dapat dimuat: '+e.message)}}
@@ -156,4 +134,4 @@ async function editGroupMembers(t,g,students,groups){
 }
 function showErr(msg){$('#loading').classList.add('hidden');$('#app').classList.add('hidden');$('#error').classList.remove('hidden');$('#error').innerHTML=`<h2>Tugas belum dapat dibuka</h2><p>${esc(msg)}</p><p><a href="../">Kembali ke EcoTrack</a></p>`}
 $('#newTask').onclick=()=>openBuilder();
-auth.onAuthStateChanged(async u=>{if(!u)return showErr('Sesi Admin/Guru tidak ditemukan. Silakan login dari EcoTrack terlebih dahulu.');user=u;try{const d=await db.collection('users').doc(u.uid).get();if(!d.exists)throw new Error('Profil akun tidak ditemukan.');profile=d.data();if(profile.active!==true)throw new Error('Akun tidak aktif.');if(profile.role!=='admin'&&!(profile.role==='guru'&&profile.isHomeroom===true))throw new Error('Menu Tugas hanya tersedia untuk Admin dan Wali Kelas.');profile.homeroomClass=normClass(profile.homeroomClass||'');$('#loading').classList.add('hidden');$('#error').classList.add('hidden');$('#app').classList.remove('hidden');$('#roleLabel').textContent=profile.role==='admin'?'ADMIN':'WALI KELAS';$('#profileLabel').textContent=profile.name+(profile.homeroomClass?' • '+profile.homeroomClass:'');$('#taskVersion').textContent=profile.role==='admin'?'Tugas Siswa • v9.7.11':'Tugas Siswa';if(profile.role==='admin')$('#newTask').classList.remove('hidden');await load()}catch(e){showErr(e.message)}});
+auth.onAuthStateChanged(async u=>{if(!u)return showErr('Sesi Admin/Guru tidak ditemukan. Silakan login dari EcoTrack terlebih dahulu.');user=u;try{const d=await db.collection('users').doc(u.uid).get();if(!d.exists)throw new Error('Profil akun tidak ditemukan.');profile=d.data();if(profile.active!==true)throw new Error('Akun tidak aktif.');if(profile.role!=='admin'&&!(profile.role==='guru'&&profile.isHomeroom===true))throw new Error('Menu Tugas hanya tersedia untuk Admin dan Wali Kelas.');profile.homeroomClass=normClass(profile.homeroomClass||'');$('#loading').classList.add('hidden');$('#error').classList.add('hidden');$('#app').classList.remove('hidden');$('#roleLabel').textContent=profile.role==='admin'?'ADMIN':'WALI KELAS';$('#profileLabel').textContent=profile.name+(profile.homeroomClass?' • '+profile.homeroomClass:'');$('#taskVersion').textContent=profile.role==='admin'?'Tugas Siswa • v9.7.13':'Tugas Siswa';if(profile.role==='admin')$('#newTask').classList.remove('hidden');await load()}catch(e){showErr(e.message)}});
