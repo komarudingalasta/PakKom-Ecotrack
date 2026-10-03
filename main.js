@@ -919,6 +919,16 @@ function morePage(){
 
 // EcoChat runtime removed in v7 Clean Core.
 
+function wadahDateKey(){ return state.profile?.role==='admin' ? (window.adminWadahDate||todayKey()) : todayKey(); }
+async function loadWadahRecordsForDate(date){
+  const snap=await getDocs(query(collection(db,'records'),where('date','==',date)));
+  state.recordsToday=snap.docs.map(d=>({id:d.id,...d.data()}));
+}
+async function changeAdminWadahDate(date){
+  window.adminWadahDate=date||todayKey(); state.selectedClass=null;
+  try{ await loadWadahRecordsForDate(window.adminWadahDate); inputPage(); }
+  catch(e){ console.error(e); toast('Gagal memuat data tanggal tersebut'); }
+}
 function teacherWadahLocked(){
   if(state.profile?.role==='admin') return false;
   const op=operationalInfo();
@@ -947,17 +957,18 @@ function inactiveModuleCard(moduleType,reason){
 function inputPage(){
   pageMeta('Wadah Makan & Tumbler','Pilih kelas lalu tandai kondisi siswa');
   const op=operationalInfo();
-  if(!op.active){
+  const admin=state.profile.role==='admin';
+  if(!op.active && !admin){
     content.innerHTML=inactiveModuleCard('wadah',op.label);
     return;
   }
 
   const wt=wadahTimeInfo();
-  const admin=state.profile.role==='admin';
   const closed=teacherWadahLocked();
 
   if(!state.selectedClass){
     content.innerHTML=`
+      ${admin?`<div class="card admin-date-panel"><div><b>📅 Tanggal Pendataan Admin</b><small>Admin dapat mengisi atau memperbaiki data pada tanggal apa pun, termasuk hari libur dan tanggal lampau.</small></div><input id="adminWadahDate" class="input-inline" type="date" max="${todayKey()}" value="${wadahDateKey()}"></div>`:''}
       ${closed?`<div class="card wadah-closed-banner"><div class="lock-icon">🔒</div><div><h3>Pendataan Hari Ini Sudah Ditutup</h3><p>Waktu pengisian berakhir pukul <b>${esc(wt.label)}</b>. Data yang sudah masuk tetap dapat dilihat, tetapi Guru/Wali Kelas tidak dapat membuat atau mengedit pendataan lagi.</p></div></div>`:
       `<div class="wadah-open-info">🟢 Pendataan dibuka sampai <b>${esc(wt.label)}</b></div>`}
       <div class="card"><h3>Pilih Kelas</h3><div class="grid class-grid">${state.classes.map(c=>{
@@ -965,6 +976,7 @@ function inputPage(){
         return `<button class="class-btn ${r?'done':'pending'} ${closed&&!r?'locked':''}" data-class="${c}" ${closed&&!r?'disabled':''}><b>${c}</b><small>${r?'Sudah didata':closed?'🔒 Ditutup':'Belum didata'}</small></button>`;
       }).join('')}</div></div>`;
     bindClassButtons();
+    if($('#adminWadahDate')) $('#adminWadahDate').onchange=e=>changeAdminWadahDate(e.target.value);
     return;
   }
   loadClassForm(state.selectedClass);
@@ -1066,19 +1078,19 @@ async function saveClass(c){
   if(!window.formItems?.length){toast('Belum ada siswa di kelas ini');return;}
   const btn=$('#saveBtn');btn.disabled=true;btn.textContent='Menyimpan...';
   try{
-    const id=`${todayKey()}_${c}`; const old=window.originalRecord; const now=new Date();
+    const recordDate=wadahDateKey(); const id=`${recordDate}_${c}`; const old=window.originalRecord; const now=new Date();
     const audit=[...(old?.audit||[])]; if(old) audit.push({editedAt:now.toISOString(),editedByUid:state.user.uid,editedByName:state.profile.name});
     const isTeacherEdit=!!(old && state.profile.role!=='admin' && old.createdByUid===state.user.uid);
     const teacherEditCount=isTeacherEdit?Number(old.teacherEditCount||0)+1:Number(old?.teacherEditCount||0);
     if(isTeacherEdit && teacherEditCount>1) throw new Error('Kesempatan edit 1× sudah digunakan');
-    const payload={date:todayKey(),classId:c,items:window.formItems,
+    const payload={date:recordDate,classId:c,items:window.formItems,
       createdByUid:old?.createdByUid||state.user.uid,createdByName:old?.createdByName||state.profile.name,createdAt:old?.createdAt||now.toISOString(),
       teacherEditCount,
       teacherEditedAt:isTeacherEdit?now.toISOString():(old?.teacherEditedAt||null),
       lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),audit};
     if(teacherWadahLocked()) throw new Error(`Pendataan sudah ditutup pukul ${wadahTimeInfo().label}`);
     await setDoc(doc(db,'records',id),payload,{merge:false});
-    await refreshCore(); toast(`Data ${c} berhasil disimpan`); state.selectedClass=null; renderPage();
+    await refreshCore(); if(state.profile.role==='admin' && recordDate!==todayKey()) await loadWadahRecordsForDate(recordDate); toast(`Data ${c} berhasil disimpan untuk ${idDateShort(recordDate)}`); state.selectedClass=null; renderPage();
   }catch(e){ console.error(e); toast(e.message||'Gagal menyimpan data'); btn.disabled=false;btn.textContent=`Simpan Data ${c}`; }
 }
 
@@ -1306,10 +1318,24 @@ async function loadRecapDate(){
   const target=$('#recapBody'); if(!target)return;
   const date=$('#recapDate').value||todayKey(), cls=$('#recapClass').value||'';
   try{
-    const snap=await getDocs(query(collection(db,'records'),where('date','==',date)));
-    const records=snap.docs.map(d=>({id:d.id,...d.data()})); const classes=cls?[cls]:state.classes;
+    const [snap,prevSnap]=await Promise.all([
+      getDocs(query(collection(db,'records'),where('date','==',date))),
+      getDocs(query(collection(db,'records'),where('date','<',date)))
+    ]);
+    const records=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const older=prevSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const prevDates=[...new Set(older.map(r=>r.date).filter(Boolean))].sort();
+    const prevDate=prevDates.length?prevDates[prevDates.length-1]:null;
+    const prevRecords=prevDate?older.filter(r=>r.date===prevDate):[];
+    const aggregate=rs=>{let hadir=0,food=0,tumb=0,both=0;rs.forEach(r=>(r.items||[]).forEach(i=>{if(i.presence==='hadir'){hadir++;if(i.food)food++;if(i.tumbler)tumb++;if(i.food&&i.tumbler)both++;}}));return {hadir,food:hadir?Math.round(food/hadir*100):null,tumb:hadir?Math.round(tumb/hadir*100):null,both:hadir?Math.round(both/hadir*100):null};};
+    const cur=aggregate(records), prev=aggregate(prevRecords);
+    const delta=(a,b)=>a==null||b==null?null:a-b;
+    const deltaHtml=d=>d==null?'<span class="badge neutral">Belum ada pembanding</span>':d>0?`<span class="badge ok">↑ ${d} poin</span>`:d<0?`<span class="badge bad">↓ ${Math.abs(d)} poin</span>`:'<span class="badge neutral">→ Tetap</span>';
+    const coverage=records.filter(r=>state.classes.includes(r.classId)).length;
+    const summary=!cls?`<div class="daily-school-summary"><div class="section-head"><div><h3>Analisis Harian Seluruh Kelas</h3><small>${idDateShort(date)} dibanding ${prevDate?idDateShort(prevDate):'belum ada hari pendataan sebelumnya'}</small></div><span class="badge ${coverage===state.classes.length?'ok':'fair'}">${coverage}/${state.classes.length} kelas • ${coverage===state.classes.length?'Data lengkap':'Data belum lengkap'}</span></div><div class="daily-metric-grid"><div><span>🥡 Wadah Makan</span><b>${cur.food??'-'}${cur.food==null?'':'%'}</b>${deltaHtml(delta(cur.food,prev.food))}</div><div><span>💧 Tumbler</span><b>${cur.tumb??'-'}${cur.tumb==null?'':'%'}</b>${deltaHtml(delta(cur.tumb,prev.tumb))}</div><div><span>🌿 Wadah + Tumbler</span><b>${cur.both??'-'}${cur.both==null?'':'%'}</b>${deltaHtml(delta(cur.both,prev.both))}</div></div><small class="metric-footnote">Persentase dihitung dari seluruh siswa hadir pada kelas yang sudah didata, sehingga kelas dengan jumlah siswa berbeda tetap dihitung proporsional.</small></div>`:'';
+    const classes=cls?[cls]:state.classes;
     const cards=classes.map(c=>{const r=records.find(x=>x.classId===c);if(!r)return {c,status:'Belum',hadir:0,food:0,tumb:0,both:0,by:'-'};const hadir=(r.items||[]).filter(i=>i.presence==='hadir');const pct=f=>hadir.length?Math.round(hadir.filter(f).length/hadir.length*100):0;return {c,status:'Selesai',hadir:hadir.length,food:pct(i=>i.food),tumb:pct(i=>i.tumbler),both:pct(i=>i.food&&i.tumbler),by:r.lastEditedByName||r.createdByName||'Guru'};});
-    target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah Makan</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th>${state.profile.role==='admin'?'<th>Aksi Admin</th>':''}</tr></thead><tbody>${cards.map(x=>{const rec=records.find(r=>r.classId===x.c);return `<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'neutral'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td>${state.profile.role==='admin'?`<td>${rec?`<button class="btn-mini danger" data-reset-wadah="${esc(rec.id)}">Reset → Belum</button>`:'-'}</td>`:''}</tr>`}).join('')}</tbody></table></div>`;
+    target.innerHTML=summary+`<div class="table-wrap"><table><thead><tr><th>Kelas</th><th>Status</th><th>Hadir</th><th>Wadah Makan</th><th>Tumbler</th><th>Keduanya</th><th>Penginput</th>${state.profile.role==='admin'?'<th>Aksi Admin</th>':''}</tr></thead><tbody>${cards.map(x=>{const rec=records.find(r=>r.classId===x.c);return `<tr><td><b>${x.c}</b></td><td><span class="badge ${x.status==='Selesai'?'ok':'neutral'}">${x.status}</span></td><td>${x.hadir||'-'}</td><td>${x.food}%</td><td>${x.tumb}%</td><td><b>${x.both}%</b></td><td>${esc(x.by)}</td>${state.profile.role==='admin'?`<td>${rec?`<button class="btn-mini danger" data-reset-wadah="${esc(rec.id)}">Reset → Belum</button>`:'-'}</td>`:''}</tr>`}).join('')}</tbody></table></div>`;
     document.querySelectorAll('[data-reset-wadah]').forEach(b=>b.onclick=()=>resetWadahRecord(b.dataset.resetWadah));
   }catch(e){console.error(e);target.innerHTML='<div class="empty">Gagal memuat rekap.</div>';}
 }
