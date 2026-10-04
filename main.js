@@ -1113,13 +1113,13 @@ function parseImportDate(v){
 const WADAH_IMPORT_CODES={L:{presence:'hadir',food:true,tumbler:true,label:'Lengkap'},W:{presence:'hadir',food:true,tumbler:false,label:'Hanya Wadah'},T:{presence:'hadir',food:false,tumbler:true,label:'Hanya Tumbler'},X:{presence:'hadir',food:false,tumbler:false,label:'Tidak Keduanya'},S:{presence:'sakit',food:false,tumbler:false,label:'Sakit'},I:{presence:'izin',food:false,tumbler:false,label:'Izin'},A:{presence:'alpa',food:false,tumbler:false,label:'Alpa'}};
 function renderBulkWadahPage(){
   if(state.profile.role!=='admin'){toast('Khusus Admin');return;}
-  pageMeta('Import Cepat Wadah & Tumbler','Unduh template, isi kode singkat, lalu upload kembali');
+  pageMeta('Import Cepat Wadah & Tumbler','Unduh data aktual, lengkapi bila perlu, lalu upload kembali');
   const end=todayKey(),d=new Date();d.setDate(d.getDate()-4);const start=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   content.innerHTML=`<div class="section-head"><div><h3 style="margin:0">Import Cepat</h3><small>Nama dan NIS otomatis. Satu sel = satu kode kondisi siswa per hari.</small></div><button id="bulkBack" class="btn ghost">← Input Harian</button></div>
   <div class="card import-quick-card"><div class="import-steps"><b>1. Pilih periode & kelas</b><span>→</span><b>2. Unduh & isi template</b><span>→</span><b>3. Upload & periksa</b></div>
-  <div class="bulk-wadah-filter"><label>Kelas<select id="bulkClass" class="input-inline"><option value="">Semua Kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></label><label>Dari<input id="bulkStart" class="input-inline" type="date" max="${end}" value="${start}"></label><label>Sampai<input id="bulkEnd" class="input-inline" type="date" max="${end}" value="${end}"></label><label>Isi awal<select id="bulkDefault" class="input-inline"><option value="L">Default L (paling cepat)</option><option value="">Kosong</option></select></label></div>
+  <div class="bulk-wadah-filter"><label>Kelas<select id="bulkClass" class="input-inline"><option value="">Semua Kelas</option>${state.classes.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></label><label>Dari<input id="bulkStart" class="input-inline" type="date" max="${end}" value="${start}"></label><label>Sampai<input id="bulkEnd" class="input-inline" type="date" max="${end}" value="${end}"></label><label>Jika belum ada data<select id="bulkDefault" class="input-inline"><option value="">Kosong</option><option value="L">Isi L</option></select></label></div>
   <div class="code-legend">${Object.entries(WADAH_IMPORT_CODES).map(([k,v])=>`<span><b>${k}</b> ${v.label}</span>`).join('')}</div>
-  <div class="row-actions import-actions"><button id="downloadWadahTemplate" class="btn primary">↓ Unduh Template</button><button id="chooseWadahImport" class="btn secondary">↑ Upload Template Terisi</button></div><p class="demo-note">Hari Sabtu, Minggu, dan libur sekolah otomatis tidak dibuat. Untuk Semua Kelas, setiap kelas mendapat sheet sendiri.</p></div>
+  <div class="row-actions import-actions"><button id="downloadWadahTemplate" class="btn primary">↓ Unduh Data / Template</button><button id="chooseWadahImport" class="btn secondary">↑ Upload Template Terisi</button></div><p class="demo-note">Data yang sudah tersimpan akan otomatis terisi. Tanggal yang belum memiliki data mengikuti pilihan "Jika belum ada data". Sabtu, Minggu, dan libur sekolah tidak dibuat.</p></div>
   <div id="bulkWorkspace"></div>`;
   $('#bulkBack').onclick=()=>{state.selectedClass=null;inputPage()};
   $('#downloadWadahTemplate').onclick=downloadQuickWadahTemplate;
@@ -1157,25 +1157,31 @@ async function quickImportRoster(cls){
   const snap=cls?await getDocs(query(collection(db,'students'),where('classId','==',cls))):await getDocs(collection(db,'students'));
   return snap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.active!==false&&(!cls||x.classId===cls));
 }
+function wadahItemToImportCode(item){
+  const p=String(item?.presence||'hadir').toLowerCase();
+  if(p==='sakit')return 'S'; if(p==='izin')return 'I'; if(p==='alpa')return 'A';
+  if(item?.food===true&&item?.tumbler===true)return 'L';
+  if(item?.food===true)return 'W'; if(item?.tumbler===true)return 'T'; return 'X';
+}
 async function downloadQuickWadahTemplate(){
   if(!window.XLSX)return toast('Generator Excel belum termuat');
   const cls=$('#bulkClass').value,start=$('#bulkStart').value,end=$('#bulkEnd').value,fill=$('#bulkDefault').value,dates=importOperationalDates(start,end);
   if(!dates.length){toast('Tidak ada hari aktif pada periode ini');return;} if(dates.length>31){toast('Maksimal 31 hari aktif per template');return;}
-  const btn=$('#downloadWadahTemplate');btn.disabled=true;btn.textContent='Menyiapkan...';
+  const btn=$('#downloadWadahTemplate');btn.disabled=true;btn.textContent='Mengambil data aktual...';
   try{
-    const students=await quickImportRoster(cls),classes=cls?[cls]:state.classes.filter(c=>students.some(s=>s.classId===c));
-    if(!students.length)throw new Error('Tidak ada siswa aktif');
+    const [students,recordSnap]=await Promise.all([quickImportRoster(cls),getDocs(query(collection(db,'records'),where('date','>=',dates[0]),where('date','<=',dates[dates.length-1])))]);
+    const classes=cls?[cls]:state.classes.filter(c=>students.some(s=>s.classId===c)); if(!students.length)throw new Error('Tidak ada siswa aktif');
+    const recordMap=new Map(); recordSnap.docs.forEach(d=>{const r={id:d.id,...d.data()};if(!cls||String(r.classId)===String(cls))recordMap.set(`${r.date}_${r.classId}`,r);});
     const wb=XLSX.utils.book_new();
-    const guide=[['IMPORT CEPAT WADAH MAKAN & TUMBLER'],['Jangan mengubah NIS, Nama, nama sheet, atau judul tanggal.'],[],['Kode','Arti'],...Object.entries(WADAH_IMPORT_CODES).map(([k,v])=>[k,v.label]),[],['Catatan','Siswa tidak hadir tidak dihitung sebagai tidak membawa. Semua sel tanggal wajib berisi kode sebelum import.']];
+    const guide=[['IMPORT CEPAT WADAH MAKAN & TUMBLER — DATA AKTUAL'],['Data yang sudah tersimpan di EcoTrack telah diisikan otomatis. Anda boleh memperbaiki kode lalu upload kembali.'],['Jangan mengubah NIS, Nama, nama sheet, atau judul tanggal.'],[],['Kode','Arti'],...Object.entries(WADAH_IMPORT_CODES).map(([k,v])=>[k,v.label]),[],['Catatan','Siswa tidak hadir tidak dihitung sebagai tidak membawa. Sel kosong harus dilengkapi sebelum import.']];
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(guide),'PETUNJUK');
     classes.forEach(c=>{
       const rows=students.filter(s=>s.classId===c).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-      const aoa=[['NIS','Nama',...dates.map(importDateLabel)],...rows.map(st=>[st.nis||st.id,st.name||'',...dates.map(()=>fill)])];
-      const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:16},{wch:30},...dates.map(()=>({wch:12}))];
-      XLSX.utils.book_append_sheet(wb,ws,String(c).slice(0,31));
+      const aoa=[['NIS','Nama',...dates.map(importDateLabel)],...rows.map(st=>[st.nis||st.id,st.name||'',...dates.map(date=>{const rec=recordMap.get(`${date}_${c}`);if(!rec)return fill;const item=(rec.items||[]).find(x=>String(x.studentId||x.nis)===String(st.id)||String(x.nis||'')===String(st.nis||st.id));return item?wadahItemToImportCode(item):fill;})])];
+      const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:16},{wch:30},...dates.map(()=>({wch:12}))]; XLSX.utils.book_append_sheet(wb,ws,String(c).slice(0,31));
     });
-    XLSX.writeFile(wb,`Template-Import-Wadah-${start}-${end}${cls?'-'+cls:'-Semua-Kelas'}.xlsx`);toast('Template berhasil dibuat');
-  }catch(e){console.error(e);toast(e.message||'Gagal membuat template');}finally{btn.disabled=false;btn.textContent='↓ Unduh Template';}
+    XLSX.writeFile(wb,`Data-Import-Wadah-${start}-${end}${cls?'-'+cls:'-Semua-Kelas'}.xlsx`);toast('Data aktual berhasil dibuat menjadi template');
+  }catch(e){console.error(e);toast(e.message||'Gagal membuat template');}finally{btn.disabled=false;btn.textContent='↓ Unduh Data / Template';}
 }
 function normalizeImportCode(v){return String(v??'').trim().toUpperCase();}
 async function handleQuickWadahImport(file){
@@ -1192,7 +1198,7 @@ async function handleQuickWadahImport(file){
     if(!rows.length&&errors.length)throw new Error('Tidak ada data valid untuk diproses');
     const keys=[...new Set(rows.map(r=>`${r.date}_${r.classId}`))],dates=[...new Set(rows.map(r=>r.date))].sort(),classes=[...new Set(rows.map(r=>r.classId))].sort(),counts={};Object.keys(WADAH_IMPORT_CODES).forEach(k=>counts[k]=rows.filter(r=>r.code===k).length);
     const existingSnap=dates.length?await getDocs(query(collection(db,'records'),where('date','>=',dates[0]),where('date','<=',dates[dates.length-1]))):null,existing=(existingSnap?.docs||[]).map(d=>({id:d.id,...d.data()})),replaceCount=keys.filter(k=>existing.some(r=>`${r.date}_${r.classId}`===k)).length;
-    window.quickWadahImport={rows,errors,keys,dates,classes,existing};renderQuickWadahPreview({cellCount,counts,replaceCount});
+    const userSnap=await getDocs(collection(db,'users')); const actors=userSnap.docs.map(d=>({uid:d.id,...d.data()})).filter(u=>u.role==='guru'&&u.approved!==false&&u.active!==false).sort((a,b)=>(a.name||'').localeCompare(b.name||'','id')); window.quickWadahImport={rows,errors,keys,dates,classes,existing,actors};renderQuickWadahPreview({cellCount,counts,replaceCount});
   }catch(e){console.error(e);if(box)box.innerHTML=`<div class="card"><div class="empty">${esc(e.message||'File tidak dapat dibaca')}</div></div>`;toast(e.message||'Gagal membaca file');}
 }
 function renderQuickWadahPreview(meta){
@@ -1201,14 +1207,16 @@ function renderQuickWadahPreview(meta){
   <div class="analysis-kpis import-kpis"><div class="analysis-kpi"><span>✓ Lengkap</span><strong>${c.L}</strong></div><div class="analysis-kpi"><span>🥡 Hanya Wadah</span><strong>${c.W}</strong></div><div class="analysis-kpi"><span>💧 Hanya Tumbler</span><strong>${c.T}</strong></div><div class="analysis-kpi"><span>✕ Tidak Keduanya</span><strong>${c.X}</strong></div><div class="analysis-kpi"><span>Tidak Hadir</span><strong>${c.S+c.I+c.A}</strong></div></div>
   ${meta.replaceCount?`<div class="notice">${meta.replaceCount} pendataan tanggal/kelas sudah ada dan akan <b>diperbarui</b>, bukan diduplikasi.</div>`:''}
   ${q.errors.length?`<div class="import-errors"><b>${q.errors.length} kesalahan ditemukan.</b>${q.errors.slice(0,12).map(x=>`<div>• ${esc(x)}</div>`).join('')}${q.errors.length>12?`<small>+ ${q.errors.length-12} kesalahan lainnya</small>`:''}</div>`:'<div class="notice">Semua NIS, kelas, tanggal, dan kode valid. Silakan simpan import.</div>'}
+  <div class="card" style="margin-top:12px"><label><b>Pengisi / petugas yang dicatat</b><select id="quickImportActor" class="input-inline" style="margin-top:8px;width:100%"><option value="__admin__">${esc(state.profile.name||'Admin')} — Admin</option>${(q.actors||[]).map(u=>`<option value="${esc(u.uid)}">${esc(u.name||u.loginId||'Guru')}${u.isHomeroom?` — Wali Kelas ${esc(u.homeroomClass||'')}`:' — Guru'}</option>`).join('')}</select><small>Import tetap tercatat dilakukan oleh Admin pada jejak audit.</small></label></div>
   <div class="row-actions"><button id="cancelQuickImport" class="btn ghost">Batalkan</button><button id="saveQuickImport" class="btn primary" ${q.errors.length?'disabled':''}>Terapkan Import</button></div></div>`;
   $('#cancelQuickImport').onclick=()=>{window.quickWadahImport=null;box.innerHTML='';}; if(!q.errors.length)$('#saveQuickImport').onclick=saveQuickWadahImport;
 }
 async function saveQuickWadahImport(){
   const q=window.quickWadahImport,btn=$('#saveQuickImport');if(!q||q.errors.length)return;btn.disabled=true;btn.textContent='Menyimpan...';
   try{
+    const actorValue=$('#quickImportActor')?.value||'__admin__'; const actor=actorValue==='__admin__'?{uid:state.user.uid,name:state.profile.name,role:'admin'}:(q.actors||[]).find(x=>x.uid===actorValue); if(!actor)throw new Error('Pengisi yang dipilih tidak ditemukan atau sudah tidak aktif');
     const grouped=new Map();q.rows.forEach(r=>{const key=`${r.date}_${r.classId}`;if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(r);});
-    for(const [key,rows] of grouped){const old=q.existing.find(r=>r.id===key)||q.existing.find(r=>`${r.date}_${r.classId}`===key),now=new Date(),audit=[...(old?.audit||[])];if(old)audit.push({editedAt:now.toISOString(),editedByUid:state.user.uid,editedByName:state.profile.name,source:'import-cepat'});const payload={date:rows[0].date,classId:rows[0].classId,items:rows.map(r=>({studentId:r.studentId,nis:r.nis,name:r.name,presence:r.presence,food:r.food,tumbler:r.tumbler})),createdByUid:old?.createdByUid||state.user.uid,createdByName:old?.createdByName||state.profile.name,createdAt:old?.createdAt||now.toISOString(),teacherEditCount:Number(old?.teacherEditCount||0),teacherEditedAt:old?.teacherEditedAt||null,lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),audit};await setDoc(doc(db,'records',key),payload,{merge:false});}
+    for(const [key,rows] of grouped){const old=q.existing.find(r=>r.id===key)||q.existing.find(r=>`${r.date}_${r.classId}`===key),now=new Date(),audit=[...(old?.audit||[])];audit.push({editedAt:now.toISOString(),editedByUid:state.user.uid,editedByName:state.profile.name,source:'import-cepat',onBehalfOfUid:actor.uid,onBehalfOfName:actor.name});const payload={date:rows[0].date,classId:rows[0].classId,items:rows.map(r=>({studentId:r.studentId,nis:r.nis,name:r.name,presence:r.presence,food:r.food,tumbler:r.tumbler})),createdByUid:actor.uid,createdByName:actor.name,createdAt:old?.createdAt||now.toISOString(),inputByUid:actor.uid,inputByName:actor.name,inputByRole:actor.role||'guru',importedByUid:state.user.uid,importedByName:state.profile.name,importedAt:now.toISOString(),teacherEditCount:Number(old?.teacherEditCount||0),teacherEditedAt:old?.teacherEditedAt||null,lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),audit};await setDoc(doc(db,'records',key),payload,{merge:false});}
     toast(`${grouped.size} pendataan berhasil diimport`);window.quickWadahImport=null;await refreshCore();renderBulkWadahPage();
   }catch(e){console.error(e);toast(e.message||'Gagal menyimpan import');btn.disabled=false;btn.textContent='Terapkan Import';}
 }
