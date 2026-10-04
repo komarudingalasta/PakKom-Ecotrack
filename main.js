@@ -144,7 +144,7 @@ let authResolved = true;
 let loginInProgress = false;
 let state = { user:null, profile:null, page:'home', selectedClass:null, classes:[], classDocs:[], recordsToday:[], students:[], cleanlinessToday:[], masterTab:'students', holidays:{}, calendarSettings:{overrides:{}}, accessSettings:{homeroomCleanlinessEnabled:false}, operationalSettings:null };
 
-const APP_VERSION='9.7.18';
+const APP_VERSION='9.7.19';
 function withTimeout(promise, ms=5000, label='Proses'){
   return Promise.race([
     promise,
@@ -1123,7 +1123,35 @@ function renderBulkWadahPage(){
   <div id="bulkWorkspace"></div>`;
   $('#bulkBack').onclick=()=>{state.selectedClass=null;inputPage()};
   $('#downloadWadahTemplate').onclick=downloadQuickWadahTemplate;
-  $('#chooseWadahImport').onclick=()=>$('#wadahQuickImport').click();
+  const quickInput=$('#wadahQuickImport');
+  const chooseBtn=$('#chooseWadahImport');
+  if(quickInput&&chooseBtn){
+    // v9.7.19: bind ulang setiap halaman Import Cepat dibuka agar upload selalu aktif.
+    quickInput.onchange=async e=>{
+      const f=e.target.files?.[0];
+      e.target.value='';
+      if(!f)return;
+      const box=$('#bulkWorkspace');
+      if(box)box.innerHTML='<div class="card"><div class="empty">Membaca dan memvalidasi file...</div></div>';
+      chooseBtn.disabled=true; chooseBtn.textContent='Membaca file...';
+      try{
+        if(!window.XLSX)throw new Error('Library Excel belum siap. Muat ulang halaman lalu coba kembali.');
+        await handleQuickWadahImport(f);
+      }catch(err){
+        console.error(err);
+        if(box)box.innerHTML=`<div class="card"><div class="empty">${esc(err.message||'File tidak dapat dibaca')}</div></div>`;
+        toast(err.message||'Gagal membaca file');
+      }finally{
+        chooseBtn.disabled=false; chooseBtn.textContent='↑ Upload Template Terisi';
+      }
+    };
+    chooseBtn.onclick=()=>{
+      quickInput.value='';
+      quickInput.click();
+    };
+  }else{
+    console.error('Import Cepat: elemen upload tidak ditemukan');
+  }
 }
 async function quickImportRoster(cls){
   const snap=cls?await getDocs(query(collection(db,'students'),where('classId','==',cls))):await getDocs(collection(db,'students'));
@@ -3228,5 +3256,4 @@ async function adminAuditPage(){
   const draw=()=>{const x=($('#auditSearch').value||'').toLowerCase();$('#auditList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>Waktu</th><th>Admin</th><th>Aktivitas</th><th>Detail</th></tr></thead><tbody>${rows.filter(r=>JSON.stringify(r).toLowerCase().includes(x)).map(r=>`<tr><td>${esc(r.createdAt||'-')}</td><td>${esc(r.adminName||'-')}</td><td><b>${esc(r.action||'-')}</b></td><td>${esc(JSON.stringify(r.detail||{}))}</td></tr>`).join('')}</tbody></table></div>`};$('#auditSearch').oninput=draw;draw();
 }
 
-// v9.7.18 Import Cepat Wadah & Tumbler
-if($('#wadahQuickImport')) $('#wadahQuickImport').onchange=async e=>{const f=e.target.files?.[0];e.target.value='';if(f)await handleQuickWadahImport(f);};
+// v9.7.19: listener Import Cepat dipasang saat renderBulkWadahPage(), bukan secara global di akhir file.
