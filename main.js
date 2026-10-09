@@ -1207,16 +1207,38 @@ function renderQuickWadahPreview(meta){
   <div class="analysis-kpis import-kpis"><div class="analysis-kpi"><span>✓ Lengkap</span><strong>${c.L}</strong></div><div class="analysis-kpi"><span>🥡 Hanya Wadah</span><strong>${c.W}</strong></div><div class="analysis-kpi"><span>💧 Hanya Tumbler</span><strong>${c.T}</strong></div><div class="analysis-kpi"><span>✕ Tidak Keduanya</span><strong>${c.X}</strong></div><div class="analysis-kpi"><span>Tidak Hadir</span><strong>${c.S+c.I+c.A}</strong></div></div>
   ${meta.replaceCount?`<div class="notice">${meta.replaceCount} pendataan tanggal/kelas sudah ada dan akan <b>diperbarui</b>, bukan diduplikasi.</div>`:''}
   ${q.errors.length?`<div class="import-errors"><b>${q.errors.length} kesalahan ditemukan.</b>${q.errors.slice(0,12).map(x=>`<div>• ${esc(x)}</div>`).join('')}${q.errors.length>12?`<small>+ ${q.errors.length-12} kesalahan lainnya</small>`:''}</div>`:'<div class="notice">Semua NIS, kelas, tanggal, dan kode valid. Silakan simpan import.</div>'}
-  <div class="card" style="margin-top:12px"><label><b>Pengisi / petugas yang dicatat</b><select id="quickImportActor" class="input-inline" style="margin-top:8px;width:100%"><option value="__admin__">${esc(state.profile.name||'Admin')} — Admin</option>${(q.actors||[]).map(u=>`<option value="${esc(u.uid)}">${esc(u.name||u.loginId||'Guru')}${u.isHomeroom?` — Wali Kelas ${esc(u.homeroomClass||'')}`:' — Guru'}</option>`).join('')}</select><small>Import tetap tercatat dilakukan oleh Admin pada jejak audit.</small></label></div>
+  <div class="card" style="margin-top:12px"><label><b>Pengisi / petugas yang dicatat</b><select id="quickImportActor" class="input-inline" style="margin-top:8px;width:100%"><option value="__admin__">${esc(state.profile.name||'Admin')} — Admin</option><option value="__random__">Acak guru/wali kelas (hanya data baru)</option><option value="__walas__">Wali kelas otomatis (hanya data baru)</option>${(q.actors||[]).map(u=>`<option value="${esc(u.uid)}">${esc(u.name||u.loginId||'Guru')}${u.isHomeroom?` — Wali Kelas ${esc(u.homeroomClass||'')}`:' — Guru'}</option>`).join('')}</select><small>Identitas perekap asli pada data lama dipertahankan. Pilihan acak/wali kelas hanya berlaku untuk data baru. Admin pengunggah tetap dicatat terpisah.</small></label></div>
   <div class="row-actions"><button id="cancelQuickImport" class="btn ghost">Batalkan</button><button id="saveQuickImport" class="btn primary" ${q.errors.length?'disabled':''}>Terapkan Import</button></div></div>`;
   $('#cancelQuickImport').onclick=()=>{window.quickWadahImport=null;box.innerHTML='';}; if(!q.errors.length)$('#saveQuickImport').onclick=saveQuickWadahImport;
 }
 async function saveQuickWadahImport(){
   const q=window.quickWadahImport,btn=$('#saveQuickImport');if(!q||q.errors.length)return;btn.disabled=true;btn.textContent='Menyimpan...';
   try{
-    const actorValue=$('#quickImportActor')?.value||'__admin__'; const actor=actorValue==='__admin__'?{uid:state.user.uid,name:state.profile.name,role:'admin'}:(q.actors||[]).find(x=>x.uid===actorValue); if(!actor)throw new Error('Pengisi yang dipilih tidak ditemukan atau sudah tidak aktif');
+    const actorValue=$('#quickImportActor')?.value||'__admin__';
+    const adminActor={uid:state.user.uid,name:state.profile.name||'Admin',role:'admin'};
+    const selectedActor=actorValue==='__admin__'?adminActor:(q.actors||[]).find(x=>x.uid===actorValue);
+    if(!['__random__','__walas__'].includes(actorValue)&&!selectedActor)throw new Error('Pengisi tidak ditemukan atau sudah tidak aktif');
     const grouped=new Map();q.rows.forEach(r=>{const key=`${r.date}_${r.classId}`;if(!grouped.has(key))grouped.set(key,[]);grouped.get(key).push(r);});
-    for(const [key,rows] of grouped){const old=q.existing.find(r=>r.id===key)||q.existing.find(r=>`${r.date}_${r.classId}`===key),now=new Date(),audit=[...(old?.audit||[])];audit.push({editedAt:now.toISOString(),editedByUid:state.user.uid,editedByName:state.profile.name,source:'import-cepat',onBehalfOfUid:actor.uid,onBehalfOfName:actor.name});const payload={date:rows[0].date,classId:rows[0].classId,items:rows.map(r=>({studentId:r.studentId,nis:r.nis,name:r.name,presence:r.presence,food:r.food,tumbler:r.tumbler})),createdByUid:actor.uid,createdByName:actor.name,createdAt:old?.createdAt||now.toISOString(),inputByUid:actor.uid,inputByName:actor.name,inputByRole:actor.role||'guru',importedByUid:state.user.uid,importedByName:state.profile.name,importedAt:now.toISOString(),teacherEditCount:Number(old?.teacherEditCount||0),teacherEditedAt:old?.teacherEditedAt||null,lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),audit};await setDoc(doc(db,'records',key),payload,{merge:false});}
+    const actors=q.actors||[];
+    if(actorValue==='__random__'&&!actors.length)throw new Error('Tidak ada akun guru aktif untuk pilihan acak');
+    const assignments=new Map();
+    const walasFor=(classId)=>actors.find(u=>u.isHomeroom&&String(u.homeroomClass||'').trim()===String(classId).trim());
+    for(const [key,rows] of grouped){
+      const old=q.existing.find(r=>r.id===key)||q.existing.find(r=>`${r.date}_${r.classId}`===key);
+      if(!old&&actorValue==='__walas__'&&!walasFor(rows[0].classId))throw new Error(`Wali kelas ${rows[0].classId} belum terdaftar. Import dibatalkan sebelum menyimpan.`);
+    }
+    let newIndex=0;
+    for(const [key,rows] of grouped){
+      const old=q.existing.find(r=>r.id===key)||q.existing.find(r=>`${r.date}_${r.classId}`===key),now=new Date();
+      let actor=selectedActor;
+      if(!old&&actorValue==='__random__')actor=actors[Math.floor(Math.random()*actors.length)];
+      if(!old&&actorValue==='__walas__')actor=walasFor(rows[0].classId);
+      if(old)actor={uid:old.inputByUid||old.createdByUid||null,name:old.inputByName||old.createdByName||null,role:old.inputByRole||null};
+      const audit=[...(Array.isArray(old?.audit)?old.audit:[])];
+      audit.push({editedAt:now.toISOString(),editedByUid:state.user.uid,editedByName:state.profile.name,source:'import-cepat',assignedRecorderUid:old?null:actor?.uid||null,assignedRecorderName:old?null:actor?.name||null,recorderPreserved:!!old});
+      const payload={date:rows[0].date,classId:rows[0].classId,items:rows.map(r=>({studentId:r.studentId,nis:r.nis,name:r.name,presence:r.presence,food:r.food,tumbler:r.tumbler})),createdByUid:old?old.createdByUid??null:actor.uid,createdByName:old?old.createdByName??null:actor.name,createdAt:old?.createdAt||now.toISOString(),inputByUid:old?old.inputByUid??old.createdByUid??null:actor.uid,inputByName:old?old.inputByName??old.createdByName??null:actor.name,inputByRole:old?old.inputByRole??null:actor.role||'guru',importedByUid:state.user.uid,importedByName:state.profile.name,importedAt:now.toISOString(),teacherEditCount:Number(old?.teacherEditCount||0),teacherEditedAt:old?.teacherEditedAt||null,lastEditedByUid:state.user.uid,lastEditedByName:state.profile.name,lastEditedAt:now.toISOString(),timeLabel:old?.timeLabel||now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),audit};
+      await setDoc(doc(db,'records',key),{...(old||{}),...payload},{merge:false});
+    }
     toast(`${grouped.size} pendataan berhasil diimport`);window.quickWadahImport=null;await refreshCore();renderBulkWadahPage();
   }catch(e){console.error(e);toast(e.message||'Gagal menyimpan import');btn.disabled=false;btn.textContent='Terapkan Import';}
 }
