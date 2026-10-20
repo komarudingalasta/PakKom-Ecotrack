@@ -2092,7 +2092,7 @@ async function adminResetTeacherPassword(uid){
     toast(`Password ${u.name||u.loginId} berhasil direset`);
   }catch(e){
     console.error(e);
-    toast('Reset password memerlukan Cloud Function Admin. Lihat SETUP_RESET_PASSWORD.md.',7000);
+    toast('Reset gagal: Firebase Spark tidak mendukung Cloud Function reset ini. Gunakan panduan RESET_PASSWORD_SPARK_V9_7_22.md untuk reset aman melalui komputer Admin.',9000);
   }
 }
 
